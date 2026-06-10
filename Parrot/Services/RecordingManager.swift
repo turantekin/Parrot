@@ -9,6 +9,10 @@ final class RecordingManager {
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
     let callAnalysisEngine = CallAnalysisEngine()
+    let knowledgeBase = KnowledgeBaseService()
+
+    /// Optional one-line context for the next call, set from the dashboard.
+    var nextCallBrief = ""
 
     private(set) var isRecording = false
     private(set) var recordingStartTime: Date?
@@ -17,6 +21,10 @@ final class RecordingManager {
 
     private var timer: Timer?
     private var modelContext: ModelContext?
+
+    init() {
+        callAnalysisEngine.knowledgeBase = knowledgeBase
+    }
 
     /// Initialize and load the default WhisperKit model
     func prepare(modelContext: ModelContext) async {
@@ -60,7 +68,7 @@ final class RecordingManager {
 
         // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
-        callAnalysisEngine.start()
+        callAnalysisEngine.start(brief: nextCallBrief)
 
         currentMeeting = meeting
         recordingStartTime = .now

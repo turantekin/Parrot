@@ -479,6 +479,12 @@ struct InsightCard: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+
+            if let source = insight.source {
+                Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -22,7 +22,11 @@ final class CallAnalysisEngine {
     private(set) var status: Status = .off
     private(set) var isActive = false
 
+    /// Set by RecordingManager; supplies grounded references for suggestions.
+    var knowledgeBase: KnowledgeBaseService?
+
     private let provider: AnalysisProvider
+    private var callBrief = ""
     private var segments: [(time: TimeInterval, text: String)] = []
     private var lastAnalyzedCount = 0
     private var debounceTask: Task<Void, Never>?
@@ -49,7 +53,7 @@ final class CallAnalysisEngine {
         UserDefaults.standard.bool(forKey: "copilotEnabled")
     }
 
-    func start() {
+    func start(brief: String = "") {
         guard isEnabled else {
             status = .off
             return
@@ -59,6 +63,7 @@ final class CallAnalysisEngine {
         lastAnalyzedCount = 0
         rerunRequested = false
         oldestPendingSince = nil
+        callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
     }
@@ -136,11 +141,21 @@ final class CallAnalysisEngine {
         let knownTitles = insights.prefix(20).map(\.title)
         let anchorTime = window.last?.time ?? 0
 
+        // Retrieve knowledge base material matching the most recent speech.
+        let query = segments.suffix(8).map(\.text).joined(separator: " ")
+        let references = await knowledgeBase?.search(query: query) ?? []
+
+        let request = AnalysisRequest(
+            transcript: transcript,
+            knownInsightTitles: Array(knownTitles),
+            references: references,
+            instructions: UserDefaults.standard.string(forKey: "copilotInstructions") ?? "",
+            callBrief: callBrief,
+            allowGeneralKnowledge: UserDefaults.standard.object(forKey: "copilotGeneralFallback") as? Bool ?? true
+        )
+
         do {
-            let drafts = try await provider.analyze(
-                transcript: transcript,
-                knownInsightTitles: Array(knownTitles)
-            )
+            let drafts = try await provider.analyze(request)
             guard isActive else {
                 analysisTask = nil
                 return
@@ -148,7 +163,15 @@ final class CallAnalysisEngine {
             let existingTitles = Set(insights.map { $0.title.lowercased() })
             let unique = drafts
                 .filter { !existingTitles.contains($0.title.lowercased()) }
-                .map { Insight(kind: $0.kind, title: $0.title, detail: $0.detail, callTime: anchorTime) }
+                .map {
+                    Insight(
+                        kind: $0.kind,
+                        title: $0.title,
+                        detail: $0.detail,
+                        callTime: anchorTime,
+                        source: $0.source
+                    )
+                }
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
         } catch let error as AnalysisError {

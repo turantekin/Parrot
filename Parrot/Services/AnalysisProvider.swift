@@ -6,13 +6,29 @@ struct InsightDraft {
     let kind: Insight.Kind
     let title: String
     let detail: String
+    /// Document name the answer is grounded in, or "general knowledge".
+    let source: String?
+}
+
+/// Everything a provider needs for one analysis pass.
+struct AnalysisRequest {
+    let transcript: String
+    let knownInsightTitles: [String]
+    /// Best-matching knowledge base chunks for the recent conversation.
+    let references: [KBReference]
+    /// The user's standing coaching instructions (tone, style, behavior).
+    let instructions: String
+    /// Optional one-line context for this specific call.
+    let callBrief: String
+    /// Whether the model may answer beyond the knowledge base.
+    let allowGeneralKnowledge: Bool
 }
 
 /// Backend that turns a transcript window into structured insights.
 /// Pluggable so a local-model provider can be added later without touching the engine.
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
-    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [InsightDraft]
+    func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft]
 }
 
 enum AnalysisError: LocalizedError {
@@ -49,27 +65,58 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     - action_item: the user committed to do something after the call.
     - feedback: brief coaching on how the call is going (only when notable).
 
+    Grounding rules: when reference material from the user's knowledge base is provided \
+    and covers a question, base the suggestion on it and set "source" to that document's \
+    name. Never invent specifics (prices, terms, availability) that the references don't \
+    state.
+
     Rules: never repeat an insight whose title you were told already exists. If nothing \
     new and useful happened, return an empty list. Keep titles under 8 words and details \
     under 2 sentences. Write in the same language as the conversation.
     """
 
-    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [InsightDraft] {
+    func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft] {
         guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
             throw AnalysisError.missingAPIKey
         }
 
-        let knownList = knownInsightTitles.isEmpty
+        let knownList = request.knownInsightTitles.isEmpty
             ? "(none)"
-            : knownInsightTitles.map { "- \($0)" }.joined(separator: "\n")
+            : request.knownInsightTitles.map { "- \($0)" }.joined(separator: "\n")
 
-        let userContent = """
-        Already shown insights (do not repeat):
-        \(knownList)
+        var sections: [String] = []
 
-        Rolling transcript (oldest to newest):
-        \(transcript)
-        """
+        if !request.instructions.isEmpty {
+            sections.append("Coaching instructions from the user:\n\(request.instructions)")
+        }
+
+        if !request.callBrief.isEmpty {
+            sections.append("Brief for this specific call:\n\(request.callBrief)")
+        }
+
+        if !request.references.isEmpty {
+            let formatted = request.references.map { reference in
+                var header = "[source: \(reference.documentName)]"
+                if let note = reference.note {
+                    header += " (user note: \(note))"
+                }
+                return header + "\n" + reference.text
+            }.joined(separator: "\n\n")
+            sections.append("Reference material from the user's knowledge base:\n\(formatted)")
+        }
+
+        sections.append(request.allowGeneralKnowledge
+            ? "If the reference material doesn't cover a question, you may answer from "
+              + "general knowledge — set \"source\" to \"general knowledge\" so the user "
+              + "knows the answer is not from their documents."
+            : "Only ground suggested answers in the reference material above. If it "
+              + "doesn't cover a question, say so briefly in the suggestion instead of "
+              + "answering from general knowledge, and leave \"source\" unset.")
+
+        sections.append("Already shown insights (do not repeat):\n\(knownList)")
+        sections.append("Rolling transcript (oldest to newest):\n\(request.transcript)")
+
+        let userContent = sections.joined(separator: "\n\n---\n\n")
 
         let itemSchema: [String: Any] = [
             "type": "object",
@@ -77,6 +124,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                 "kind": ["type": "string", "enum": ["suggestion", "blocker", "action_item", "feedback"]],
                 "title": ["type": "string"],
                 "detail": ["type": "string"],
+                "source": ["type": "string"],
             ],
             "required": ["kind", "title", "detail"],
             "additionalProperties": false,
@@ -133,6 +181,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             let kind: String
             let title: String
             let detail: String
+            let source: String?
         }
         let insights: [Item]
     }
@@ -146,7 +195,12 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let payload = try JSONDecoder().decode(InsightsPayload.self, from: jsonData)
         return payload.insights.compactMap { item in
             guard let kind = Insight.Kind(rawValue: item.kind) else { return nil }
-            return InsightDraft(kind: kind, title: item.title, detail: item.detail)
+            return InsightDraft(
+                kind: kind,
+                title: item.title,
+                detail: item.detail,
+                source: item.source?.nilIfEmpty
+            )
         }
     }
 

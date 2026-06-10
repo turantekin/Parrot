@@ -16,6 +16,8 @@ struct Insight: Identifiable, Equatable {
     let detail: String
     /// Seconds into the call of the speech that triggered this insight.
     let callTime: TimeInterval
+    /// Knowledge base document the answer is grounded in, or "general knowledge".
+    let source: String?
     let createdAt = Date()
     /// Blockers stay pinned until the user marks them handled.
     var isHandled = false
@@ -36,6 +38,7 @@ final class CallInsight {
     var title: String
     var detail: String
     var callTime: TimeInterval
+    var source: String?
     var isHandled: Bool
 
     init(from insight: Insight) {
@@ -44,6 +47,7 @@ final class CallInsight {
         self.title = insight.title
         self.detail = insight.detail
         self.callTime = insight.callTime
+        self.source = insight.source
         self.isHandled = insight.isHandled
     }
 

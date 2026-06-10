@@ -425,6 +425,12 @@ struct StoredInsightRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+
+                if let source = insight.source {
+                    Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }
