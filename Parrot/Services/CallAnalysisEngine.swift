@@ -134,9 +134,10 @@ final class CallAnalysisEngine {
         let window = segments.suffix(60)
         let transcript = window.map(\.text).joined(separator: "\n")
         let knownTitles = insights.prefix(20).map(\.title)
+        let anchorTime = window.last?.time ?? 0
 
         do {
-            let fresh = try await provider.analyze(
+            let drafts = try await provider.analyze(
                 transcript: transcript,
                 knownInsightTitles: Array(knownTitles)
             )
@@ -145,7 +146,9 @@ final class CallAnalysisEngine {
                 return
             }
             let existingTitles = Set(insights.map { $0.title.lowercased() })
-            let unique = fresh.filter { !existingTitles.contains($0.title.lowercased()) }
+            let unique = drafts
+                .filter { !existingTitles.contains($0.title.lowercased()) }
+                .map { Insight(kind: $0.kind, title: $0.title, detail: $0.detail, callTime: anchorTime) }
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
         } catch let error as AnalysisError {
@@ -167,6 +170,18 @@ final class CallAnalysisEngine {
             rerunRequested = false
             triggerAnalysis()
         }
+    }
+
+    // MARK: - Card Actions
+
+    /// Marks a pinned blocker as handled; it moves from the pinned zone into the feed.
+    func markHandled(_ insight: Insight) {
+        guard let index = insights.firstIndex(where: { $0.id == insight.id }) else { return }
+        insights[index].isHandled = true
+    }
+
+    func dismiss(_ insight: Insight) {
+        insights.removeAll { $0.id == insight.id }
     }
 
     // MARK: - Heuristics

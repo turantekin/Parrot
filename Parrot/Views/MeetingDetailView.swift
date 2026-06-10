@@ -11,6 +11,7 @@ struct MeetingDetailView: View {
     @State private var playbackSpeed: Float = 1.0
     @State private var playbackTimer: Timer?
     @State private var activeSegmentID: UUID?
+    @State private var showInsights = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +23,12 @@ struct MeetingDetailView: View {
             // Audio player bar
             if meeting.status == .done || meeting.status == .processing {
                 audioPlayerBar
+                Divider()
+            }
+
+            // Copilot insights captured during the call
+            if !meeting.insights.isEmpty {
+                insightsSection
                 Divider()
             }
 
@@ -162,6 +169,63 @@ struct MeetingDetailView: View {
             .frame(width: 160)
             .onChange(of: playbackSpeed) { _, newValue in
                 audioPlayer?.rate = newValue
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Copilot Insights
+
+    private var unresolvedBlockerCount: Int {
+        meeting.insights.filter { $0.kind == .blocker && !$0.isHandled }.count
+    }
+
+    private var insightsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showInsights.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.purple)
+
+                    Text("Copilot Insights")
+                        .font(.headline)
+
+                    Text("\(meeting.insights.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if unresolvedBlockerCount > 0 {
+                        Label("\(unresolvedBlockerCount) unresolved", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: showInsights ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showInsights {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(meeting.sortedInsights) { insight in
+                            StoredInsightRow(insight: insight) {
+                                seekTo(insight.callTime)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
             }
         }
         .padding(.horizontal)
@@ -316,6 +380,53 @@ struct TranscriptSegmentRow: View {
     private func speakerColor(for label: String) -> Color {
         let hash = abs(label.hashValue)
         return Self.speakerColors[hash % Self.speakerColors.count]
+    }
+}
+
+// MARK: - Stored Insight Row
+
+struct StoredInsightRow: View {
+    let insight: CallInsight
+    let onSeek: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button(action: onSeek) {
+                Text(insight.formattedCallTime)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .underline()
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Play from this moment")
+
+            Image(systemName: insight.kind.icon)
+                .font(.caption)
+                .foregroundStyle(insight.kind.color)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(insight.title)
+                        .font(.callout.weight(.medium))
+
+                    if insight.kind == .blocker {
+                        Label(
+                            insight.isHandled ? "Handled" : "Unresolved",
+                            systemImage: insight.isHandled ? "checkmark" : "exclamationmark.circle"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(insight.isHandled ? Color.green : .orange)
+                    }
+                }
+
+                Text(insight.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 

@@ -94,6 +94,14 @@ final class RecordingManager {
         if let meeting = currentMeeting {
             meeting.duration = elapsedTime
             meeting.status = .processing
+
+            // Persist the copilot's insights so they survive into the meeting report
+            for insight in callAnalysisEngine.insights {
+                let stored = CallInsight(from: insight)
+                stored.meeting = meeting
+                meeting.insights.append(stored)
+                modelContext?.insert(stored)
+            }
             try? modelContext?.save()
 
             // Start post-processing (diarization)

@@ -1,11 +1,18 @@
 import Foundation
 import Security
 
+/// Raw insight returned by a provider; the engine attaches call timing.
+struct InsightDraft {
+    let kind: Insight.Kind
+    let title: String
+    let detail: String
+}
+
 /// Backend that turns a transcript window into structured insights.
 /// Pluggable so a local-model provider can be added later without touching the engine.
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
-    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [Insight]
+    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [InsightDraft]
 }
 
 enum AnalysisError: LocalizedError {
@@ -47,7 +54,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     under 2 sentences. Write in the same language as the conversation.
     """
 
-    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [Insight] {
+    func analyze(transcript: String, knownInsightTitles: [String]) async throws -> [InsightDraft] {
         guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
             throw AnalysisError.missingAPIKey
         }
@@ -130,7 +137,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let insights: [Item]
     }
 
-    private static func parseInsights(from data: Data) throws -> [Insight] {
+    private static func parseInsights(from data: Data) throws -> [InsightDraft] {
         let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
         guard let text = response.content.first(where: { $0.type == "text" })?.text,
               let jsonData = text.data(using: .utf8) else {
@@ -139,7 +146,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let payload = try JSONDecoder().decode(InsightsPayload.self, from: jsonData)
         return payload.insights.compactMap { item in
             guard let kind = Insight.Kind(rawValue: item.kind) else { return nil }
-            return Insight(kind: kind, title: item.title, detail: item.detail)
+            return InsightDraft(kind: kind, title: item.title, detail: item.detail)
         }
     }
 
