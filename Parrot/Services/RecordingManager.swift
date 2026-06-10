@@ -8,6 +8,7 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
+    let callAnalysisEngine = CallAnalysisEngine()
 
     private(set) var isRecording = false
     private(set) var recordingStartTime: Date?
@@ -48,16 +49,18 @@ final class RecordingManager {
             self?.transcriptionEngine.appendAudio(buffer)
         }
 
-        // Wire transcription output to storage
+        // Wire transcription output to storage and the live copilot
         let meetingID = meeting.persistentModelID
         transcriptionEngine.onSegment = { [weak self] result in
             Task { @MainActor in
                 self?.addSegment(result, meetingID: meetingID)
+                self?.callAnalysisEngine.ingest(text: result.text, at: result.endTime)
             }
         }
 
-        // Start transcription
+        // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
+        callAnalysisEngine.start()
 
         currentMeeting = meeting
         recordingStartTime = .now
@@ -80,8 +83,9 @@ final class RecordingManager {
         timer?.invalidate()
         timer = nil
 
-        // Stop transcription first
+        // Stop transcription and the copilot first
         transcriptionEngine.stopTranscribing()
+        callAnalysisEngine.stop()
 
         // Stop audio capture
         await audioCaptureManager.stopCapture()

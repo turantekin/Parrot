@@ -4,6 +4,9 @@ struct SettingsView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
+    @AppStorage("copilotEnabled") private var copilotEnabled = false
+    @State private var apiKey = APIKeyStore.load() ?? ""
+    @State private var keySaved = false
 
     var body: some View {
         TabView {
@@ -17,12 +20,17 @@ struct SettingsView: View {
                     Label("Audio", systemImage: "waveform")
                 }
 
+            copilotTab
+                .tabItem {
+                    Label("Copilot", systemImage: "sparkles")
+                }
+
             appearanceTab
                 .tabItem {
                     Label("Appearance", systemImage: "paintbrush")
                 }
         }
-        .frame(width: 450, height: 300)
+        .frame(width: 480, height: 360)
     }
 
     // MARK: - General Tab
@@ -100,6 +108,47 @@ struct SettingsView: View {
                 Button("Show in Finder") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
                 }
+            }
+        }
+        .padding()
+    }
+
+    // MARK: - Copilot Tab
+
+    private var copilotTab: some View {
+        Form {
+            Section("Live Call Copilot") {
+                Toggle("Enable Copilot during recordings", isOn: $copilotEnabled)
+
+                Text("Watches the live transcript for the whole call and suggests answers, flags blockers, and captures action items in real time — no button needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Claude API Key") {
+                SecureField("sk-ant-...", text: $apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: apiKey) {
+                        keySaved = false
+                    }
+
+                HStack {
+                    Button("Save Key") {
+                        APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+                        keySaved = true
+                    }
+                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if keySaved {
+                        Label("Saved", systemImage: "checkmark.circle")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                }
+
+                Text("Stored in your keychain. Copilot sends transcript text to Anthropic's API — your audio never leaves your Mac. Get a key at console.anthropic.com.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()

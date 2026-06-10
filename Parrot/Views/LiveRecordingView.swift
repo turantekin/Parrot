@@ -4,6 +4,8 @@ import SwiftData
 struct LiveRecordingView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @State private var autoScroll = true
+    @State private var showCopilot = true
+    @AppStorage("copilotEnabled") private var copilotEnabled = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,8 +21,15 @@ struct LiveRecordingView: View {
 
             Divider()
 
-            // Live transcript
-            transcriptArea
+            // Live transcript + copilot
+            HStack(spacing: 0) {
+                transcriptArea
+
+                if copilotEnabled && showCopilot {
+                    Divider()
+                    CopilotPanelView()
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -50,6 +59,22 @@ struct LiveRecordingView: View {
                 .fontWeight(.medium)
 
             Spacer()
+
+            // Copilot panel toggle
+            if copilotEnabled {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showCopilot.toggle()
+                    }
+                } label: {
+                    Image(systemName: "sparkles")
+                        .font(.headline)
+                        .foregroundStyle(showCopilot ? .purple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(showCopilot ? "Hide Copilot" : "Show Copilot")
+                .padding(.trailing, 12)
+            }
 
             // Stop button
             Button {
