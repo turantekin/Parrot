@@ -3,11 +3,28 @@ import WhisperKit
 import Combine
 import os
 
-/// Wraps WhisperKit for real-time streaming transcription.
+/// Which capture stream a piece of audio came from.
+enum AudioSource: CaseIterable {
+    /// Microphone — the user.
+    case me
+    /// System audio — everyone else on the call.
+    case them
+
+    var label: String {
+        switch self {
+        case .me: "Me"
+        case .them: "Them"
+        }
+    }
+}
+
+/// Wraps WhisperKit for real-time streaming transcription. The microphone ("Me")
+/// and system audio ("Them") streams are buffered and transcribed separately, so
+/// every segment knows who was talking — no diarization model needed.
 @Observable
 final class TranscriptionEngine {
     private var whisperKit: WhisperKit?
-    private var audioBuffer: [Float] = []
+    private var audioBuffers: [AudioSource: [Float]] = [.me: [], .them: []]
     private let bufferLock = OSAllocatedUnfairLock()
     private var transcriptionTask: Task<Void, Never>?
 
@@ -29,6 +46,7 @@ final class TranscriptionEngine {
 
     struct TranscriptionResult {
         let text: String
+        let source: AudioSource
         let startTime: TimeInterval
         let endTime: TimeInterval
         let confidence: Float?
@@ -58,14 +76,14 @@ final class TranscriptionEngine {
 
     // MARK: - Audio Input
 
-    /// Feed audio buffer from AudioCaptureManager
-    func appendAudio(_ buffer: AVAudioPCMBuffer) {
+    /// Feed audio buffer from AudioCaptureManager, tagged with its stream
+    func appendAudio(_ buffer: AVAudioPCMBuffer, source: AudioSource) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameCount = Int(buffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
 
         bufferLock.withLock {
-            audioBuffer.append(contentsOf: samples)
+            audioBuffers[source, default: []].append(contentsOf: samples)
         }
     }
 
@@ -79,48 +97,58 @@ final class TranscriptionEngine {
         transcriptionTask = Task { [weak self] in
             guard let self else { return }
 
-            // Process audio in chunks (~2 seconds at 16kHz)
-            let chunkSize = 32000 // 2 seconds at 16kHz
-            var processedSamples = 0
+            // Process audio in chunks (~2 seconds at 16kHz) per stream
+            let chunkSize = 32000
+            var processedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
 
             while !Task.isCancelled && self.isTranscribing {
                 try? await Task.sleep(for: .milliseconds(500))
 
-                let availableSamples = self.bufferLock.withLock { self.audioBuffer.count }
-
-                guard availableSamples - processedSamples >= chunkSize else { continue }
-
-                let chunk: [Float] = self.bufferLock.withLock {
-                    Array(self.audioBuffer[processedSamples..<availableSamples])
-                }
-
-                let startTime = Double(processedSamples) / 16000.0
-                processedSamples = availableSamples
-
-                do {
-                    guard let whisperKit = self.whisperKit else { continue }
-                    let result = try await whisperKit.transcribe(audioArray: chunk)
-
-                    for transcription in result {
-                        let text = transcription.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { continue }
-
-                        let endTime = Double(processedSamples) / 16000.0
-                        let avgLogProb = transcription.segments.map(\.avgLogprob).reduce(0, +)
-                            / Float(max(transcription.segments.count, 1))
-
-                        await MainActor.run {
-                            self.currentText = text
-                            self.onSegment?(TranscriptionResult(
-                                text: text,
-                                startTime: startTime,
-                                endTime: endTime,
-                                confidence: avgLogProb
-                            ))
-                        }
+                for source in AudioSource.allCases {
+                    let processed = processedSamples[source] ?? 0
+                    let available = self.bufferLock.withLock {
+                        self.audioBuffers[source]?.count ?? 0
                     }
-                } catch {
-                    print("Transcription error: \(error)")
+                    guard available - processed >= chunkSize else { continue }
+
+                    let chunk: [Float] = self.bufferLock.withLock {
+                        Array((self.audioBuffers[source] ?? [])[processed..<available])
+                    }
+                    let startTime = Double(processed) / 16000.0
+                    let endTime = Double(available) / 16000.0
+                    processedSamples[source] = available
+
+                    // Skip near-silent chunks — saves Whisper passes (the mic is
+                    // mostly silent while the user listens, and vice versa) and
+                    // avoids hallucinated text on silence.
+                    let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
+                    guard energy > 0.001 else { continue }
+
+                    do {
+                        guard let whisperKit = self.whisperKit else { continue }
+                        let result = try await whisperKit.transcribe(audioArray: chunk)
+
+                        for transcription in result {
+                            let text = transcription.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !text.isEmpty else { continue }
+
+                            let avgLogProb = transcription.segments.map(\.avgLogprob).reduce(0, +)
+                                / Float(max(transcription.segments.count, 1))
+
+                            await MainActor.run {
+                                self.currentText = text
+                                self.onSegment?(TranscriptionResult(
+                                    text: text,
+                                    source: source,
+                                    startTime: startTime,
+                                    endTime: endTime,
+                                    confidence: avgLogProb
+                                ))
+                            }
+                        }
+                    } catch {
+                        print("Transcription error (\(source.label)): \(error)")
+                    }
                 }
             }
         }
@@ -133,7 +161,7 @@ final class TranscriptionEngine {
         transcriptionTask = nil
 
         bufferLock.withLock {
-            audioBuffer.removeAll()
+            audioBuffers = [.me: [], .them: []]
         }
 
         currentText = ""

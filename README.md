@@ -21,7 +21,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 - **Records system audio + microphone** — Captures what everyone says in a meeting (via ScreenCaptureKit) plus your own voice
 - **Real-time transcription** — Watch the transcript appear as people talk, powered by WhisperKit running on your Mac's Neural Engine
 - **Live Call Copilot (new!)** — An always-on assistant that watches the conversation and suggests answers, flags blockers/objections, and captures action items in real time. Opt-in, powered by the Claude API (bring your own key) — transcript text goes to the API, audio never leaves your Mac
-- **Speaker diarization** — Tries to figure out who said what (basic energy-based approach for now)
+- **Knows who's talking** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; energy-based diarization then refines who's who within "Them" after the call. The copilot uses this too: suggestions trigger on *their* questions, action items on *your* promises, plus a live talk-ratio readout
 - **Searchable history** — All your meetings stored locally with full-text search
 - **Export** — Save transcripts as TXT or SRT (subtitle format)
 - **Menu bar extra** — Quick start/stop recording from the menu bar

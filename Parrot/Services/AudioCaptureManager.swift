@@ -18,8 +18,9 @@ final class AudioCaptureManager: NSObject {
     private(set) var micAudioURL: URL?
     private(set) var audioLevel: Float = 0
 
-    /// Called with mixed PCM audio buffers suitable for WhisperKit
-    var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
+    /// Called with PCM audio buffers suitable for WhisperKit, tagged with which
+    /// stream they came from (mic = the user, system = everyone else).
+    var onAudioBuffer: ((AVAudioPCMBuffer, AudioSource) -> Void)?
 
     private let sampleRate: Double = 16000
     private let channels: UInt32 = 1
@@ -163,6 +164,9 @@ final class AudioCaptureManager: NSObject {
             if error == nil {
                 // Update audio level for UI visualization
                 self.updateAudioLevel(buffer: convertedBuffer)
+
+                // Send the user's speech to transcription as "Me"
+                self.onAudioBuffer?(convertedBuffer, .me)
             }
         }
 
@@ -239,8 +243,8 @@ extension AudioCaptureManager: SCStreamOutput {
         // Update audio level
         updateAudioLevel(buffer: pcmBuffer)
 
-        // Send to transcription engine
-        onAudioBuffer?(pcmBuffer)
+        // Send everyone else's speech to transcription as "Them"
+        onAudioBuffer?(pcmBuffer, .them)
     }
 }
 
