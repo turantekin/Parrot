@@ -29,13 +29,17 @@ final class CallAnalysisEngine {
     private var analysisTask: Task<Void, Never>?
     private var lastAnalysisEnd = Date.distantPast
     private var rerunRequested = false
+    private var oldestPendingSince: Date?
 
     /// Wait this long after the latest segment before analyzing mid-flow speech.
-    private let idleDebounce: Duration = .seconds(8)
+    private let idleDebounce: TimeInterval = 8
     /// Detected questions only wait for the current transcription chunk to settle.
-    private let questionDebounce: Duration = .seconds(1)
+    private let questionDebounce: TimeInterval = 1
     /// Hard floor between two API calls so back-to-back triggers don't spam.
     private let minimumInterval: TimeInterval = 5
+    /// During continuous speech every segment resets the idle debounce, which would
+    /// starve analysis forever — never let unanalyzed speech wait longer than this.
+    private let maximumStaleness: TimeInterval = 15
 
     init(provider: AnalysisProvider = ClaudeAnalysisProvider()) {
         self.provider = provider
@@ -54,6 +58,7 @@ final class CallAnalysisEngine {
         segments = []
         lastAnalyzedCount = 0
         rerunRequested = false
+        oldestPendingSince = nil
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
     }
@@ -76,11 +81,19 @@ final class CallAnalysisEngine {
         }
 
         segments.append((time, text))
+        if oldestPendingSince == nil {
+            oldestPendingSince = .now
+        }
 
-        let delay = Self.looksLikeQuestion(text) ? questionDebounce : idleDebounce
+        var delay = Self.looksLikeQuestion(text) ? questionDebounce : idleDebounce
+        if let pendingSince = oldestPendingSince {
+            let remainingBudget = max(0, maximumStaleness - Date.now.timeIntervalSince(pendingSince))
+            delay = min(delay, remainingBudget)
+        }
+
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             self?.triggerAnalysis()
         }
@@ -115,6 +128,7 @@ final class CallAnalysisEngine {
 
         status = .analyzing
         lastAnalyzedCount = segments.count
+        oldestPendingSince = nil
 
         // Last ~2 minutes of context keeps calls fast and cheap.
         let window = segments.suffix(60)
@@ -162,9 +176,13 @@ final class CallAnalysisEngine {
         if text.contains("?") { return true }
         let lowered = text.lowercased()
         let openers = [
-            "how much", "how many", "how do", "how does", "can you", "could you",
-            "what about", "what is", "what's", "do you", "would you", "is there",
-            "when can", "why ",
+            "how much", "how many", "how do", "how does", "how long", "how soon",
+            "can you", "could you", "can we", "could we", "can i", "could i",
+            "what about", "what is", "what's", "what if", "what do", "what would",
+            "do you", "would you", "will you", "did you", "are you", "have you",
+            "is there", "are there", "is it", "does it", "will it",
+            "when can", "when do", "when will", "where do", "who is", "who's",
+            "why ", "tell me about",
         ]
         return openers.contains { lowered.contains($0) }
     }
