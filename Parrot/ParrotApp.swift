@@ -7,7 +7,7 @@ struct ParrotApp: App {
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Meeting.self, TranscriptSegment.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false

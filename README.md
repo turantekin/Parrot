@@ -20,6 +20,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 
 - **Records system audio + microphone** — Captures what everyone says in a meeting (via ScreenCaptureKit) plus your own voice
 - **Real-time transcription** — Watch the transcript appear as people talk, powered by WhisperKit running on your Mac's Neural Engine
+- **Live Call Copilot (new!)** — An always-on assistant that watches the conversation and suggests answers, flags blockers/objections, and captures action items in real time. Opt-in, powered by the Claude API (bring your own key) — transcript text goes to the API, audio never leaves your Mac
 - **Speaker diarization** — Tries to figure out who said what (basic energy-based approach for now)
 - **Searchable history** — All your meetings stored locally with full-text search
 - **Export** — Save transcripts as TXT or SRT (subtitle format)
@@ -78,6 +79,25 @@ Parrot uses WhisperKit models for transcription. Pick one during onboarding:
 | large-v3-turbo | ~1.5 GB | Slower | Best |
 
 The model downloads automatically on first use. `base` is a good default.
+
+### Enable the Live Call Copilot (optional)
+
+The Copilot watches the live transcript during a recording and pushes suggested answers, blockers, and action items into a side panel — automatically, the whole call, no button pressing.
+
+1. Get a Claude API key from [console.anthropic.com](https://console.anthropic.com)
+2. Open **Settings → Copilot**, paste the key (stored in your keychain), and flip the toggle
+3. Start a recording — the Copilot panel appears next to the live transcript
+
+**Privacy note:** Copilot sends transcript *text* to Anthropic's API to generate suggestions. Your audio never leaves your Mac, and nothing is sent unless you enable the feature. It runs on Claude Haiku, so a full hour-long call costs only a few cents.
+
+### Give the Copilot your knowledge (optional but powerful)
+
+In **Settings → Knowledge** you can brief the copilot like you'd brief a new teammate:
+
+- **Drop in documents** — pricing sheets, FAQs, playbooks (PDF/text/markdown). They're chunked and embedded **on this Mac** (Apple's NaturalLanguage framework — documents are never uploaded). When a question comes up on a call, the copilot grounds its suggested answer in the best-matching passages and cites the source on the card. Each document takes an optional note like *"use for pricing questions"*.
+- **Coaching instructions** — standing guidance for every call: tone, style, behavior ("keep answers short and casual, always offer Good/Better/Best on price").
+- **General-knowledge fallback** — choose whether the copilot may answer beyond your documents. Cards always show where an answer came from: your document's name or *"general knowledge"*.
+- **Pre-call brief** — an optional one-liner on the dashboard before you hit record ("Call with Westfield PM about AC replacement") so the copilot has context from second one.
 
 ## Project Structure
 

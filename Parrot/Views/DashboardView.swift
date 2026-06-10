@@ -11,6 +11,7 @@ struct DashboardView: View {
 
     @State private var errorMessage: String?
     @State private var showPermissionAlert = false
+    @AppStorage("copilotEnabled") private var copilotEnabled = false
 
     var body: some View {
         ScrollView {
@@ -84,7 +85,30 @@ struct DashboardView: View {
             Text("Captures system audio and microphone")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if copilotEnabled {
+                callBriefField
+            }
         }
+    }
+
+    /// Optional one-line context the copilot gets from second one of the call.
+    private var callBriefField: some View {
+        @Bindable var recordingManager = recordingManager
+        return HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.caption)
+                .foregroundStyle(.purple)
+
+            TextField(
+                "Brief the copilot (optional) — e.g. \"Call with Westfield PM about AC replacement\"",
+                text: $recordingManager.nextCallBrief
+            )
+            .textFieldStyle(.roundedBorder)
+            .font(.caption)
+        }
+        .frame(maxWidth: 420)
+        .padding(.top, 4)
     }
 
     // MARK: - Model Status

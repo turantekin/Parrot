@@ -8,6 +8,11 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
+    let callAnalysisEngine = CallAnalysisEngine()
+    let knowledgeBase = KnowledgeBaseService()
+
+    /// Optional one-line context for the next call, set from the dashboard.
+    var nextCallBrief = ""
 
     private(set) var isRecording = false
     private(set) var recordingStartTime: Date?
@@ -16,6 +21,10 @@ final class RecordingManager {
 
     private var timer: Timer?
     private var modelContext: ModelContext?
+
+    init() {
+        callAnalysisEngine.knowledgeBase = knowledgeBase
+    }
 
     /// Initialize and load the default WhisperKit model
     func prepare(modelContext: ModelContext) async {
@@ -48,16 +57,18 @@ final class RecordingManager {
             self?.transcriptionEngine.appendAudio(buffer)
         }
 
-        // Wire transcription output to storage
+        // Wire transcription output to storage and the live copilot
         let meetingID = meeting.persistentModelID
         transcriptionEngine.onSegment = { [weak self] result in
             Task { @MainActor in
                 self?.addSegment(result, meetingID: meetingID)
+                self?.callAnalysisEngine.ingest(text: result.text, at: result.endTime)
             }
         }
 
-        // Start transcription
+        // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
+        callAnalysisEngine.start(brief: nextCallBrief)
 
         currentMeeting = meeting
         recordingStartTime = .now
@@ -80,8 +91,9 @@ final class RecordingManager {
         timer?.invalidate()
         timer = nil
 
-        // Stop transcription first
+        // Stop transcription and the copilot first
         transcriptionEngine.stopTranscribing()
+        callAnalysisEngine.stop()
 
         // Stop audio capture
         await audioCaptureManager.stopCapture()
@@ -90,6 +102,14 @@ final class RecordingManager {
         if let meeting = currentMeeting {
             meeting.duration = elapsedTime
             meeting.status = .processing
+
+            // Persist the copilot's insights so they survive into the meeting report
+            for insight in callAnalysisEngine.insights {
+                let stored = CallInsight(from: insight)
+                stored.meeting = meeting
+                meeting.insights.append(stored)
+                modelContext?.insert(stored)
+            }
             try? modelContext?.save()
 
             // Start post-processing (diarization)

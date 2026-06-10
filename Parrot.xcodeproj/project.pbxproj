@@ -24,6 +24,12 @@
 		E3F64FC26CFB13D0A8F0EE14 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0B438750BCCD12502A5BAA43 /* WhisperKit */; };
 		E4E9A631759BFBCB14131A34 /* AudioCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */; };
 		FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2ECD50C879A39AA006003B8 /* DashboardView.swift */; };
+		BB10000000000000000000B1 /* Insight.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* Insight.swift */; };
+		BB20000000000000000000B2 /* AnalysisProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA20000000000000000000A2 /* AnalysisProvider.swift */; };
+		BB30000000000000000000B3 /* CallAnalysisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA30000000000000000000A3 /* CallAnalysisEngine.swift */; };
+		BB40000000000000000000B4 /* CopilotPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA40000000000000000000A4 /* CopilotPanelView.swift */; };
+		BB50000000000000000000B5 /* KnowledgeBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA50000000000000000000A5 /* KnowledgeBase.swift */; };
+		BB60000000000000000000B6 /* KnowledgeBaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA60000000000000000000A6 /* KnowledgeBaseService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +52,12 @@
 		D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetailView.swift; sourceTree = "<group>"; };
 		F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureManager.swift; sourceTree = "<group>"; };
+		AA10000000000000000000A1 /* Insight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Insight.swift; sourceTree = "<group>"; };
+		AA20000000000000000000A2 /* AnalysisProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisProvider.swift; sourceTree = "<group>"; };
+		AA30000000000000000000A3 /* CallAnalysisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallAnalysisEngine.swift; sourceTree = "<group>"; };
+		AA40000000000000000000A4 /* CopilotPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotPanelView.swift; sourceTree = "<group>"; };
+		AA50000000000000000000A5 /* KnowledgeBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBase.swift; sourceTree = "<group>"; };
+		AA60000000000000000000A6 /* KnowledgeBaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				C63A84D1204A30379B79627C /* ContentView.swift */,
+				AA40000000000000000000A4 /* CopilotPanelView.swift */,
 				A2ECD50C879A39AA006003B8 /* DashboardView.swift */,
 				1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */,
 				D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */,
@@ -91,6 +104,8 @@
 		2ADBF338BD8E72F5B190A918 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000000A1 /* Insight.swift */,
+				AA50000000000000000000A5 /* KnowledgeBase.swift */,
 				2DE0CCC714BADC67C8D26E20 /* Meeting.swift */,
 				CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */,
 			);
@@ -116,8 +131,11 @@
 		8C97C45FDD11ECCB2EB879B9 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				AA20000000000000000000A2 /* AnalysisProvider.swift */,
 				F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */,
+				AA30000000000000000000A3 /* CallAnalysisEngine.swift */,
 				9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */,
+				AA60000000000000000000A6 /* KnowledgeBaseService.swift */,
 				7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */,
 				A62937E9A4891AC4B439793B /* RecordingManager.swift */,
 				37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */,
@@ -188,8 +206,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB20000000000000000000B2 /* AnalysisProvider.swift in Sources */,
 				E4E9A631759BFBCB14131A34 /* AudioCaptureManager.swift in Sources */,
+				BB30000000000000000000B3 /* CallAnalysisEngine.swift in Sources */,
 				C8002A3F47345F064BB3BA98 /* ContentView.swift in Sources */,
+				BB40000000000000000000B4 /* CopilotPanelView.swift in Sources */,
+				BB10000000000000000000B1 /* Insight.swift in Sources */,
+				BB50000000000000000000B5 /* KnowledgeBase.swift in Sources */,
+				BB60000000000000000000B6 /* KnowledgeBaseService.swift in Sources */,
 				FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */,
 				C0558FD92CC63B08D0434047 /* DiarizationEngine.swift in Sources */,
 				85CA1373AFA3114E41376176 /* ExportService.swift in Sources */,

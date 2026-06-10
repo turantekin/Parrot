@@ -22,6 +22,9 @@ final class Meeting {
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
+    @Relationship(deleteRule: .cascade, inverse: \CallInsight.meeting)
+    var insights: [CallInsight]
+
     init(
         title: String? = nil,
         date: Date = .now,
@@ -37,6 +40,11 @@ final class Meeting {
         self.status = .recording
         self.errorMessage = nil
         self.segments = []
+        self.insights = []
+    }
+
+    var sortedInsights: [CallInsight] {
+        insights.sorted { $0.callTime < $1.callTime }
     }
 
     static func defaultTitle(for date: Date) -> String {
