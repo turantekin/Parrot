@@ -117,6 +117,13 @@ final class RecordingManager {
             Task {
                 await self.postProcess(meeting: meetingRef)
             }
+
+            // Generate the post-call report in the background (best-effort)
+            if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
+                Task {
+                    await self.generateSummary(meeting: meetingRef)
+                }
+            }
         }
 
         isRecording = false
@@ -143,6 +150,31 @@ final class RecordingManager {
 
         modelContext.insert(segment)
         try? modelContext.save()
+    }
+
+    // MARK: - Post-Call Summary
+
+    private func generateSummary(meeting: Meeting) async {
+        let segments = meeting.sortedSegments
+        guard !segments.isEmpty else { return }
+
+        let transcript = segments
+            .map { "[\($0.formattedTimestamp)] \($0.text)" }
+            .joined(separator: "\n")
+        let insightTitles = meeting.sortedInsights.map { "\($0.kind.label): \($0.title)" }
+        let instructions = UserDefaults.standard.string(forKey: "copilotInstructions") ?? ""
+
+        do {
+            let summary = try await callAnalysisEngine.provider.summarize(
+                transcript: transcript,
+                insightTitles: insightTitles,
+                instructions: instructions
+            )
+            meeting.summary = summary
+            try? modelContext?.save()
+        } catch {
+            // Best-effort: the transcript and insights are already saved.
+        }
     }
 
     // MARK: - Post-Processing

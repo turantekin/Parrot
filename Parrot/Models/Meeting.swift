@@ -18,6 +18,8 @@ final class Meeting {
     var micAudioPath: String?
     var status: MeetingStatus
     var errorMessage: String?
+    /// AI-generated post-call report; set shortly after recording stops.
+    var summary: String?
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
@@ -39,6 +41,7 @@ final class Meeting {
         self.micAudioPath = micAudioPath
         self.status = .recording
         self.errorMessage = nil
+        self.summary = nil
         self.segments = []
         self.insights = []
     }

@@ -25,7 +25,7 @@ final class CallAnalysisEngine {
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
 
-    private let provider: AnalysisProvider
+    let provider: AnalysisProvider
     private var callBrief = ""
     private var segments: [(time: TimeInterval, text: String)] = []
     private var lastAnalyzedCount = 0
