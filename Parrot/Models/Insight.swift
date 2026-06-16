@@ -8,6 +8,8 @@ struct Insight: Identifiable, Equatable {
         case blocker
         case actionItem = "action_item"
         case feedback
+        /// An open question the other side asked that hasn't been answered yet.
+        case question
     }
 
     let id = UUID()

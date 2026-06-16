@@ -19,6 +19,10 @@ final class RecordingManager {
     private(set) var elapsedTime: TimeInterval = 0
     private(set) var currentMeeting: Meeting?
 
+    /// Guards against a second startRecording slipping in during the `await`s
+    /// before isRecording is set — which would start a duplicate transcription
+    /// loop and double every segment.
+    private var isStarting = false
     private var timer: Timer?
     private var modelContext: ModelContext?
 
@@ -29,19 +33,41 @@ final class RecordingManager {
     /// Initialize and load the default WhisperKit model
     func prepare(modelContext: ModelContext) async {
         self.modelContext = modelContext
+        Self.reconcileOrphanedRecordings(in: modelContext)
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
+    }
+
+    /// A meeting left in `.recording` or `.processing` means a previous session was
+    /// killed (crash or force-quit) before it could finish. Those can never resume
+    /// and their audio file was never finalized, so mark them failed instead of
+    /// letting them linger as if active.
+    private static func reconcileOrphanedRecordings(in context: ModelContext) {
+        guard let meetings = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
+        var changed = false
+        for meeting in meetings where meeting.status == .recording || meeting.status == .processing {
+            meeting.status = .failed
+            if meeting.errorMessage == nil {
+                meeting.errorMessage = "Recording was interrupted before it finished."
+            }
+            changed = true
+        }
+        if changed { try? context.save() }
     }
 
     // MARK: - Recording Control
 
     func startRecording(modelContext: ModelContext) async throws {
         self.modelContext = modelContext
-        guard !isRecording else { return }
+        // Reject re-entry up front (before any await) so a double-trigger can't
+        // start two recordings / two transcription loops.
+        guard !isRecording, !isStarting else { return }
         guard transcriptionEngine.isReady else {
             throw RecordingError.modelNotReady
         }
+        isStarting = true
+        defer { isStarting = false }
 
         // Create meeting
         let meeting = Meeting()
@@ -58,10 +84,9 @@ final class RecordingManager {
         }
 
         // Wire transcription output to storage and the live copilot
-        let meetingID = meeting.persistentModelID
         transcriptionEngine.onSegment = { [weak self] result in
             Task { @MainActor in
-                self?.addSegment(result, meetingID: meetingID)
+                self?.addSegment(result)
                 self?.callAnalysisEngine.ingest(
                     text: result.text,
                     at: result.endTime,
@@ -107,12 +132,12 @@ final class RecordingManager {
             meeting.duration = elapsedTime
             meeting.status = .processing
 
-            // Persist the copilot's insights so they survive into the meeting report
+            // Persist the copilot's insights so they survive into the meeting report.
+            // Same SwiftData rule as addSegment: insert before setting the relationship.
             for insight in callAnalysisEngine.insights {
                 let stored = CallInsight(from: insight)
-                stored.meeting = meeting
-                meeting.insights.append(stored)
                 modelContext?.insert(stored)
+                stored.meeting = meeting
             }
             try? modelContext?.save()
 
@@ -137,8 +162,15 @@ final class RecordingManager {
 
     // MARK: - Segment Storage
 
-    private func addSegment(_ result: TranscriptionEngine.TranscriptionResult, meetingID: PersistentIdentifier) {
-        guard let modelContext else { return }
+    private func addSegment(_ result: TranscriptionEngine.TranscriptionResult) {
+        // Use the live meeting object directly. The previous code looked the
+        // meeting up via model(for: meetingID) where meetingID was captured before
+        // the context was saved — i.e. a TEMPORARY identifier that goes stale after
+        // save. Resolving that stale id returned a malformed object and assigning it
+        // to segment.meeting tripped a SwiftData assertion (crash). currentMeeting
+        // is the same registered instance in the same context, set before any
+        // segment can arrive.
+        guard let modelContext, let meeting = currentMeeting else { return }
 
         let segment = TranscriptSegment(
             startTime: result.startTime,
@@ -148,12 +180,8 @@ final class RecordingManager {
             confidence: result.confidence
         )
 
-        if let meeting = modelContext.model(for: meetingID) as? Meeting {
-            segment.meeting = meeting
-            meeting.segments.append(segment)
-        }
-
         modelContext.insert(segment)
+        segment.meeting = meeting
         try? modelContext.save()
     }
 
@@ -179,6 +207,24 @@ final class RecordingManager {
             try? modelContext?.save()
         } catch {
             // Best-effort: the transcript and insights are already saved.
+        }
+
+        // Coaching + follow-ups report, with the user's real talk balance.
+        let meWords = segments
+            .filter { $0.speakerLabel == "Me" }
+            .reduce(0) { $0 + $1.text.split(separator: " ").count }
+        let totalWords = segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        let talkPercentMe = totalWords > 0 ? Int(Double(meWords) / Double(totalWords) * 100) : 0
+        do {
+            let coaching = try await callAnalysisEngine.provider.coachingReport(
+                transcript: transcript,
+                talkPercentMe: talkPercentMe,
+                instructions: instructions
+            )
+            meeting.coaching = coaching
+            try? modelContext?.save()
+        } catch {
+            // Best-effort.
         }
     }
 

@@ -9,55 +9,59 @@
 /* Begin PBXBuildFile section */
 		0E3D91715DEE87D51AA23C18 /* TranscriptSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */; };
 		11BC5507E559179C868B9AD5 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D766E175C79182A19FDCE19 /* MenuBarView.swift */; };
+		1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */; };
+		28B471FA2550C26972D86C1E /* KnowledgeBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */; };
 		2D78F88F85C6B10D387F5B45 /* ParrotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200FE5120F42A3BB47933EB7 /* ParrotApp.swift */; };
 		40C8A49A749AC3C631BFD47C /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */; };
 		542440B7C1D44E7FB9D30E78 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC76FF2DEA6B36A17FAC22B /* SettingsView.swift */; };
 		573D95F4E0286525EB01DEF0 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE4F80615AF9579E1AFB408 /* SidebarView.swift */; };
+		670465176804DAB6090CD626 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59587E1F3FF92A07FD404042 /* EchoCanceller.swift */; };
 		81E0F3E53AA25CB928F901B4 /* Meeting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DE0CCC714BADC67C8D26E20 /* Meeting.swift */; };
 		85CA1373AFA3114E41376176 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */; };
+		8B131BE512D811DC7F495E0A /* CopilotPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FD0006B2D617872DB79534 /* CopilotPanelView.swift */; };
 		B0886BA3C94B908F6C3176D6 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62937E9A4891AC4B439793B /* RecordingManager.swift */; };
 		C0558FD92CC63B08D0434047 /* DiarizationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */; };
 		C8002A3F47345F064BB3BA98 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63A84D1204A30379B79627C /* ContentView.swift */; };
 		C8804B03958954B9D8BEA6FA /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */; };
 		CC22CC7B3CBD14D2B4606E16 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */; };
+		D41FEC78937277879CA64EBB /* AnalysisProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCC0E7326A41C441C77FAC4 /* AnalysisProvider.swift */; };
 		D80161EBEE86C38E11105708 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */; };
+		E13FE9BAA4062AF67B22D528 /* CSpeexDSP in Frameworks */ = {isa = PBXBuildFile; productRef = 4DB9F1B471B3029789F107CC /* CSpeexDSP */; };
 		E3F64FC26CFB13D0A8F0EE14 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0B438750BCCD12502A5BAA43 /* WhisperKit */; };
 		E4E9A631759BFBCB14131A34 /* AudioCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */; };
+		F0B27F4AD985CBF71B7A7C1F /* Insight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 786AEE931B2D103312603940 /* Insight.swift */; };
+		F8CA7DA639E64F49A7FC3601 /* KnowledgeBaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A6B590044A90A31AD495C0 /* KnowledgeBaseService.swift */; };
 		FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2ECD50C879A39AA006003B8 /* DashboardView.swift */; };
-		BB10000000000000000000B1 /* Insight.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* Insight.swift */; };
-		BB20000000000000000000B2 /* AnalysisProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA20000000000000000000A2 /* AnalysisProvider.swift */; };
-		BB30000000000000000000B3 /* CallAnalysisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA30000000000000000000A3 /* CallAnalysisEngine.swift */; };
-		BB40000000000000000000B4 /* CopilotPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA40000000000000000000A4 /* CopilotPanelView.swift */; };
-		BB50000000000000000000B5 /* KnowledgeBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA50000000000000000000A5 /* KnowledgeBase.swift */; };
-		BB60000000000000000000B6 /* KnowledgeBaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA60000000000000000000A6 /* KnowledgeBaseService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		04253CBD6575607A1D88BFA5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		09FD0006B2D617872DB79534 /* CopilotPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotPanelView.swift; sourceTree = "<group>"; };
+		1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallAnalysisEngine.swift; sourceTree = "<group>"; };
 		1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		200FE5120F42A3BB47933EB7 /* ParrotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParrotApp.swift; sourceTree = "<group>"; };
 		2AA62BB3552276743C5C57CB /* Parrot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Parrot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2DE0CCC714BADC67C8D26E20 /* Meeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Meeting.swift; sourceTree = "<group>"; };
 		37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
+		59587E1F3FF92A07FD404042 /* EchoCanceller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoCanceller.swift; sourceTree = "<group>"; };
 		5D766E175C79182A19FDCE19 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		5FCC0E7326A41C441C77FAC4 /* AnalysisProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisProvider.swift; sourceTree = "<group>"; };
+		786AEE931B2D103312603940 /* Insight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Insight.swift; sourceTree = "<group>"; };
 		7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportService.swift; sourceTree = "<group>"; };
 		8AC76FF2DEA6B36A17FAC22B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		94A6B590044A90A31AD495C0 /* KnowledgeBaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseService.swift; sourceTree = "<group>"; };
 		9BE4F80615AF9579E1AFB408 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiarizationEngine.swift; sourceTree = "<group>"; };
 		A2ECD50C879A39AA006003B8 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		A4C1CFAAA0357C52C949D353 /* Parrot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Parrot.entitlements; sourceTree = "<group>"; };
 		A62937E9A4891AC4B439793B /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
 		C63A84D1204A30379B79627C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBase.swift; sourceTree = "<group>"; };
 		CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSegment.swift; sourceTree = "<group>"; };
+		CF089F36B78224969884847F /* CSpeexDSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CSpeexDSP; path = Vendor/CSpeexDSP; sourceTree = SOURCE_ROOT; };
 		D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetailView.swift; sourceTree = "<group>"; };
 		F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureManager.swift; sourceTree = "<group>"; };
-		AA10000000000000000000A1 /* Insight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Insight.swift; sourceTree = "<group>"; };
-		AA20000000000000000000A2 /* AnalysisProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisProvider.swift; sourceTree = "<group>"; };
-		AA30000000000000000000A3 /* CallAnalysisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallAnalysisEngine.swift; sourceTree = "<group>"; };
-		AA40000000000000000000A4 /* CopilotPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotPanelView.swift; sourceTree = "<group>"; };
-		AA50000000000000000000A5 /* KnowledgeBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBase.swift; sourceTree = "<group>"; };
-		AA60000000000000000000A6 /* KnowledgeBaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +70,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E3F64FC26CFB13D0A8F0EE14 /* WhisperKit in Frameworks */,
+				E13FE9BAA4062AF67B22D528 /* CSpeexDSP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,7 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				C63A84D1204A30379B79627C /* ContentView.swift */,
-				AA40000000000000000000A4 /* CopilotPanelView.swift */,
+				09FD0006B2D617872DB79534 /* CopilotPanelView.swift */,
 				A2ECD50C879A39AA006003B8 /* DashboardView.swift */,
 				1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */,
 				D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */,
@@ -104,17 +109,26 @@
 		2ADBF338BD8E72F5B190A918 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				AA10000000000000000000A1 /* Insight.swift */,
-				AA50000000000000000000A5 /* KnowledgeBase.swift */,
+				786AEE931B2D103312603940 /* Insight.swift */,
+				CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */,
 				2DE0CCC714BADC67C8D26E20 /* Meeting.swift */,
 				CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
 		};
+		370DEBBC3297B0354F666070 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				CF089F36B78224969884847F /* CSpeexDSP */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
 		523F1B653038F8179FAFFDCF = {
 			isa = PBXGroup;
 			children = (
+				370DEBBC3297B0354F666070 /* Packages */,
 				0A2A53784379E840DD9D99E5 /* Parrot */,
 				6C68E8299E2B92A3BDBE4098 /* Products */,
 			);
@@ -131,12 +145,13 @@
 		8C97C45FDD11ECCB2EB879B9 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				AA20000000000000000000A2 /* AnalysisProvider.swift */,
+				5FCC0E7326A41C441C77FAC4 /* AnalysisProvider.swift */,
 				F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */,
-				AA30000000000000000000A3 /* CallAnalysisEngine.swift */,
+				1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */,
 				9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */,
-				AA60000000000000000000A6 /* KnowledgeBaseService.swift */,
+				59587E1F3FF92A07FD404042 /* EchoCanceller.swift */,
 				7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */,
+				94A6B590044A90A31AD495C0 /* KnowledgeBaseService.swift */,
 				A62937E9A4891AC4B439793B /* RecordingManager.swift */,
 				37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */,
 			);
@@ -160,6 +175,7 @@
 			name = Parrot;
 			packageProductDependencies = (
 				0B438750BCCD12502A5BAA43 /* WhisperKit */,
+				4DB9F1B471B3029789F107CC /* CSpeexDSP */,
 			);
 			productName = Parrot;
 			productReference = 2AA62BB3552276743C5C57CB /* Parrot.app */;
@@ -175,6 +191,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					5E194284719FA718D210B51F = {
+						DevelopmentTeam = 5D8KQ6NJGF;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -191,6 +208,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				701AD7E50560638E5301D170 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				A0B08B113371A84B6C9045E9 /* XCLocalSwiftPackageReference "Vendor/CSpeexDSP" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -206,17 +224,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BB20000000000000000000B2 /* AnalysisProvider.swift in Sources */,
+				D41FEC78937277879CA64EBB /* AnalysisProvider.swift in Sources */,
 				E4E9A631759BFBCB14131A34 /* AudioCaptureManager.swift in Sources */,
-				BB30000000000000000000B3 /* CallAnalysisEngine.swift in Sources */,
+				1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */,
 				C8002A3F47345F064BB3BA98 /* ContentView.swift in Sources */,
-				BB40000000000000000000B4 /* CopilotPanelView.swift in Sources */,
-				BB10000000000000000000B1 /* Insight.swift in Sources */,
-				BB50000000000000000000B5 /* KnowledgeBase.swift in Sources */,
-				BB60000000000000000000B6 /* KnowledgeBaseService.swift in Sources */,
+				8B131BE512D811DC7F495E0A /* CopilotPanelView.swift in Sources */,
 				FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */,
 				C0558FD92CC63B08D0434047 /* DiarizationEngine.swift in Sources */,
+				670465176804DAB6090CD626 /* EchoCanceller.swift in Sources */,
 				85CA1373AFA3114E41376176 /* ExportService.swift in Sources */,
+				F0B27F4AD985CBF71B7A7C1F /* Insight.swift in Sources */,
+				28B471FA2550C26972D86C1E /* KnowledgeBase.swift in Sources */,
+				F8CA7DA639E64F49A7FC3601 /* KnowledgeBaseService.swift in Sources */,
 				C8804B03958954B9D8BEA6FA /* LiveRecordingView.swift in Sources */,
 				81E0F3E53AA25CB928F901B4 /* Meeting.swift in Sources */,
 				D80161EBEE86C38E11105708 /* MeetingDetailView.swift in Sources */,
@@ -361,6 +380,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5D8KQ6NJGF;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Parrot/Info.plist;
@@ -385,6 +405,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5D8KQ6NJGF;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Parrot/Info.plist;
@@ -424,6 +445,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		A0B08B113371A84B6C9045E9 /* XCLocalSwiftPackageReference "Vendor/CSpeexDSP" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/CSpeexDSP;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		701AD7E50560638E5301D170 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -440,6 +468,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 701AD7E50560638E5301D170 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		4DB9F1B471B3029789F107CC /* CSpeexDSP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CSpeexDSP;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

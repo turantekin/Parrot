@@ -5,7 +5,8 @@ struct MeetingDetailView: View {
     let meeting: Meeting
     @State private var editingTitle = false
     @State private var titleText = ""
-    @State private var audioPlayer: AVAudioPlayer?
+    @State private var audioPlayer: AVAudioPlayer?      // system audio ("Them")
+    @State private var micPlayer: AVAudioPlayer?        // mic audio ("Me")
     @State private var isPlaying = false
     @State private var playbackTime: TimeInterval = 0
     @State private var playbackSpeed: Float = 1.0
@@ -13,6 +14,8 @@ struct MeetingDetailView: View {
     @State private var activeSegmentID: UUID?
     @State private var showInsights = true
     @State private var showSummary = true
+    @State private var showCoaching = true
+    @State private var themNameText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +36,12 @@ struct MeetingDetailView: View {
                 Divider()
             }
 
+            // AI coaching + follow-ups
+            if let coaching = meeting.coaching {
+                coachingSection(coaching)
+                Divider()
+            }
+
             // Copilot insights captured during the call
             if !meeting.insights.isEmpty {
                 insightsSection
@@ -49,6 +58,7 @@ struct MeetingDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             titleText = meeting.title
+            themNameText = meeting.themName ?? ""
             prepareAudioPlayer()
         }
         .onDisappear {
@@ -102,6 +112,18 @@ struct MeetingDetailView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            // Name the other party so the transcript/report read naturally.
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle")
+                    .foregroundStyle(.secondary)
+                TextField("Name the other speaker (e.g. Kara)", text: $themNameText) {
+                    meeting.themName = themNameText.trimmingCharacters(in: .whitespaces).nilIfEmpty
+                }
+                .textFieldStyle(.plain)
+                .frame(maxWidth: 240)
+            }
+            .font(.caption)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,6 +198,7 @@ struct MeetingDetailView: View {
             .frame(width: 160)
             .onChange(of: playbackSpeed) { _, newValue in
                 audioPlayer?.rate = newValue
+                micPlayer?.rate = newValue
             }
         }
         .padding(.horizontal)
@@ -216,6 +239,41 @@ struct MeetingDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 180)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Coaching & Follow-ups
+
+    private func coachingSection(_ coaching: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showCoaching.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .foregroundStyle(.pink)
+                    Text("Coaching & Follow-ups")
+                        .font(.headline)
+                    Spacer()
+                    Image(systemName: showCoaching ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showCoaching {
+                ScrollView {
+                    Text(coaching)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
             }
         }
         .padding(.horizontal)
@@ -300,7 +358,8 @@ struct MeetingDetailView: View {
                 ForEach(meeting.sortedSegments) { segment in
                     TranscriptSegmentRow(
                         segment: segment,
-                        isActive: segment.id == activeSegmentID
+                        isActive: segment.id == activeSegmentID,
+                        themName: meeting.themName
                     )
                     .onTapGesture {
                         seekTo(segment.startTime)
@@ -314,27 +373,42 @@ struct MeetingDetailView: View {
     // MARK: - Audio Playback
 
     private func prepareAudioPlayer() {
-        guard let path = meeting.systemAudioPath.nilIfEmpty,
-              FileManager.default.fileExists(atPath: path) else { return }
-
-        do {
-            audioPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+        // Two separate tracks were recorded: system audio ("Them") and the mic
+        // ("Me"). Load both so playback contains the full conversation, not just
+        // the other side.
+        if let path = meeting.systemAudioPath.nilIfEmpty,
+           FileManager.default.fileExists(atPath: path) {
+            audioPlayer = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
             audioPlayer?.enableRate = true
             audioPlayer?.prepareToPlay()
-        } catch {
-            print("Failed to load audio: \(error)")
         }
+        if let micPath = meeting.micAudioPath?.nilIfEmpty,
+           FileManager.default.fileExists(atPath: micPath) {
+            micPlayer = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: micPath))
+            micPlayer?.enableRate = true
+            micPlayer?.prepareToPlay()
+        }
+    }
+
+    /// Starts both tracks at the same device-clock instant so they stay in sync.
+    private func startSynced() {
+        audioPlayer?.rate = playbackSpeed
+        micPlayer?.rate = playbackSpeed
+        let clock = audioPlayer?.deviceCurrentTime ?? micPlayer?.deviceCurrentTime ?? 0
+        let startAt = clock + 0.08
+        audioPlayer?.play(atTime: startAt)
+        micPlayer?.play(atTime: startAt)
     }
 
     private func togglePlayback() {
         if isPlaying {
             audioPlayer?.pause()
+            micPlayer?.pause()
             playbackTimer?.invalidate()
         } else {
-            audioPlayer?.rate = playbackSpeed
-            audioPlayer?.play()
+            startSynced()
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                playbackTime = audioPlayer?.currentTime ?? 0
+                playbackTime = audioPlayer?.currentTime ?? micPlayer?.currentTime ?? 0
                 updateActiveSegment()
             }
         }
@@ -343,14 +417,20 @@ struct MeetingDetailView: View {
 
     private func stopPlayback() {
         audioPlayer?.stop()
+        micPlayer?.stop()
         playbackTimer?.invalidate()
         isPlaying = false
     }
 
     private func seekTo(_ time: TimeInterval) {
-        audioPlayer?.currentTime = time
+        let wasPlaying = isPlaying
+        audioPlayer?.pause()
+        micPlayer?.pause()
+        audioPlayer?.currentTime = min(time, audioPlayer?.duration ?? time)
+        micPlayer?.currentTime = min(time, micPlayer?.duration ?? time)
         playbackTime = time
         updateActiveSegment()
+        if wasPlaying { startSynced() }
     }
 
     private func updateActiveSegment() {
@@ -387,10 +467,19 @@ struct MeetingDetailView: View {
 struct TranscriptSegmentRow: View {
     let segment: TranscriptSegment
     let isActive: Bool
+    var themName: String? = nil
 
     private static let speakerColors: [Color] = [
         .blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint
     ]
+
+    /// Resolved speaker name: "Me" stays "Me"; everyone else shows the user's
+    /// assigned name (e.g. "Kara") if set, otherwise the raw label.
+    private var displayLabel: String? {
+        guard let label = segment.speakerLabel else { return nil }
+        if label == "Me" { return "Me" }
+        return themName ?? label
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -402,7 +491,7 @@ struct TranscriptSegmentRow: View {
                 .frame(width: 40, alignment: .trailing)
 
             // Speaker label
-            if let speaker = segment.speakerLabel {
+            if let speaker = displayLabel {
                 Text(speaker)
                     .font(.caption)
                     .fontWeight(.medium)

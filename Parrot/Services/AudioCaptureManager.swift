@@ -1,5 +1,6 @@
 import AVFoundation
 import ScreenCaptureKit
+import CoreAudio
 import Combine
 
 /// Captures system audio via ScreenCaptureKit and microphone via AVAudioEngine.
@@ -8,15 +9,49 @@ import Combine
 final class AudioCaptureManager: NSObject {
     private var stream: SCStream?
     private var audioEngine: AVAudioEngine?
-    private var systemAudioWriter: AVAssetWriter?
-    private var systemAudioInput: AVAssetWriterInput?
-    private var micAudioWriter: AVAssetWriter?
-    private var micAudioInput: AVAssetWriterInput?
+    // Write uncompressed PCM (.caf) via AVAudioFile rather than AAC/.m4a via
+    // AVAssetWriter: on recent macOS the AAC encoder fails to initialize
+    // (AudioCodecInitialize failed / -12651), producing silent 0-byte files.
+    // PCM has no codec to fail. Each file is written only from its own serial
+    // queue, off the audio render thread.
+    private var systemAudioFile: AVAudioFile?
+    private var micAudioFile: AVAudioFile?
+    private let systemWriteQueue = DispatchQueue(label: "com.uygar.parrot.audio.system")
+    private let micWriteQueue = DispatchQueue(label: "com.uygar.parrot.audio.mic")
+    /// Acoustic echo canceller, created per recording when enabled. Removes the
+    /// speaker bleed from the mic using the system audio as the reference. nil =
+    /// disabled (mic passes through untouched).
+    private var echoCanceller: EchoCanceller?
 
     private(set) var isCapturing = false
     private(set) var systemAudioURL: URL?
     private(set) var micAudioURL: URL?
     private(set) var audioLevel: Float = 0
+    /// Live mic input level (separate from system audio) so the UI can show
+    /// whether the user's own voice is actually being picked up.
+    private(set) var micLevel: Float = 0
+    /// Whether the mic stream is actually capturing (false = system audio only).
+    private(set) var micActive = false
+    private(set) var inputDeviceName = ""
+    private(set) var outputDeviceName = ""
+    /// Capture-start time, or the last moment the mic carried real signal. While the
+    /// mic has never been heard it stays at capture start, so it doubles as "how long
+    /// the mic has been silent since recording began".
+    private(set) var lastMicSignalAt = Date.distantPast
+
+    /// True once the mic has produced any real signal this recording. A user who is
+    /// merely listening (normal while the other side talks) just hasn't spoken yet —
+    /// that is not a dead mic — so once we've heard signal we never warn.
+    private(set) var micEverHadSignal = false
+
+    /// True only when the mic has been on for a while but has never produced any
+    /// signal — a genuinely dead, muted, or misrouted mic. We key off "never heard"
+    /// rather than recent silence, because in a call the user is routinely silent for
+    /// far longer than a few seconds while the other side is speaking.
+    var micSeemsDead: Bool {
+        isCapturing && micActive && !micEverHadSignal
+            && Date().timeIntervalSince(lastMicSignalAt) > 15
+    }
 
     /// Called with PCM audio buffers suitable for WhisperKit, tagged with which
     /// stream they came from (mic = the user, system = everyone else).
@@ -32,11 +67,33 @@ final class AudioCaptureManager: NSObject {
         let timestamp = ISO8601DateFormatter().string(from: .now)
             .replacingOccurrences(of: ":", with: "-")
 
-        systemAudioURL = storageDir.appendingPathComponent("system_\(timestamp).m4a")
-        micAudioURL = storageDir.appendingPathComponent("mic_\(timestamp).m4a")
+        systemAudioURL = storageDir.appendingPathComponent("system_\(timestamp).caf")
+        micAudioURL = storageDir.appendingPathComponent("mic_\(timestamp).caf")
+
+        inputDeviceName = Self.defaultDeviceName(input: true)
+        outputDeviceName = Self.defaultDeviceName(input: false)
+        NSLog("Parrot: starting capture — input: \(inputDeviceName), output: \(outputDeviceName)")
+
+        // Echo cancellation on by default (defeats speaker bleed without headphones).
+        let aecEnabled = UserDefaults.standard.object(forKey: "echoCancellationEnabled") as? Bool ?? true
+        echoCanceller = aecEnabled ? EchoCanceller() : nil
 
         try await startSystemAudioCapture()
-        try startMicCapture()
+
+        // The microphone is optional. System audio ("Them") is the core capture;
+        // a missing or denied mic must NOT abort the whole recording. If mic setup
+        // fails we just don't get the user's own voice ("Me") and carry on.
+        do {
+            try startMicCapture()
+            micActive = true
+        } catch {
+            micActive = false
+            micAudioURL = nil
+            NSLog("Parrot: microphone unavailable, recording system audio only — \(error.localizedDescription)")
+        }
+
+        lastMicSignalAt = Date()  // capture start; the "dead mic" warning waits on this
+        micEverHadSignal = false
         isCapturing = true
     }
 
@@ -44,6 +101,11 @@ final class AudioCaptureManager: NSObject {
 
     func stopCapture() async {
         isCapturing = false
+        micActive = false
+        micEverHadSignal = false
+        audioLevel = 0
+        micLevel = 0
+        echoCanceller = nil
 
         // Stop system audio stream
         if let stream {
@@ -56,11 +118,17 @@ final class AudioCaptureManager: NSObject {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine = nil
 
-        // Finalize writers
-        await finalizeWriter(systemAudioWriter, input: systemAudioInput)
-        await finalizeWriter(micAudioWriter, input: micAudioInput)
-        systemAudioWriter = nil
-        micAudioWriter = nil
+        // Flush queued writes, then close the files. AVAudioFile finalizes the
+        // .caf header when it deallocates; the sync barrier guarantees every
+        // pending write has landed first.
+        systemWriteQueue.sync { systemAudioFile = nil }
+        micWriteQueue.sync { micAudioFile = nil }
+
+        if let url = systemAudioURL {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size = (attrs?[.size] as? Int) ?? 0
+            NSLog("Parrot: system audio file finalized — \(size) bytes")
+        }
     }
 
     // MARK: - System Audio (ScreenCaptureKit)
@@ -92,16 +160,8 @@ final class AudioCaptureManager: NSObject {
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
-        // Set up audio file writer
-        if let url = systemAudioURL {
-            systemAudioWriter = try createAudioWriter(url: url)
-            systemAudioInput = createAudioWriterInput()
-            if let input = systemAudioInput {
-                systemAudioWriter?.add(input)
-            }
-            systemAudioWriter?.startWriting()
-            systemAudioWriter?.startSession(atSourceTime: .zero)
-        }
+        // The system audio file is created lazily from the first buffer's format
+        // (see the SCStreamOutput handler), so it always matches what we write.
 
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInteractive))
@@ -114,18 +174,23 @@ final class AudioCaptureManager: NSObject {
     private func startMicCapture() throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+
+        // NOTE: we previously enabled setVoiceProcessingEnabled(true) for acoustic
+        // echo cancellation, but on this hardware it cancelled ALL mic input (the
+        // user's own voice was lost — every recording came back with only "Them").
+        // Reverted. Echo (mic picking up the speakers) is avoided by using
+        // headphones; a safer AEC approach can be revisited and tested later.
+
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Set up mic audio file writer
-        if let url = micAudioURL {
-            micAudioWriter = try createAudioWriter(url: url)
-            micAudioInput = createAudioWriterInput()
-            if let input = micAudioInput {
-                micAudioWriter?.add(input)
-            }
-            micAudioWriter?.startWriting()
-            micAudioWriter?.startSession(atSourceTime: .zero)
+        // When mic access is denied/unavailable the input format collapses to 0
+        // channels; installing a tap on that would crash. Bail out cleanly so the
+        // caller can continue with system audio only.
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            throw CaptureError.noMicrophone
         }
+
+        // The mic file is created lazily from the converted (16 kHz mono) format.
 
         // Convert mic audio to our target format for WhisperKit
         let targetFormat = AVAudioFormat(
@@ -137,13 +202,8 @@ final class AudioCaptureManager: NSObject {
 
         let converter = AVAudioConverter(from: inputFormat, to: targetFormat)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, time in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             guard let self, self.isCapturing else { return }
-
-            // Write raw mic audio to file
-            if let sampleBuffer = buffer.toCMSampleBuffer(presentationTime: time) {
-                self.micAudioInput?.append(sampleBuffer)
-            }
 
             // Convert to target format
             guard let converter else { return }
@@ -162,11 +222,22 @@ final class AudioCaptureManager: NSObject {
             }
 
             if error == nil {
-                // Update audio level for UI visualization
-                self.updateAudioLevel(buffer: convertedBuffer)
+                // Echo-cancel the mic using the system audio as reference. With AEC
+                // off, this returns the mic unchanged. With it on, it returns cleaned
+                // 10 ms frames (possibly empty until a frame fills) — fail-safe.
+                let micFloats = Self.floats(from: convertedBuffer)
+                let cleaned = self.echoCanceller?.process(mic: micFloats) ?? micFloats
+                guard !cleaned.isEmpty,
+                      let cleanedBuffer = Self.makeBuffer(cleaned, format: targetFormat) else { return }
+
+                // Persist the user's voice ("Me") as 16 kHz mono PCM.
+                self.appendAudio(cleanedBuffer, to: .mic)
+
+                // Update the mic level so the UI can show the user's voice landing.
+                self.updateAudioLevel(buffer: cleanedBuffer, isMic: true)
 
                 // Send the user's speech to transcription as "Me"
-                self.onAudioBuffer?(convertedBuffer, .me)
+                self.onAudioBuffer?(cleanedBuffer, .me)
             }
         }
 
@@ -175,33 +246,43 @@ final class AudioCaptureManager: NSObject {
         self.audioEngine = engine
     }
 
-    // MARK: - Audio Writer Helpers
+    // MARK: - Audio File Writing
 
-    private func createAudioWriter(url: URL) throws -> AVAssetWriter {
-        // Remove existing file if any
-        try? FileManager.default.removeItem(at: url)
-        return try AVAssetWriter(outputURL: url, fileType: .m4a)
+    private enum AudioStream { case system, mic }
+
+    /// Appends a PCM buffer to a stream's .caf file off the capture/render thread.
+    /// The file is created lazily from the first buffer's own format, so writes can
+    /// never fail on a format mismatch and there is no codec to initialize. The
+    /// buffer is deep-copied because the audio system reuses it after we return.
+    private func appendAudio(_ buffer: AVAudioPCMBuffer, to stream: AudioStream) {
+        guard let copy = buffer.deepCopy() else { return }
+        let queue = stream == .system ? systemWriteQueue : micWriteQueue
+        let url = stream == .system ? systemAudioURL : micAudioURL
+        guard let url else { return }
+
+        queue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let file: AVAudioFile
+                if stream == .system {
+                    if self.systemAudioFile == nil {
+                        self.systemAudioFile = try AVAudioFile(forWriting: url, settings: copy.format.settings)
+                    }
+                    file = self.systemAudioFile!
+                } else {
+                    if self.micAudioFile == nil {
+                        self.micAudioFile = try AVAudioFile(forWriting: url, settings: copy.format.settings)
+                    }
+                    file = self.micAudioFile!
+                }
+                try file.write(from: copy)
+            } catch {
+                NSLog("Parrot: \(stream) audio write failed — \(error.localizedDescription)")
+            }
+        }
     }
 
-    private func createAudioWriterInput() -> AVAssetWriterInput {
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: channels,
-            AVEncoderBitRateKey: 128000,
-        ]
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
-        input.expectsMediaDataInRealTime = true
-        return input
-    }
-
-    private func finalizeWriter(_ writer: AVAssetWriter?, input: AVAssetWriterInput?) async {
-        guard let writer, writer.status == .writing else { return }
-        input?.markAsFinished()
-        await writer.finishWriting()
-    }
-
-    private func updateAudioLevel(buffer: AVAudioPCMBuffer) {
+    private func updateAudioLevel(buffer: AVAudioPCMBuffer, isMic: Bool = false) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frames = Int(buffer.frameLength)
         var sum: Float = 0
@@ -210,8 +291,63 @@ final class AudioCaptureManager: NSObject {
         }
         let avg = sum / Float(max(frames, 1))
         DispatchQueue.main.async {
-            self.audioLevel = avg
+            if isMic {
+                self.micLevel = avg
+                // Speech sits well above room noise; treat this as "mic is alive".
+                if avg > 0.004 {
+                    self.lastMicSignalAt = Date()
+                    self.micEverHadSignal = true
+                }
+            } else {
+                self.audioLevel = avg
+            }
         }
+    }
+
+    /// Name of the current system default input or output device (CoreAudio).
+    static func defaultDeviceName(input: Bool) -> String {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: input ? kAudioHardwarePropertyDefaultInputDevice
+                             : kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID) == noErr,
+              deviceID != 0 else { return "Unknown" }
+
+        var name = "" as CFString
+        var nameSize = UInt32(MemoryLayout<CFString>.size)
+        var nameAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(deviceID, &nameAddr, 0, nil, &nameSize, &name) == noErr else {
+            return "Unknown"
+        }
+        return name as String
+    }
+
+    // MARK: - Buffer helpers
+
+    /// Mono float samples from a PCM buffer.
+    private static func floats(from buffer: AVAudioPCMBuffer) -> [Float] {
+        guard let ch = buffer.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
+    }
+
+    /// Mono PCM buffer from float samples in the given format.
+    private static func makeBuffer(_ samples: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        guard !samples.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let ch = buffer.floatChannelData else { return nil }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in
+            ch[0].update(from: src.baseAddress!, count: samples.count)
+        }
+        return buffer
     }
 
     // MARK: - Storage
@@ -230,14 +366,18 @@ extension AudioCaptureManager: SCStreamOutput {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, isCapturing else { return }
 
-        // Write to file
-        if systemAudioInput?.isReadyForMoreMediaData == true {
-            systemAudioInput?.append(sampleBuffer)
-        }
-
         // Convert CMSampleBuffer to AVAudioPCMBuffer for WhisperKit
         guard let pcmBuffer = sampleBuffer.toAVAudioPCMBuffer(sampleRate: sampleRate, channels: channels) else {
             return
+        }
+
+        // Persist everyone else's voice ("Them") as PCM.
+        appendAudio(pcmBuffer, to: .system)
+
+        // Feed the same audio to the echo canceller as the far-end reference, so it
+        // can subtract this from the mic. Only when it's the expected 16 kHz mono.
+        if pcmBuffer.format.sampleRate == sampleRate, pcmBuffer.format.channelCount == channels {
+            echoCanceller?.pushReference(Self.floats(from: pcmBuffer))
         }
 
         // Update audio level
@@ -302,6 +442,26 @@ extension CMSampleBuffer {
 }
 
 extension AVAudioPCMBuffer {
+    /// Independent copy of the samples. Tap/conversion buffers are owned by the
+    /// audio system and reused on the next callback, so we must copy before
+    /// handing the data to an async writer.
+    func deepCopy() -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else { return nil }
+        copy.frameLength = frameLength
+        let frames = Int(frameLength)
+        let channelCount = Int(format.channelCount)
+        if let src = floatChannelData, let dst = copy.floatChannelData {
+            for ch in 0..<channelCount {
+                memcpy(dst[ch], src[ch], frames * MemoryLayout<Float>.size)
+            }
+        } else if let src = int16ChannelData, let dst = copy.int16ChannelData {
+            for ch in 0..<channelCount {
+                memcpy(dst[ch], src[ch], frames * MemoryLayout<Int16>.size)
+            }
+        }
+        return copy
+    }
+
     func toCMSampleBuffer(presentationTime: AVAudioTime) -> CMSampleBuffer? {
         let format = self.format
         guard let formatDesc = format.formatDescription as CMFormatDescription? else { return nil }

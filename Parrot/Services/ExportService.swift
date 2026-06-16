@@ -24,6 +24,16 @@ enum ExportService {
             """
         }
 
+        if let coaching = meeting.coaching {
+            output += """
+
+            === Coaching & Follow-ups ===
+
+            \(coaching)
+
+            """
+        }
+
         if !meeting.insights.isEmpty {
             output += "\n=== Copilot Insights ===\n\n"
             for insight in meeting.sortedInsights {
@@ -41,7 +51,7 @@ enum ExportService {
 
         output += "\n=== Transcript ===\n\n"
         for segment in meeting.sortedSegments {
-            let speaker = segment.speakerLabel ?? "Unknown"
+            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
             output += "[\(segment.formattedTimestamp)] \(speaker): \(segment.text)\n"
         }
 
@@ -55,7 +65,7 @@ enum ExportService {
         let segments = meeting.sortedSegments
 
         for (index, segment) in segments.enumerated() {
-            let speaker = segment.speakerLabel.map { "[\($0)] " } ?? ""
+            let speaker = segment.speakerLabel != nil ? "[\(meeting.displayName(forSpeaker: segment.speakerLabel))] " : ""
             output += """
             \(index + 1)
             \(srtTimestamp(segment.startTime)) --> \(srtTimestamp(segment.endTime))

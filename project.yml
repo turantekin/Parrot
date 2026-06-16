@@ -10,6 +10,9 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "0.9.0"
+  # Vendored SpeexDSP for acoustic echo cancellation (mic + system-audio reference).
+  CSpeexDSP:
+    path: Vendor/CSpeexDSP
 
 targets:
   Parrot:
@@ -28,6 +31,12 @@ targets:
         INFOPLIST_FILE: Parrot/Info.plist
         CODE_SIGN_ENTITLEMENTS: Parrot/Parrot.entitlements
         CODE_SIGN_STYLE: Automatic
+        # Sign with a stable identity instead of ad-hoc. macOS keys Screen
+        # Recording / mic permission to the app's signing identity; ad-hoc signing
+        # changes the code hash on every build, so the OS forgets the grant and
+        # re-prompts each time. A real team keeps the identity constant, so
+        # permission granted once persists across rebuilds (and for real users).
+        DEVELOPMENT_TEAM: "5D8KQ6NJGF"
         SWIFT_VERSION: "5.10"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         GENERATE_INFOPLIST_FILE: false
@@ -35,7 +44,31 @@ targets:
     dependencies:
       - package: WhisperKit
         product: WhisperKit
+      - package: CSpeexDSP
+        product: CSpeexDSP
     entitlements:
       path: Parrot/Parrot.entitlements
+      properties:
+        # Sandbox + the microphone entitlements. Without audio-input (and, on
+        # recent macOS, microphone) a sandboxed app cannot access the mic AT ALL
+        # and never appears in Privacy → Microphone. These MUST live here as
+        # properties — xcodegen overwrites Parrot.entitlements on every generate,
+        # so an external file would be wiped.
+        com.apple.security.app-sandbox: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.device.microphone: true
+        # Outbound HTTPS for the Claude copilot API.
+        com.apple.security.network.client: true
+        # User-picked files (knowledge base imports, audio import) + Downloads.
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.downloads.read-write: true
     info:
       path: Parrot/Info.plist
+      properties:
+        # REQUIRED for mic access: without this string macOS crashes the app on
+        # first mic use and never shows it in Privacy → Microphone. Must live here
+        # because xcodegen regenerates Info.plist on every generate.
+        NSMicrophoneUsageDescription: "Parrot records your microphone so it can transcribe your side of the meeting on-device."
+        # Shown when macOS asks for Screen Recording, which Parrot uses to capture
+        # system audio via ScreenCaptureKit. Also lives here so xcodegen keeps it.
+        NSScreenCaptureUsageDescription: "Parrot captures system audio from your meetings via screen recording. Only audio is used — never screen content."

@@ -30,6 +30,9 @@ protocol AnalysisProvider {
     var isConfigured: Bool { get }
     func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft]
     func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String
+    /// Post-call coaching + follow-ups: talk balance, what went well / to improve,
+    /// objections handled vs missed, and commitments with any timing.
+    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String) async throws -> String
 }
 
 enum AnalysisError: LocalizedError {
@@ -63,12 +66,16 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     Produce only NEW, high-value insights about the most recent part of the conversation:
     - suggestion: Them asked something or raised a topic — draft a short, concrete \
     answer Me can say right now.
+    - question: Them asked a direct question that Me has NOT answered yet — surface \
+    it briefly so Me doesn't lose track of it. (Use this for open/unanswered \
+    questions; use suggestion when you can actually draft the answer.)
     - blocker: Them raised an objection or obstacle (price, timing, missing decision \
     maker, competitor) that Me has not resolved yet.
-    - action_item: Me committed to do something after the call.
-    - feedback: brief coaching on how the call is going (only when notable — e.g. Me \
-    has been talking far more than Them for a while, or Them raised something Me \
-    hasn't addressed).
+    - action_item: Me committed to do something after the call. If a time or date \
+    was mentioned ("by Friday", "next week"), include it in the detail.
+    - feedback: brief read on how the call is going — tone/sentiment shift (Them \
+    sounds hesitant, frustrated, enthusiastic), talk balance (Me dominating), or a \
+    topic Them raised that Me hasn't addressed. Only when notable.
 
     Grounding rules: when reference material from the user's knowledge base is provided \
     and covers a question, base the suggestion on it and set "source" to that document's \
@@ -126,7 +133,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let itemSchema: [String: Any] = [
             "type": "object",
             "properties": [
-                "kind": ["type": "string", "enum": ["suggestion", "blocker", "action_item", "feedback"]],
+                "kind": ["type": "string", "enum": ["suggestion", "question", "blocker", "action_item", "feedback"]],
                 "title": ["type": "string"],
                 "detail": ["type": "string"],
                 "source": ["type": "string"],
@@ -186,6 +193,55 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             "model": Self.model,
             "max_tokens": 1500,
             "system": Self.summarySystemPrompt,
+            "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
+        ]
+
+        let data = try await performRequest(body: body, apiKey: apiKey)
+        let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
+        guard let text = response.content.first(where: { $0.type == "text" })?.text else {
+            throw AnalysisError.badResponse("Empty model response")
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Post-Call Coaching & Follow-ups
+
+    private static let coachingSystemPrompt = """
+    You are a sales/meeting coach reviewing a call transcript. "Me" is the person \
+    you coach; "Them" is everyone else. Transcription is automatic, so expect minor \
+    errors. Be specific, direct, and useful — not generic praise. Write plain text \
+    with simple "-" bullets, no markdown headers. Use the same language as the call.
+
+    Output exactly these sections, in order:
+    Call snapshot: one line — overall how it went, plus the talk balance you're told.
+    What went well: 1-3 concrete bullets quoting or referencing real moments.
+    What to improve: 1-3 concrete, actionable bullets (e.g. "Them asked about pricing \
+    twice and Me deflected both times — answer it directly next time").
+    Objections & questions: list any objection or direct question Them raised and \
+    whether Me actually addressed it (Handled / Missed).
+    Commitments & follow-ups: every concrete next step either side committed to, with \
+    any date/time mentioned. If none, write "- None".
+
+    Keep the whole thing tight — a busy person should read it in 30 seconds.
+    """
+
+    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String) async throws -> String {
+        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
+            throw AnalysisError.missingAPIKey
+        }
+
+        var sections: [String] = []
+        if !instructions.isEmpty {
+            sections.append("The user's standing goals/instructions:\n\(instructions)")
+        }
+        sections.append("Talk balance: Me spoke roughly \(talkPercentMe)% of the words, "
+            + "Them \(100 - talkPercentMe)%.")
+        sections.append("Full call transcript:\n\(transcript)")
+
+        let body: [String: Any] = [
+            "model": Self.model,
+            "max_tokens": 1200,
+            "system": Self.coachingSystemPrompt,
             "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
         ]
 

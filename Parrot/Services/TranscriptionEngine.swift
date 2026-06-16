@@ -92,31 +92,69 @@ final class TranscriptionEngine {
     /// Start the continuous transcription loop
     func startTranscribing(meetingStartTime: Date) {
         guard isReady else { return }
+        // Never run two loops: cancel any prior task before starting a new one.
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
         isTranscribing = true
+
+        // Resolve the user's transcription language ("auto"/nil = auto-detect).
+        let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        let language = (setting == nil || setting == "auto") ? nil : setting
+        var decodeOptions = DecodingOptions(
+            task: .transcribe,
+            language: language,
+            detectLanguage: language == nil
+        )
+
+        // Custom vocabulary: prime Whisper with the user's names/terms so it stops
+        // mangling proper nouns (e.g. "LaunchEase" → "Lawn Cheese"). Fed as an
+        // initial prompt, the standard Whisper mechanism for biasing spelling.
+        let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer {
+            let terms = vocab
+                .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if !terms.isEmpty {
+                let promptText = "Glossary: " + terms.joined(separator: ", ") + "."
+                let tokens = tokenizer.encode(text: " " + promptText)
+                    .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                decodeOptions.promptTokens = tokens
+                decodeOptions.usePrefillPrompt = true
+            }
+        }
 
         transcriptionTask = Task { [weak self] in
             guard let self else { return }
 
             // Process audio in chunks (~2 seconds at 16kHz) per stream
             let chunkSize = 32000
-            var processedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
+            // Total samples consumed (and freed) per stream. The audio buffers only
+            // ever hold not-yet-transcribed samples, so memory stays flat over a long
+            // call; these running totals keep segment timestamps absolute regardless.
+            var consumedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
 
             while !Task.isCancelled && self.isTranscribing {
                 try? await Task.sleep(for: .milliseconds(500))
 
                 for source in AudioSource.allCases {
-                    let processed = processedSamples[source] ?? 0
-                    let available = self.bufferLock.withLock {
-                        self.audioBuffers[source]?.count ?? 0
-                    }
-                    guard available - processed >= chunkSize else { continue }
-
+                    // Pull everything buffered for this stream and clear it in one
+                    // locked step — freeing the consumed audio (so it doesn't pile up
+                    // for the whole call) and avoiding any index race with a reset.
                     let chunk: [Float] = self.bufferLock.withLock {
-                        Array((self.audioBuffers[source] ?? [])[processed..<available])
+                        guard let buffered = self.audioBuffers[source],
+                              buffered.count >= chunkSize else { return [] }
+                        self.audioBuffers[source] = []
+                        return buffered
                     }
-                    let startTime = Double(processed) / 16000.0
-                    let endTime = Double(available) / 16000.0
-                    processedSamples[source] = available
+                    guard !chunk.isEmpty else { continue }
+
+                    let startSample = consumedSamples[source] ?? 0
+                    let endSample = startSample + chunk.count
+                    consumedSamples[source] = endSample
+                    let startTime = Double(startSample) / 16000.0
+                    let endTime = Double(endSample) / 16000.0
 
                     // Skip near-silent chunks — saves Whisper passes (the mic is
                     // mostly silent while the user listens, and vice versa) and
@@ -126,7 +164,7 @@ final class TranscriptionEngine {
 
                     do {
                         guard let whisperKit = self.whisperKit else { continue }
-                        let result = try await whisperKit.transcribe(audioArray: chunk)
+                        let result = try await whisperKit.transcribe(audioArray: chunk, decodeOptions: decodeOptions)
 
                         for transcription in result {
                             let text = transcription.text.trimmingCharacters(in: .whitespacesAndNewlines)

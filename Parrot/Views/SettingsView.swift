@@ -8,6 +8,9 @@ struct SettingsView: View {
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("copilotInstructions") private var copilotInstructions = ""
     @AppStorage("copilotGeneralFallback") private var copilotGeneralFallback = true
+    @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
+    @AppStorage("customVocabulary") private var customVocabulary = ""
+    @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @State private var apiKey = APIKeyStore.load() ?? ""
     @State private var keySaved = false
     @State private var showFileImporter = false
@@ -63,6 +66,39 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("Transcription Language") {
+                Picker("Language", selection: $transcriptionLanguage) {
+                    Text("Auto-detect").tag("auto")
+                    Text("English").tag("en")
+                    Text("Turkish").tag("tr")
+                    Text("Spanish").tag("es")
+                    Text("German").tag("de")
+                    Text("French").tag("fr")
+                    Text("Italian").tag("it")
+                    Text("Portuguese").tag("pt")
+                    Text("Dutch").tag("nl")
+                    Text("Russian").tag("ru")
+                    Text("Arabic").tag("ar")
+                    Text("Chinese").tag("zh")
+                    Text("Japanese").tag("ja")
+                    Text("Korean").tag("ko")
+                    Text("Hindi").tag("hi")
+                }
+                Text("Applies to the next recording. Auto-detect works well for most calls; pick a language if it keeps guessing wrong.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Custom Vocabulary") {
+                TextEditor(text: $customVocabulary)
+                    .frame(height: 64)
+                    .font(.callout)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.2)))
+                Text("Names, products, or jargon Whisper keeps mis-hearing — comma or line separated (e.g. LaunchEase, Shopify, Uygar). Primes the next recording so it spells them right.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding()
     }
@@ -100,6 +136,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
 
                 Text("Microphone uses your default input device.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Echo Cancellation") {
+                Toggle("Cancel speaker echo from the mic", isOn: $echoCancellation)
+                Text("When you're on speakers (no headphones), your mic also picks up the other person. This subtracts that echo so only your voice is recorded as \"Me\". Turn off if you always use headphones.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

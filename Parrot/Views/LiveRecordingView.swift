@@ -20,6 +20,8 @@ struct LiveRecordingView: View {
                 .frame(height: 40)
                 .padding(.horizontal)
 
+            deviceBar
+
             Divider()
 
             // Live transcript + copilot
@@ -90,6 +92,44 @@ struct LiveRecordingView: View {
             .buttonStyle(.plain)
         }
         .padding()
+    }
+
+    // MARK: - Device Bar
+
+    /// Shows which input/output devices are in use and a live mic level, so the
+    /// user can see whether their own voice is actually being picked up.
+    private var deviceBar: some View {
+        let cap = recordingManager.audioCaptureManager
+        return HStack(spacing: 12) {
+            Image(systemName: cap.micActive ? "mic.fill" : "mic.slash.fill")
+                .foregroundStyle(cap.micActive ? .blue : .orange)
+            Text(cap.inputDeviceName.isEmpty ? "No input" : cap.inputDeviceName)
+                .font(.caption)
+                .lineLimit(1)
+            MicLevelView(level: cap.micLevel)
+            if !cap.micActive || cap.micSeemsDead {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                } label: {
+                    Label("not hearing you — enable mic", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("Open Microphone privacy settings and enable Parrot")
+            }
+
+            Spacer()
+
+            Image(systemName: "speaker.wave.2.fill")
+                .foregroundStyle(.secondary)
+            Text(cap.outputDeviceName.isEmpty ? "Output" : cap.outputDeviceName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 5)
     }
 
     // MARK: - Transcript Area
@@ -197,6 +237,25 @@ struct LiveSegmentRow: View {
                 .textSelection(.enabled)
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+// MARK: - Mic Level Meter
+
+struct MicLevelView: View {
+    let level: Float
+    private let bars = 10
+
+    var body: some View {
+        let active = Int(min(max(level * 25, 0), 1) * Float(bars))
+        return HStack(spacing: 2) {
+            ForEach(0..<bars, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(i < active ? Color.blue : Color.secondary.opacity(0.25))
+                    .frame(width: 3, height: 12)
+            }
+        }
+        .animation(.linear(duration: 0.08), value: level)
     }
 }
 

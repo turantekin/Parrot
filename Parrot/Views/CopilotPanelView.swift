@@ -40,7 +40,7 @@ struct CopilotPanelView: View {
         func matches(_ insight: Insight) -> Bool {
             switch self {
             case .all: true
-            case .suggestions: insight.kind == .suggestion || insight.kind == .feedback
+            case .suggestions: insight.kind == .suggestion || insight.kind == .feedback || insight.kind == .question
             case .blockers: insight.kind == .blocker
             case .actions: insight.kind == .actionItem
             }
@@ -529,6 +529,7 @@ extension Insight.Kind {
     var label: String {
         switch self {
         case .suggestion: "Suggested answer"
+        case .question: "Open question"
         case .blocker: "Blocker"
         case .actionItem: "Action item"
         case .feedback: "Feedback"
@@ -538,6 +539,7 @@ extension Insight.Kind {
     var icon: String {
         switch self {
         case .suggestion: "lightbulb.fill"
+        case .question: "questionmark.circle.fill"
         case .blocker: "exclamationmark.triangle.fill"
         case .actionItem: "checkmark.circle.fill"
         case .feedback: "chart.line.uptrend.xyaxis"
@@ -547,6 +549,7 @@ extension Insight.Kind {
     var color: Color {
         switch self {
         case .suggestion: .blue
+        case .question: .teal
         case .blocker: .orange
         case .actionItem: .green
         case .feedback: .purple

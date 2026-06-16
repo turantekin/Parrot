@@ -20,6 +20,11 @@ final class Meeting {
     var errorMessage: String?
     /// AI-generated post-call report; set shortly after recording stops.
     var summary: String?
+    /// AI coaching + follow-ups report (talk ratio, what to improve, commitments).
+    var coaching: String?
+    /// User-assigned name for the other party ("Them"), e.g. "Kara". When set, it
+    /// replaces "Them"/"Speaker N" labels in the transcript and reports.
+    var themName: String?
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
@@ -60,8 +65,20 @@ final class Meeting {
         segments.sorted { $0.startTime < $1.startTime }
     }
 
+    /// Number of distinct participants by display name. Counting display names
+    /// (not raw labels) means that once the other party is named, the imperfect
+    /// diarization splitting one voice into "Speaker 1"/"Speaker 2" collapses back
+    /// to a single person — so a 1-on-1 reads as 2, not 3.
     var speakerCount: Int {
-        Set(segments.compactMap(\.speakerLabel)).count
+        Set(segments.map { displayName(forSpeaker: $0.speakerLabel) }).count
+    }
+
+    /// Human-facing speaker name: "Me" stays "Me"; everyone else becomes the
+    /// user-assigned `themName` (e.g. "Kara") if set, otherwise the raw label.
+    func displayName(forSpeaker label: String?) -> String {
+        guard let label, !label.isEmpty else { return themName ?? "Them" }
+        if label == "Me" { return "Me" }
+        return themName ?? label
     }
 
     var formattedDuration: String {
