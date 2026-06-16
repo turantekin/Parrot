@@ -52,9 +52,9 @@ final class RecordingManager {
         meeting.systemAudioPath = audioCaptureManager.systemAudioURL?.path ?? ""
         meeting.micAudioPath = audioCaptureManager.micAudioURL?.path
 
-        // Wire audio to transcription
-        audioCaptureManager.onAudioBuffer = { [weak self] buffer in
-            self?.transcriptionEngine.appendAudio(buffer)
+        // Wire audio to transcription, tagged by stream (mic = Me, system = Them)
+        audioCaptureManager.onAudioBuffer = { [weak self] buffer, source in
+            self?.transcriptionEngine.appendAudio(buffer, source: source)
         }
 
         // Wire transcription output to storage and the live copilot
@@ -62,7 +62,11 @@ final class RecordingManager {
         transcriptionEngine.onSegment = { [weak self] result in
             Task { @MainActor in
                 self?.addSegment(result, meetingID: meetingID)
-                self?.callAnalysisEngine.ingest(text: result.text, at: result.endTime)
+                self?.callAnalysisEngine.ingest(
+                    text: result.text,
+                    at: result.endTime,
+                    source: result.source
+                )
             }
         }
 
@@ -117,6 +121,13 @@ final class RecordingManager {
             Task {
                 await self.postProcess(meeting: meetingRef)
             }
+
+            // Generate the post-call report in the background (best-effort)
+            if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
+                Task {
+                    await self.generateSummary(meeting: meetingRef)
+                }
+            }
         }
 
         isRecording = false
@@ -133,6 +144,7 @@ final class RecordingManager {
             startTime: result.startTime,
             endTime: result.endTime,
             text: result.text,
+            speakerLabel: result.source.label,
             confidence: result.confidence
         )
 
@@ -143,6 +155,31 @@ final class RecordingManager {
 
         modelContext.insert(segment)
         try? modelContext.save()
+    }
+
+    // MARK: - Post-Call Summary
+
+    private func generateSummary(meeting: Meeting) async {
+        let segments = meeting.sortedSegments
+        guard !segments.isEmpty else { return }
+
+        let transcript = segments
+            .map { "[\($0.formattedTimestamp)] \($0.speakerLabel ?? "Speaker"): \($0.text)" }
+            .joined(separator: "\n")
+        let insightTitles = meeting.sortedInsights.map { "\($0.kind.label): \($0.title)" }
+        let instructions = UserDefaults.standard.string(forKey: "copilotInstructions") ?? ""
+
+        do {
+            let summary = try await callAnalysisEngine.provider.summarize(
+                transcript: transcript,
+                insightTitles: insightTitles,
+                instructions: instructions
+            )
+            meeting.summary = summary
+            try? modelContext?.save()
+        } catch {
+            // Best-effort: the transcript and insights are already saved.
+        }
     }
 
     // MARK: - Post-Processing
@@ -159,8 +196,11 @@ final class RecordingManager {
             let audioURL = URL(fileURLWithPath: audioPath)
             let speakerSegments = try await diarizationEngine.diarize(audioURL: audioURL)
 
-            // Assign speaker labels to transcript segments by time overlap
+            // Assign speaker labels to transcript segments by time overlap.
+            // "Me" segments come from the mic stream and are already attributed;
+            // diarization only refines who's who within the system audio ("Them").
             for transcriptSegment in meeting.segments {
+                guard transcriptSegment.speakerLabel != "Me" else { continue }
                 let bestMatch = speakerSegments.max { a, b in
                     overlap(a, transcriptSegment) < overlap(b, transcriptSegment)
                 }

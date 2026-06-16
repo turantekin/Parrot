@@ -105,6 +105,14 @@ struct CopilotPanelView: View {
 
                 Spacer()
 
+                if let percent = engine.userTalkPercent {
+                    Text("You \(percent)%")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(percent > 70 ? .orange : .secondary)
+                        .help("Your share of the conversation so far")
+                }
+
                 statusBadge
             }
 

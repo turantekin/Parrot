@@ -29,6 +29,7 @@ struct AnalysisRequest {
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
     func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft]
+    func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String
 }
 
 enum AnalysisError: LocalizedError {
@@ -55,15 +56,19 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     private static let systemPrompt = """
     You are a live call copilot. You receive a rolling transcript of an ongoing call \
     recorded on the user's Mac. Transcription is automatic, so expect minor errors, \
-    missing punctuation, and chopped sentences.
+    missing punctuation, and chopped sentences. Each transcript line is prefixed with \
+    the speaker: "Me" is the user you are assisting; "Them" is everyone else on the \
+    call. Draft suggestions for Me to say.
 
     Produce only NEW, high-value insights about the most recent part of the conversation:
-    - suggestion: the other party asked something or raised a topic — draft a short, \
-    concrete answer the user can say right now.
-    - blocker: an objection or obstacle was raised (price, timing, missing decision \
-    maker, competitor) that has not been resolved yet.
-    - action_item: the user committed to do something after the call.
-    - feedback: brief coaching on how the call is going (only when notable).
+    - suggestion: Them asked something or raised a topic — draft a short, concrete \
+    answer Me can say right now.
+    - blocker: Them raised an objection or obstacle (price, timing, missing decision \
+    maker, competitor) that Me has not resolved yet.
+    - action_item: Me committed to do something after the call.
+    - feedback: brief coaching on how the call is going (only when notable — e.g. Me \
+    has been talking far more than Them for a while, or Them raised something Me \
+    hasn't addressed).
 
     Grounding rules: when reference material from the user's knowledge base is provided \
     and covers a question, base the suggestion on it and set "source" to that document's \
@@ -146,9 +151,58 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             "output_config": ["format": ["type": "json_schema", "schema": schema]],
         ]
 
+        let data = try await performRequest(body: body, apiKey: apiKey)
+        return try Self.parseInsights(from: data)
+    }
+
+    // MARK: - Post-Call Summary
+
+    private static let summarySystemPrompt = """
+    You write concise post-call reports from meeting transcripts. Transcription is \
+    automatic, so expect minor errors and missing punctuation.
+
+    Structure: a 2-3 sentence overview of what the call was about and how it ended, \
+    then "Key points:" as short bullets, then "Next steps:" as bullets if any \
+    commitments were made. Use plain text with simple "-" bullets, no markdown \
+    headers. Write in the same language as the conversation.
+    """
+
+    func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String {
+        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
+            throw AnalysisError.missingAPIKey
+        }
+
+        var sections: [String] = []
+        if !instructions.isEmpty {
+            sections.append("User's standing instructions:\n\(instructions)")
+        }
+        if !insightTitles.isEmpty {
+            sections.append("Insights captured live during the call:\n"
+                + insightTitles.map { "- \($0)" }.joined(separator: "\n"))
+        }
+        sections.append("Full call transcript:\n\(transcript)")
+
+        let body: [String: Any] = [
+            "model": Self.model,
+            "max_tokens": 1500,
+            "system": Self.summarySystemPrompt,
+            "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
+        ]
+
+        let data = try await performRequest(body: body, apiKey: apiKey)
+        let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
+        guard let text = response.content.first(where: { $0.type == "text" })?.text else {
+            throw AnalysisError.badResponse("Empty model response")
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - HTTP
+
+    private func performRequest(body: [String: Any], apiKey: String) async throws -> Data {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -162,8 +216,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         guard http.statusCode == 200 else {
             throw AnalysisError.badResponse(Self.errorMessage(from: data) ?? "HTTP \(http.statusCode)")
         }
-
-        return try Self.parseInsights(from: data)
+        return data
     }
 
     // MARK: - Response Parsing

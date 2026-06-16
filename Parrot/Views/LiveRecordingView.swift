@@ -185,6 +185,13 @@ struct LiveSegmentRow: View {
                 .monospacedDigit()
                 .frame(width: 40, alignment: .trailing)
 
+            if let speaker = segment.speakerLabel {
+                Text(speaker)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(speaker == "Me" ? Color.blue : .secondary)
+                    .frame(width: 40, alignment: .leading)
+            }
+
             Text(segment.text)
                 .font(.body)
                 .textSelection(.enabled)

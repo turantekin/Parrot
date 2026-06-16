@@ -12,10 +12,34 @@ enum ExportService {
         Duration: \(meeting.formattedDuration)
         Speakers: \(meeting.speakerCount)
 
-        ---
-
         """
 
+        if let summary = meeting.summary {
+            output += """
+
+            === Summary ===
+
+            \(summary)
+
+            """
+        }
+
+        if !meeting.insights.isEmpty {
+            output += "\n=== Copilot Insights ===\n\n"
+            for insight in meeting.sortedInsights {
+                var line = "[\(insight.formattedCallTime)] \(insight.kind.label): \(insight.title)"
+                if insight.kind == .blocker {
+                    line += insight.isHandled ? " (handled)" : " (UNRESOLVED)"
+                }
+                output += line + "\n"
+                output += "    \(insight.detail)\n"
+                if let source = insight.source {
+                    output += "    Source: \(source)\n"
+                }
+            }
+        }
+
+        output += "\n=== Transcript ===\n\n"
         for segment in meeting.sortedSegments {
             let speaker = segment.speakerLabel ?? "Unknown"
             output += "[\(segment.formattedTimestamp)] \(speaker): \(segment.text)\n"

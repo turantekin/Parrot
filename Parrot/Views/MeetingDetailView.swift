@@ -12,6 +12,7 @@ struct MeetingDetailView: View {
     @State private var playbackTimer: Timer?
     @State private var activeSegmentID: UUID?
     @State private var showInsights = true
+    @State private var showSummary = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,12 @@ struct MeetingDetailView: View {
             // Audio player bar
             if meeting.status == .done || meeting.status == .processing {
                 audioPlayerBar
+                Divider()
+            }
+
+            // AI-generated post-call report
+            if let summary = meeting.summary {
+                summarySection(summary)
                 Divider()
             }
 
@@ -169,6 +176,46 @@ struct MeetingDetailView: View {
             .frame(width: 160)
             .onChange(of: playbackSpeed) { _, newValue in
                 audioPlayer?.rate = newValue
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Summary
+
+    private func summarySection(_ summary: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSummary.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "text.badge.checkmark")
+                        .foregroundStyle(.purple)
+
+                    Text("Summary")
+                        .font(.headline)
+
+                    Spacer()
+
+                    Image(systemName: showSummary ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showSummary {
+                ScrollView {
+                    Text(summary)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 180)
             }
         }
         .padding(.horizontal)

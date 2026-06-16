@@ -25,9 +25,11 @@ final class CallAnalysisEngine {
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
 
-    private let provider: AnalysisProvider
+    let provider: AnalysisProvider
     private var callBrief = ""
-    private var segments: [(time: TimeInterval, text: String)] = []
+    private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
+    private var meCharacters = 0
+    private var themCharacters = 0
     private var lastAnalyzedCount = 0
     private var debounceTask: Task<Void, Never>?
     private var analysisTask: Task<Void, Never>?
@@ -63,6 +65,8 @@ final class CallAnalysisEngine {
         lastAnalyzedCount = 0
         rerunRequested = false
         oldestPendingSince = nil
+        meCharacters = 0
+        themCharacters = 0
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
@@ -77,20 +81,34 @@ final class CallAnalysisEngine {
         status = .off
     }
 
+    /// Share of the conversation spoken by the user, once there's enough signal.
+    var userTalkPercent: Int? {
+        let total = meCharacters + themCharacters
+        guard total >= 400 else { return nil }
+        return Int((Double(meCharacters) / Double(total) * 100).rounded())
+    }
+
     /// Feed every finalized transcript segment here. The engine decides when to analyze.
-    func ingest(text: String, at time: TimeInterval) {
+    func ingest(text: String, at time: TimeInterval, source: AudioSource) {
         guard isActive, isEnabled else { return }
         guard provider.isConfigured else {
             status = .needsAPIKey
             return
         }
 
-        segments.append((time, text))
+        segments.append((time, text, source))
+        switch source {
+        case .me: meCharacters += text.count
+        case .them: themCharacters += text.count
+        }
         if oldestPendingSince == nil {
             oldestPendingSince = .now
         }
 
-        var delay = Self.looksLikeQuestion(text) ? questionDebounce : idleDebounce
+        // Only the other side's questions get the fast track — the user's own
+        // questions don't need an instant suggested answer.
+        let isUrgent = source == .them && Self.looksLikeQuestion(text)
+        var delay = isUrgent ? questionDebounce : idleDebounce
         if let pendingSince = oldestPendingSince {
             let remainingBudget = max(0, maximumStaleness - Date.now.timeIntervalSince(pendingSince))
             delay = min(delay, remainingBudget)
@@ -137,7 +155,9 @@ final class CallAnalysisEngine {
 
         // Last ~2 minutes of context keeps calls fast and cheap.
         let window = segments.suffix(60)
-        let transcript = window.map(\.text).joined(separator: "\n")
+        let transcript = window
+            .map { "\($0.source.label): \($0.text)" }
+            .joined(separator: "\n")
         let knownTitles = insights.prefix(20).map(\.title)
         let anchorTime = window.last?.time ?? 0
 
