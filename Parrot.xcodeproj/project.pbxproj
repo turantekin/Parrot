@@ -13,9 +13,11 @@
 		1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */; };
 		28B471FA2550C26972D86C1E /* KnowledgeBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */; };
 		2D78F88F85C6B10D387F5B45 /* ParrotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200FE5120F42A3BB47933EB7 /* ParrotApp.swift */; };
+		380525791BF03BA5FAB10711 /* ReportContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72A118B3116F40C4BA68FCB /* ReportContentView.swift */; };
 		40C8A49A749AC3C631BFD47C /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */; };
 		542440B7C1D44E7FB9D30E78 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC76FF2DEA6B36A17FAC22B /* SettingsView.swift */; };
 		573D95F4E0286525EB01DEF0 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE4F80615AF9579E1AFB408 /* SidebarView.swift */; };
+		624116F74848046FA507BB4D /* SnapshotTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE74071DA1946404F9FD84C /* SnapshotTool.swift */; };
 		670465176804DAB6090CD626 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59587E1F3FF92A07FD404042 /* EchoCanceller.swift */; };
 		81E0F3E53AA25CB928F901B4 /* Meeting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DE0CCC714BADC67C8D26E20 /* Meeting.swift */; };
 		85CA1373AFA3114E41376176 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */; };
@@ -42,6 +44,7 @@
 		1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		200FE5120F42A3BB47933EB7 /* ParrotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParrotApp.swift; sourceTree = "<group>"; };
 		2AA62BB3552276743C5C57CB /* Parrot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Parrot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2CE74071DA1946404F9FD84C /* SnapshotTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTool.swift; sourceTree = "<group>"; };
 		2DE0CCC714BADC67C8D26E20 /* Meeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Meeting.swift; sourceTree = "<group>"; };
 		37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
 		59587E1F3FF92A07FD404042 /* EchoCanceller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoCanceller.swift; sourceTree = "<group>"; };
@@ -63,6 +66,7 @@
 		CF089F36B78224969884847F /* CSpeexDSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CSpeexDSP; path = Vendor/CSpeexDSP; sourceTree = SOURCE_ROOT; };
 		D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetailView.swift; sourceTree = "<group>"; };
+		F72A118B3116F40C4BA68FCB /* ReportContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportContentView.swift; sourceTree = "<group>"; };
 		F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -89,6 +93,7 @@
 				D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */,
 				5D766E175C79182A19FDCE19 /* MenuBarView.swift */,
 				D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */,
+				F72A118B3116F40C4BA68FCB /* ReportContentView.swift */,
 				8AC76FF2DEA6B36A17FAC22B /* SettingsView.swift */,
 				9BE4F80615AF9579E1AFB408 /* SidebarView.swift */,
 				AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */,
@@ -102,6 +107,7 @@
 				04253CBD6575607A1D88BFA5 /* Info.plist */,
 				A4C1CFAAA0357C52C949D353 /* Parrot.entitlements */,
 				200FE5120F42A3BB47933EB7 /* ParrotApp.swift */,
+				2CE74071DA1946404F9FD84C /* SnapshotTool.swift */,
 				2ADBF338BD8E72F5B190A918 /* Models */,
 				8C97C45FDD11ECCB2EB879B9 /* Services */,
 				028801E0AB85EB3A386418DC /* Views */,
@@ -246,8 +252,10 @@
 				40C8A49A749AC3C631BFD47C /* OnboardingView.swift in Sources */,
 				2D78F88F85C6B10D387F5B45 /* ParrotApp.swift in Sources */,
 				B0886BA3C94B908F6C3176D6 /* RecordingManager.swift in Sources */,
+				380525791BF03BA5FAB10711 /* ReportContentView.swift in Sources */,
 				542440B7C1D44E7FB9D30E78 /* SettingsView.swift in Sources */,
 				573D95F4E0286525EB01DEF0 /* SidebarView.swift in Sources */,
+				624116F74848046FA507BB4D /* SnapshotTool.swift in Sources */,
 				0DFC74B83A2CA48847F69875 /* Theme.swift in Sources */,
 				0E3D91715DEE87D51AA23C18 /* TranscriptSegment.swift in Sources */,
 				CC22CC7B3CBD14D2B4606E16 /* TranscriptionEngine.swift in Sources */,

@@ -222,27 +222,17 @@ struct MeetingDetailView: View {
 
     private var reportTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap) {
-                if let summary = meeting.summary {
-                    reportSection("Summary", icon: "text.badge.checkmark") {
-                        Text(summary)
-                            .font(Theme.Typography.body)
-                            .foregroundStyle(Theme.Colors.ink)
-                            .textSelection(.enabled)
-                    }
-                }
-                if let coaching = meeting.coaching {
-                    reportSection("Coaching & follow-ups", icon: "chart.bar.doc.horizontal") {
-                        Text(coaching)
-                            .font(Theme.Typography.body)
-                            .foregroundStyle(Theme.Colors.ink)
-                            .textSelection(.enabled)
-                    }
-                }
+            Group {
                 if meeting.summary == nil && meeting.coaching == nil {
                     emptyTabState(meeting.status == .processing
                         ? "The report is being generated…"
                         : "No report was generated for this meeting.")
+                } else {
+                    ReportContentView(
+                        summary: meeting.summary,
+                        coaching: meeting.coaching,
+                        talkPercentMe: talkPercentMe
+                    )
                 }
             }
             .padding(28)
@@ -251,17 +241,13 @@ struct MeetingDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func reportSection<Content: View>(
-        _ title: String, icon: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: icon)
-                .font(Theme.Typography.sectionLabel)
-                .foregroundStyle(Theme.Colors.label)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// Me's share of the words, for the talk-balance bar.
+    private var talkPercentMe: Int? {
+        let me = meeting.segments
+            .filter { $0.speakerLabel == "Me" }
+            .reduce(0) { $0 + $1.text.split(separator: " ").count }
+        let total = meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        return total > 0 ? Int(Double(me) / Double(total) * 100) : nil
     }
 
     // MARK: - Transcript tab

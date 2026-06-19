@@ -81,6 +81,18 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
   - Removed the old collapse toggles / `unresolvedBlockerCount`. Verified
     `swift build` (exit 0). **Phase B is feature-complete pending on-device test.**
 
+- **2026-06-19** — Report **actually** matches the mockup now + a way to verify:
+  - The report tab was dumping the AI's raw text into one `Text` (flat walls of
+    "Key points:" / "- " literals). Added `ReportContentView` — a parser that turns
+    the summary/coaching into **styled blocks**: slate section labels with icons,
+    bulleted lists (with indigo sub-bullets), inline-markdown, and a **talk-balance
+    bar** (computed from the transcript). `MeetingDetailView` now renders it.
+  - **Snapshot harness** (`SnapshotTool.swift` + `--snapshot` in `ParrotMain`):
+    renders the report offscreen via `ImageRenderer` to a PNG, so SwiftUI output can
+    be checked against the mockup **without driving the GUI** — fixes the
+    ship-blind loop. Run: `.build/debug/Parrot --snapshot /tmp/report.png`.
+  - Verified the render against the mockup before installing.
+
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
 Pulled from the local SwiftData store
