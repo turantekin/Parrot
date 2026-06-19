@@ -321,6 +321,34 @@ committed like Phase A.
   which requires `-scheme`, can't be used). Sign-less check:
   `xcodebuild -project Parrot.xcodeproj -target Parrot -configuration Debug build
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`.
+### Building & installing the `.app` (CLI workaround)
+
+`xcodebuild` is unusable here: Xcode 26.5's explicit-modules build races between
+`swift-jinja`→`OrderedCollections` and `yyjson`→`_DarwinFoundation2.pcm` (fails
+whether explicit modules are on, off, or Clang-only-off; `xcodegen` regen + fresh
+DerivedData don't help). `swift build` uses a different build system with none of
+these races. So we build + bundle by hand (produces a real, signed, sandboxed app):
+
+```bash
+swift build -c release                         # reliable; ~1min warm
+APP=/tmp/Parrot.app; rm -rf "$APP"
+cp -R /Applications/Parrot.app "$APP"          # existing app = structural template
+cp -f .build/release/Parrot "$APP/Contents/MacOS/Parrot"
+rm -f "$APP/Contents/MacOS/"{Parrot.debug.dylib,__preview.dylib}   # stale Xcode bits
+rm -rf "$APP/Contents/Resources/"*.bundle
+cp -R .build/release/*.bundle "$APP/Contents/Resources/"           # crypto + Hub
+rm -rf "$APP/Contents/_CodeSignature"
+codesign --force --options runtime --timestamp=none \
+  --entitlements Parrot/Parrot.entitlements \
+  --sign B0993CC80551D65BA29A07EF23720777AB01D173 "$APP"    # Apple Development cert
+osascript -e 'tell application "Parrot" to quit' 2>/dev/null
+rm -rf /Applications/Parrot.app && ditto "$APP" /Applications/Parrot.app
+```
+Same signing identity + bundle id (`com.uygar.parrot`, team `5D8KQ6NJGF`) → TCC
+mic/screen grants persist. Release build → representative CPU. (No app icon, since
+`swift build` doesn't compile an asset catalog — cosmetic only.) Opening the
+committed `.xcodeproj` in **Xcode.app** also works (Theme.swift is now registered).
+
 - A1's real verification is **on-device**: record a continuous-speech session,
   then re-run the segment-duration query from Part 1 — the `>20s` bucket should
   be gone and live text should update within ~1–2 s.
