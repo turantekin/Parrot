@@ -1,6 +1,14 @@
 import SwiftUI
 import AVFoundation
 
+/// Which pane of the post-meeting report is showing.
+enum ReportTab: String, CaseIterable, Identifiable {
+    case report = "Report"
+    case transcript = "Transcript"
+    case insights = "Insights"
+    var id: String { rawValue }
+}
+
 struct MeetingDetailView: View {
     let meeting: Meeting
     @State private var editingTitle = false
@@ -12,49 +20,45 @@ struct MeetingDetailView: View {
     @State private var playbackSpeed: Float = 1.0
     @State private var playbackTimer: Timer?
     @State private var activeSegmentID: UUID?
-    @State private var showInsights = true
-    @State private var showSummary = true
-    @State private var showCoaching = true
+    @State private var tab: ReportTab = .report
     @State private var themNameText = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             meetingHeader
 
             Divider()
 
-            // Audio player bar
+            // Audio player bar — persists above the tabs (drives transcript +
+            // insight seeking).
             if meeting.status == .done || meeting.status == .processing {
                 audioPlayerBar
                 Divider()
             }
 
-            // AI-generated post-call report
-            if let summary = meeting.summary {
-                summarySection(summary)
-                Divider()
+            // Tabs — each gets the full pane with a single scroll, instead of the
+            // old stack of fixed-height mini-scrollers.
+            Picker("View", selection: $tab) {
+                ForEach(ReportTab.allCases) { Text($0.rawValue).tag($0) }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 380)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
 
-            // AI coaching + follow-ups
-            if let coaching = meeting.coaching {
-                coachingSection(coaching)
-                Divider()
+            Divider()
+
+            Group {
+                switch tab {
+                case .report: reportTab
+                case .transcript: transcriptTab
+                case .insights: insightsTab
+                }
             }
-
-            // Copilot insights captured during the call
-            if !meeting.insights.isEmpty {
-                insightsSection
-                Divider()
-            }
-
-            // Transcript or processing state
-            if meeting.status == .processing {
-                processingView
-            }
-
-            transcriptList
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(Theme.Colors.canvas)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             titleText = meeting.title
@@ -95,8 +99,8 @@ struct MeetingDetailView: View {
                 .textFieldStyle(.plain)
             } else {
                 Text(meeting.title)
-                    .font(.title)
-                    .fontWeight(.semibold)
+                    .font(Theme.Typography.title(26))
+                    .foregroundStyle(Theme.Colors.ink)
                     .onTapGesture(count: 2) {
                         editingTitle = true
                     }
@@ -205,136 +209,91 @@ struct MeetingDetailView: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: - Summary
+    // MARK: - Report tab (Summary + Coaching)
 
-    private func summarySection(_ summary: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showSummary.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "text.badge.checkmark")
-                        .foregroundStyle(.purple)
-
-                    Text("Summary")
-                        .font(.headline)
-
-                    Spacer()
-
-                    Image(systemName: showSummary ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if showSummary {
-                ScrollView {
-                    Text(summary)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 180)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-    }
-
-    // MARK: - Coaching & Follow-ups
-
-    private func coachingSection(_ coaching: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { showCoaching.toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.bar.doc.horizontal")
-                        .foregroundStyle(.pink)
-                    Text("Coaching & Follow-ups")
-                        .font(.headline)
-                    Spacer()
-                    Image(systemName: showCoaching ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if showCoaching {
-                ScrollView {
-                    Text(coaching)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 220)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-    }
-
-    // MARK: - Copilot Insights
-
-    private var unresolvedBlockerCount: Int {
-        meeting.insights.filter { $0.kind == .blocker && !$0.isHandled }.count
-    }
-
-    private var insightsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showInsights.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(.purple)
-
-                    Text("Copilot Insights")
-                        .font(.headline)
-
-                    Text("\(meeting.insights.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if unresolvedBlockerCount > 0 {
-                        Label("\(unresolvedBlockerCount) unresolved", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+    private var reportTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap) {
+                if let summary = meeting.summary {
+                    reportSection("Summary", icon: "text.badge.checkmark") {
+                        Text(summary)
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .textSelection(.enabled)
                     }
-
-                    Spacer()
-
-                    Image(systemName: showInsights ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-                .contentShape(Rectangle())
+                if let coaching = meeting.coaching {
+                    reportSection("Coaching & follow-ups", icon: "chart.bar.doc.horizontal") {
+                        Text(coaching)
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .textSelection(.enabled)
+                    }
+                }
+                if meeting.summary == nil && meeting.coaching == nil {
+                    emptyTabState(meeting.status == .processing
+                        ? "The report is being generated…"
+                        : "No report was generated for this meeting.")
+                }
             }
-            .buttonStyle(.plain)
+            .padding(28)
+            .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
 
-            if showInsights {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(meeting.sortedInsights) { insight in
-                            StoredInsightRow(insight: insight) {
-                                seekTo(insight.callTime)
-                            }
+    @ViewBuilder
+    private func reportSection<Content: View>(
+        _ title: String, icon: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: icon)
+                .font(Theme.Typography.sectionLabel)
+                .foregroundStyle(Theme.Colors.label)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Transcript tab
+
+    private var transcriptTab: some View {
+        VStack(spacing: 0) {
+            if meeting.status == .processing {
+                processingView
+                Divider()
+            }
+            transcriptList
+        }
+    }
+
+    // MARK: - Insights tab
+
+    private var insightsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if meeting.insights.isEmpty {
+                    emptyTabState("No copilot insights were captured on this call.")
+                } else {
+                    ForEach(meeting.sortedInsights) { insight in
+                        StoredInsightRow(insight: insight) {
+                            seekTo(insight.callTime)
                         }
                     }
                 }
-                .frame(maxHeight: 220)
             }
+            .padding(28)
+            .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+    }
+
+    private func emptyTabState(_ message: String) -> some View {
+        Text(message)
+            .font(Theme.Typography.body)
+            .foregroundStyle(Theme.Colors.ink2)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 40)
     }
 
     // MARK: - Processing View

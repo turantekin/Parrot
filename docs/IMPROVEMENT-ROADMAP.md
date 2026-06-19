@@ -23,7 +23,7 @@ truth for the post-test improvement effort. Update the status table as work land
 | **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + 2-insight/response cap + hard `source` validation; **compiles**, awaiting test |
 | **B** | B0 · App design system (Granola-style theme) | 🟡 built | `Theme.swift` (adaptive tokens); **compiles**, awaiting on-device |
 | **B** | B1 · Copilot panel redesign (resizable, readable) | 🟡 built | HSplitView resize + accent-stripe cards, no grey-out; **compiles** |
-| **B** | B2 · Post-meeting report redesign (tabs, structure) | ⬜ next | Sidebar + tabs; "Ask Parrot" panel deferred |
+| **B** | B2 · Post-meeting report redesign (tabs, structure) | 🟡 built | Report/Transcript/Insights tabs, serif title, themed; **compiles** |
 | **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ not started | Big feature |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
@@ -69,8 +69,16 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
     cards now use a **colored left accent stripe** + full-contrast text on the theme
     panel; collapsed rows are a readable chip; kind colors + header + "new" pill on
     the theme palette; removed the now-pointless periodic re-render.
-  - Verified `swift build` (exit 0). **B2 (report tabs) is next.** On-device test of
-    all Phase B comes at the end, like Phase A.
+  - Verified `swift build` (exit 0).
+- **2026-06-19** — Landed B2 (report redesign), `MeetingDetailView.swift`:
+  - Replaced the stacked fixed-height mini-scrollers with **tabs: Report /
+    Transcript / Insights** (a segmented `Picker` + switch); header + audio bar
+    persist above. Each tab is one full-height scroll — no more nested scrolling.
+  - Report tab = Summary + Coaching uncapped in a centered ~640pt column; serif
+    title, slate section labels, themed body. Insights tab = the captured insights;
+    Transcript tab = full transcript (+ processing state).
+  - Removed the old collapse toggles / `unresolvedBlockerCount`. Verified
+    `swift build` (exit 0). **Phase B is feature-complete pending on-device test.**
 
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
