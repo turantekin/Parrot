@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DFC74B83A2CA48847F69875 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */; };
 		0E3D91715DEE87D51AA23C18 /* TranscriptSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */; };
 		11BC5507E559179C868B9AD5 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D766E175C79182A19FDCE19 /* MenuBarView.swift */; };
 		1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */; };
@@ -55,6 +56,7 @@
 		A2ECD50C879A39AA006003B8 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		A4C1CFAAA0357C52C949D353 /* Parrot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Parrot.entitlements; sourceTree = "<group>"; };
 		A62937E9A4891AC4B439793B /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
+		AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C63A84D1204A30379B79627C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBase.swift; sourceTree = "<group>"; };
 		CECC4068C4DB183C7E64D5E7 /* TranscriptSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptSegment.swift; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 				D747E3068C0EE4F4A0760BAE /* OnboardingView.swift */,
 				8AC76FF2DEA6B36A17FAC22B /* SettingsView.swift */,
 				9BE4F80615AF9579E1AFB408 /* SidebarView.swift */,
+				AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -245,6 +248,7 @@
 				B0886BA3C94B908F6C3176D6 /* RecordingManager.swift in Sources */,
 				542440B7C1D44E7FB9D30E78 /* SettingsView.swift in Sources */,
 				573D95F4E0286525EB01DEF0 /* SidebarView.swift in Sources */,
+				0DFC74B83A2CA48847F69875 /* Theme.swift in Sources */,
 				0E3D91715DEE87D51AA23C18 /* TranscriptSegment.swift in Sources */,
 				CC22CC7B3CBD14D2B4606E16 /* TranscriptionEngine.swift in Sources */,
 			);
