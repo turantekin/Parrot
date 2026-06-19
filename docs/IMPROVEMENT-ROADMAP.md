@@ -19,8 +19,8 @@ truth for the post-test improvement effort. Update the status table as work land
 | — | Analysis of Meeting #48 | ✅ done | See Part 1 |
 | — | Root-cause trace of all 5 issues | ✅ done | See Part 2 |
 | **A** | A1 · Streaming transcription (no more paragraph dumps) | 🟡 built | Chunk cap + interim callback; **compiles**, awaiting on-device test |
-| **A** | A2 · CPU/perf quick wins | 🟡 partial | Sort-cache **done**; echo-canceller ring buffer + level throttle remain |
-| **A** | A3 · Insight volume + `source` quality | ⬜ not started | Tames the firehose |
+| **A** | A2 · CPU/perf quick wins | 🟡 built | Sort-cache + echo-canceller ring buffer + level throttle; **compiles**, awaiting test |
+| **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + 2-insight/response cap + hard `source` validation; **compiles**, awaiting test |
 | **B** | B1 · Copilot panel redesign (resizable, readable) | ⬜ not started | |
 | **B** | B2 · Post-meeting report redesign (tabs, structure) | ⬜ not started | |
 | **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ not started | Big feature |
@@ -42,6 +42,21 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
   - `Package.swift`: added the missing `CSpeexDSP` dependency so `swift build`
     works (was WhisperKit-only; `project.yml` already had it).
   - Verified with `swift build` (exit 0). On-device test still pending.
+- **2026-06-19** — Finished Phase A (A2 rest + A3):
+  - `EchoCanceller.swift`: replaced the per-10 ms-frame `removeFirst` (O(n) on the
+    reference ring) with a `referenceHead` index + amortized halving compaction;
+    mic/reference frame pairing (and thus AEC behavior) is unchanged.
+  - `AudioCaptureManager.swift`: throttle the mic/system audio-level → main-thread
+    hop to ~10 Hz per stream (was every ~20 ms buffer), via `@ObservationIgnored`
+    timestamps. Dead-mic detection still well within its 15 s window.
+  - `AnalysisProvider.swift`: prompt now makes `feedback` rare, caps each response
+    to the 2 most valuable NEW insights (empty is fine), and gives crisp `source`
+    rules; schema gained a `source` description; and a hard backstop
+    (`validatingSources`) drops any `source` that isn't a real KB document name or
+    "general knowledge" — killing the "call transcript"/"rolling transcript" junk.
+    `CallAnalysisEngine` now passes the KB document names into the request.
+  - Verified with `swift build` (exit 0). **Phase A is feature-complete pending
+    the on-device test.**
 
 ## Part 1 — Meeting #48 analysis (the test that started this)
 

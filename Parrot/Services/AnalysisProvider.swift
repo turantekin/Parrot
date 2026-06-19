@@ -22,6 +22,9 @@ struct AnalysisRequest {
     let callBrief: String
     /// Whether the model may answer beyond the knowledge base.
     let allowGeneralKnowledge: Bool
+    /// All knowledge-base document names. Used to validate the model's "source"
+    /// tag so it can't invent provenance like "call transcript".
+    let knownDocumentNames: [String]
 }
 
 /// Backend that turns a transcript window into structured insights.
@@ -73,18 +76,26 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     maker, competitor) that Me has not resolved yet.
     - action_item: Me committed to do something after the call. If a time or date \
     was mentioned ("by Friday", "next week"), include it in the detail.
-    - feedback: brief read on how the call is going — tone/sentiment shift (Them \
-    sounds hesitant, frustrated, enthusiastic), talk balance (Me dominating), or a \
-    topic Them raised that Me hasn't addressed. Only when notable.
+    - feedback: a brief read on a SIGNIFICANT shift only — Them clearly turning \
+    hesitant, frustrated, or enthusiastic, or Me dominating for a long stretch. Use \
+    this sparingly (at most once every few minutes); skip routine commentary.
 
     Grounding rules: when reference material from the user's knowledge base is provided \
     and covers a question, base the suggestion on it and set "source" to that document's \
-    name. Never invent specifics (prices, terms, availability) that the references don't \
-    state.
+    EXACT name. Never invent specifics (prices, terms, availability) that the references \
+    don't state.
 
-    Rules: never repeat an insight whose title you were told already exists. If nothing \
-    new and useful happened, return an empty list. Keep titles under 8 words and details \
-    under 2 sentences. Write in the same language as the conversation.
+    The "source" field is only a provenance tag. Set it to exactly one of: the exact \
+    name of a provided knowledge-base document, or the literal "general knowledge" (only \
+    when answering from general knowledge and that is allowed). Otherwise OMIT "source" \
+    entirely. Never describe the conversation in it (e.g. "call transcript", "the \
+    conversation", "rolling transcript") — that is always wrong.
+
+    Rules: never repeat an insight whose title you were told already exists. Return at \
+    most the 2 most valuable NEW insights per response — prefer fewer, and an empty list \
+    when nothing important is new (that is common and expected, not a failure). Keep \
+    titles under 8 words and details under 2 sentences. Write in the same language as \
+    the conversation.
     """
 
     func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft] {
@@ -136,7 +147,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                 "kind": ["type": "string", "enum": ["suggestion", "question", "blocker", "action_item", "feedback"]],
                 "title": ["type": "string"],
                 "detail": ["type": "string"],
-                "source": ["type": "string"],
+                "source": ["type": "string", "description": "Exact knowledge-base document name, or 'general knowledge'. Omit otherwise — never a description of the conversation."],
             ],
             "required": ["kind", "title", "detail"],
             "additionalProperties": false,
@@ -159,7 +170,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         ]
 
         let data = try await performRequest(body: body, apiKey: apiKey)
-        return try Self.parseInsights(from: data)
+        let drafts = try Self.parseInsights(from: data)
+        return Self.validatingSources(drafts, knownDocuments: request.knownDocumentNames)
     }
 
     // MARK: - Post-Call Summary
@@ -293,6 +305,25 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             let source: String?
         }
         let insights: [Item]
+    }
+
+    /// The model occasionally invents a "source" that describes the conversation
+    /// ("call transcript", "rolling transcript", "conversation with coach"). Keep
+    /// "source" only when it's a real KB document name or the literal "general
+    /// knowledge"; otherwise drop it so the UI never shows a bogus provenance.
+    private static func validatingSources(
+        _ drafts: [InsightDraft],
+        knownDocuments: [String]
+    ) -> [InsightDraft] {
+        let valid = Set(knownDocuments.map { $0.lowercased() })
+        return drafts.map { draft in
+            guard let source = draft.source else { return draft }
+            let normalized = source.lowercased()
+            if normalized == "general knowledge" || valid.contains(normalized) {
+                return draft
+            }
+            return InsightDraft(kind: draft.kind, title: draft.title, detail: draft.detail, source: nil)
+        }
     }
 
     private static func parseInsights(from data: Data) throws -> [InsightDraft] {

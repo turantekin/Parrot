@@ -171,7 +171,8 @@ final class CallAnalysisEngine {
             references: references,
             instructions: UserDefaults.standard.string(forKey: "copilotInstructions") ?? "",
             callBrief: callBrief,
-            allowGeneralKnowledge: UserDefaults.standard.object(forKey: "copilotGeneralFallback") as? Bool ?? true
+            allowGeneralKnowledge: UserDefaults.standard.object(forKey: "copilotGeneralFallback") as? Bool ?? true,
+            knownDocumentNames: knowledgeBase?.documents.map(\.name) ?? []
         )
 
         do {

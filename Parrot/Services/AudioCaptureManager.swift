@@ -23,6 +23,11 @@ final class AudioCaptureManager: NSObject {
     /// disabled (mic passes through untouched).
     private var echoCanceller: EchoCanceller?
 
+    /// Throttle timestamps for pushing audio levels to the UI — the waveform needs
+    /// only ~10 updates/sec, not one per ~20 ms audio buffer per stream.
+    @ObservationIgnored private var lastSystemLevelAt = Date.distantPast
+    @ObservationIgnored private var lastMicLevelAt = Date.distantPast
+
     private(set) var isCapturing = false
     private(set) var systemAudioURL: URL?
     private(set) var micAudioURL: URL?
@@ -290,6 +295,20 @@ final class AudioCaptureManager: NSObject {
             sum += abs(channelData[i])
         }
         let avg = sum / Float(max(frames, 1))
+
+        // Throttle the main-thread hop per stream: the waveform only needs ~10
+        // updates/sec, and dispatching every ~20 ms buffer (×2 streams) thrashed
+        // SwiftUI. Sampling at 10 Hz still detects a live mic well within the
+        // 15 s dead-mic window.
+        let now = Date()
+        if isMic {
+            guard now.timeIntervalSince(lastMicLevelAt) >= 0.1 else { return }
+            lastMicLevelAt = now
+        } else {
+            guard now.timeIntervalSince(lastSystemLevelAt) >= 0.1 else { return }
+            lastSystemLevelAt = now
+        }
+
         DispatchQueue.main.async {
             if isMic {
                 self.micLevel = avg

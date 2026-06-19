@@ -24,6 +24,10 @@ final class EchoCanceller {
     /// Far-end reference (system audio) waiting to be paired with mic frames, and
     /// the mic accumulator. Int16 is what SpeexDSP operates on.
     private var reference: [Int16] = []
+    /// Index of the first unconsumed sample in `reference`. Advancing this instead
+    /// of `removeFirst`-ing every 10 ms frame keeps reads O(1) amortized; the
+    /// consumed prefix is reclaimed in bulk by `compactReferenceIfNeeded`.
+    private var referenceHead = 0
     private var micAccum: [Int16] = []
     private let lock = NSLock()
     private let maxReference = 16000 * 5  // cap the reference ring at 5 s
@@ -55,9 +59,12 @@ final class EchoCanceller {
         let ints = samples.map(Self.toInt16)
         lock.lock()
         reference.append(contentsOf: ints)
-        if reference.count > maxReference {
-            reference.removeFirst(reference.count - maxReference)
+        // Cap the *unconsumed* reference at maxReference by dropping the oldest.
+        let unconsumed = reference.count - referenceHead
+        if unconsumed > maxReference {
+            referenceHead += unconsumed - maxReference
         }
+        compactReferenceIfNeeded()
         lock.unlock()
     }
 
@@ -74,18 +81,22 @@ final class EchoCanceller {
         var pairs: [([Int16], [Int16])] = []
         lock.lock()
         micAccum.append(contentsOf: micInts)
-        while micAccum.count >= frameSize {
-            let micFrame = Array(micAccum.prefix(frameSize))
-            micAccum.removeFirst(frameSize)
+        var micIndex = 0
+        while micAccum.count - micIndex >= frameSize {
+            let micFrame = Array(micAccum[micIndex ..< micIndex + frameSize])
+            micIndex += frameSize
             let refFrame: [Int16]
-            if reference.count >= frameSize {
-                refFrame = Array(reference.prefix(frameSize))
-                reference.removeFirst(frameSize)
+            if reference.count - referenceHead >= frameSize {
+                refFrame = Array(reference[referenceHead ..< referenceHead + frameSize])
+                referenceHead += frameSize
             } else {
                 refFrame = [Int16](repeating: 0, count: frameSize)
             }
             pairs.append((micFrame, refFrame))
         }
+        // Leftover mic samples are < one frame, so this shift is cheap.
+        if micIndex > 0 { micAccum.removeFirst(micIndex) }
+        compactReferenceIfNeeded()
         lock.unlock()
 
         guard !pairs.isEmpty else { return [] }
@@ -103,6 +114,15 @@ final class EchoCanceller {
             out.append(contentsOf: outFrame.map(Self.toFloat))
         }
         return out
+    }
+
+    /// Reclaim the consumed reference prefix once it's at least half the buffer,
+    /// so per-frame reads stay O(1) amortized instead of O(n) `removeFirst`.
+    private func compactReferenceIfNeeded() {
+        if referenceHead > 0, referenceHead * 2 >= reference.count {
+            reference.removeFirst(referenceHead)
+            referenceHead = 0
+        }
     }
 
     private static func toInt16(_ f: Float) -> Int16 {
