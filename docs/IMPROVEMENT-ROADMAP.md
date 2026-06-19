@@ -93,6 +93,22 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
     ship-blind loop. Run: `.build/debug/Parrot --snapshot /tmp/report.png`.
   - Verified the render against the mockup before installing.
 
+- **2026-06-19** — Fixed a transcription regression (delay + `<|…|>` gibberish +
+  half the call untranscribed), `TranscriptionEngine.swift`:
+  - **Decoding options:** `skipSpecialTokens` + `withoutTimestamps` (we derive
+    timestamps from sample offsets) stop the `<|0.00|> What's your name?<|1.00|>…`
+    token spew in the live line; `compressionRatioThreshold`/`logProbThreshold`/
+    `temperatureFallbackCount`/`noSpeechThreshold` break Whisper's repetition loops
+    on near-silent chunks.
+  - **Throughput:** the Phase-A loop processed one 2 s window per 500 ms sleep, so it
+    fell behind real time (a 148 s call only reached 78 s). Now it **drains bounded
+    windows back-to-back** and only sleeps when caught up — segments stay ≤2 s but it
+    keeps pace.
+  - `cleaned()` strips stray tokens defensively.
+  - **Verified on the real recording** via a new `--transcribe-test` mode (loads the
+    cached model, transcribes the meeting's `.caf` with the production options):
+    1640 chars of clean prose, **zero `<|` tokens, no repetition**.
+
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
 Pulled from the local SwiftData store

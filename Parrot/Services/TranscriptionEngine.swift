@@ -125,6 +125,19 @@ final class TranscriptionEngine {
             }
         }
 
+        // Quality + anti-garbage decoding. We derive each segment's timestamps from
+        // sample offsets, so suppress Whisper's special + timestamp tokens — they were
+        // leaking into the live line as "<|0.00|> ... <|1.00|>" gibberish. The
+        // thresholds trip a temperature fallback that breaks Whisper's repetition loops
+        // (the "What's your name?" ×N hallucination on near-silent / noisy chunks), and
+        // noSpeechThreshold drops silence instead of hallucinating over it.
+        decodeOptions.skipSpecialTokens = true
+        decodeOptions.withoutTimestamps = true
+        decodeOptions.compressionRatioThreshold = 2.4
+        decodeOptions.logProbThreshold = -1.0
+        decodeOptions.noSpeechThreshold = 0.6
+        decodeOptions.temperatureFallbackCount = 3
+
         transcriptionTask = Task { [weak self] in
             guard let self else { return }
 
@@ -144,23 +157,21 @@ final class TranscriptionEngine {
             var consumedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
 
             while !Task.isCancelled && self.isTranscribing {
-                try? await Task.sleep(for: .milliseconds(500))
+                var didWork = false
 
                 for source in AudioSource.allCases {
                     // Pull one bounded window for this stream under the lock —
-                    // freeing the consumed audio (so it doesn't pile up for the
-                    // whole call) and avoiding any index race with a reset.
+                    // freeing the consumed audio so it doesn't pile up for the whole
+                    // call, and avoiding any index race with a reset.
                     let chunk: [Float] = self.bufferLock.withLock {
                         guard let buffered = self.audioBuffers[source],
                               buffered.count >= chunkSize else { return [] }
-                        // Take at most one bounded window and leave the remainder
-                        // for the next pass, so a backlog drains as several small
-                        // segments rather than one giant paragraph.
                         let take = min(buffered.count, maxChunkSamples)
                         self.audioBuffers[source] = Array(buffered[take...])
                         return Array(buffered[..<take])
                     }
                     guard !chunk.isEmpty else { continue }
+                    didWork = true
 
                     let startSample = consumedSamples[source] ?? 0
                     let endSample = startSample + chunk.count
@@ -168,19 +179,17 @@ final class TranscriptionEngine {
                     let startTime = Double(startSample) / 16000.0
                     let endTime = Double(endSample) / 16000.0
 
-                    // Skip near-silent chunks — saves Whisper passes (the mic is
-                    // mostly silent while the user listens, and vice versa) and
-                    // avoids hallucinated text on silence.
+                    // Skip near-silent chunks — saves Whisper passes and avoids
+                    // hallucinated text on silence.
                     let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
                     guard energy > 0.001 else { continue }
 
                     do {
                         guard let whisperKit = self.whisperKit else { continue }
-                        // Stream interim words to the live view as they decode, so
-                        // text appears within the pass instead of only when the
-                        // whole chunk finishes. Returning nil never early-stops.
+                        // Stream interim words to the live view as they decode; strip
+                        // any stray special/timestamp tokens defensively.
                         let interimCallback: TranscriptionCallback = { [weak self] progress in
-                            let partial = progress.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let partial = Self.cleaned(progress.text)
                             if !partial.isEmpty {
                                 Task { @MainActor in self?.currentText = partial }
                             }
@@ -193,7 +202,7 @@ final class TranscriptionEngine {
                         )
 
                         for transcription in result {
-                            let text = transcription.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let text = Self.cleaned(transcription.text)
                             guard !text.isEmpty else { continue }
 
                             let avgLogProb = transcription.segments.map(\.avgLogprob).reduce(0, +)
@@ -214,6 +223,15 @@ final class TranscriptionEngine {
                         print("Transcription error (\(source.label)): \(error)")
                     }
                 }
+
+                // Pause only when caught up. When a backlog exists (CPU spike or a
+                // slow pass), keep draining bounded windows back-to-back so
+                // transcription keeps pace with real time instead of falling
+                // progressively behind — the regression that left the back half of a
+                // call untranscribed.
+                if !didWork {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
             }
         }
     }
@@ -229,5 +247,13 @@ final class TranscriptionEngine {
         }
 
         currentText = ""
+    }
+
+    /// Strips any Whisper special/timestamp tokens (e.g. "<|startoftranscript|>",
+    /// "<|0.00|>") that can leak into raw decoder text, and trims whitespace.
+    static func cleaned(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"<\|[^|>]*\|>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -11,6 +11,11 @@ struct ParrotMain {
             MainActor.assumeIsolated { ReportSnapshot.write(to: args[i + 1]) }
             return
         }
+        if let i = args.firstIndex(of: "--transcribe-test"), i + 1 < args.count {
+            let modelFolder = (i + 2 < args.count) ? args[i + 2] : ""
+            TranscribeTest.run(audioPath: args[i + 1], modelFolder: modelFolder)
+            return
+        }
         ParrotApp.main()
     }
 }

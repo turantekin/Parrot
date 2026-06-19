@@ -1,5 +1,50 @@
 import SwiftUI
 import AppKit
+import WhisperKit
+
+/// Dev-only: transcribes a real audio file with the production decoding options to
+/// verify the output is clean (no "<|...|>" tokens, no repetition loops) without
+/// having to record live. Run with:
+///   Parrot --transcribe-test <audio.caf> <modelFolder>
+enum TranscribeTest {
+    static func run(audioPath: String, modelFolder: String) {
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            do {
+                let config = WhisperKitConfig(
+                    modelFolder: modelFolder.isEmpty ? nil : modelFolder,
+                    verbose: false,
+                    logLevel: .none,
+                    load: true,
+                    download: modelFolder.isEmpty
+                )
+                let whisperKit = try await WhisperKit(config)
+
+                var opts = DecodingOptions(task: .transcribe, language: "en")
+                opts.skipSpecialTokens = true
+                opts.withoutTimestamps = true
+                opts.compressionRatioThreshold = 2.4
+                opts.logProbThreshold = -1.0
+                opts.noSpeechThreshold = 0.6
+                opts.temperatureFallbackCount = 3
+
+                let results = try await whisperKit.transcribe(audioPath: audioPath, decodeOptions: opts)
+                let text = results.map(\.text).joined(separator: " ")
+                let hasTokens = text.contains("<|")
+                print("=== transcribe-test ===")
+                print("chars: \(text.count) | contains '<|' tokens: \(hasTokens)")
+                print("---")
+                print(String(text.prefix(1800)))
+                print("---")
+            } catch {
+                print("transcribe-test error: \(error)")
+            }
+            sem.signal()
+        }
+        sem.wait()
+        exit(0)
+    }
+}
 
 /// Offscreen renderer for design verification. Run with:
 ///   Parrot --snapshot /tmp/report.png
