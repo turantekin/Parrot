@@ -17,10 +17,10 @@ struct CopilotPanelView: View {
     @State private var atTop = true
     @State private var unseenCount = 0
     @State private var seenInsightCount = 0
-    @State private var expandedOverrides: Set<UUID> = []
+    /// Insights the user has manually tucked into a one-line row. Nothing collapses
+    /// by age anymore — A3 cut the volume enough to keep everything readable.
+    @State private var manuallyCollapsed: Set<UUID> = []
 
-    /// Suggestions/feedback older than this collapse to a one-line row.
-    private static let collapseAge: TimeInterval = 120
     private static let topAnchorID = "copilot-top"
 
     private var engine: CallAnalysisEngine { recordingManager.callAnalysisEngine }
@@ -55,8 +55,8 @@ struct CopilotPanelView: View {
 
             content
         }
-        .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .frame(minWidth: 280, idealWidth: 360, maxWidth: 640)
+        .background(Theme.Colors.panel)
     }
 
     // MARK: - Derived lists
@@ -83,7 +83,7 @@ struct CopilotPanelView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Theme.Colors.accent)
 
                 Text("Copilot")
                     .font(.headline)
@@ -229,48 +229,46 @@ struct CopilotPanelView: View {
     private func feed(errorMessage: String?) -> some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .top) {
-                TimelineView(.periodic(from: .now, by: 30)) { timeline in
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            // Sentinel that tells us whether the user is at the top.
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.topAnchorID)
-                                .background(
-                                    GeometryReader { geo in
-                                        Color.clear.preference(
-                                            key: AtTopPreferenceKey.self,
-                                            value: geo.frame(in: .named("copilotScroll")).minY > -24
-                                        )
-                                    }
-                                )
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        // Sentinel that tells us whether the user is at the top.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.topAnchorID)
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: AtTopPreferenceKey.self,
+                                        value: geo.frame(in: .named("copilotScroll")).minY > -24
+                                    )
+                                }
+                            )
 
-                            if let errorMessage {
-                                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                                    .font(.caption)
-                                    .foregroundStyle(.yellow)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            ForEach(feedInsights) { insight in
-                                InsightCard(
-                                    insight: insight,
-                                    isCollapsed: isCollapsed(insight, now: timeline.date),
-                                    onToggleCollapse: { toggleCollapse(insight) },
-                                    onJump: { transcriptJumpTarget = insight.callTime },
-                                    onDismiss: {
-                                        withAnimation(.spring(duration: 0.25)) {
-                                            engine.dismiss(insight)
-                                        }
-                                    }
-                                )
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
+                        if let errorMessage {
+                            Label(errorMessage, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(10)
+
+                        ForEach(feedInsights) { insight in
+                            InsightCard(
+                                insight: insight,
+                                isCollapsed: isCollapsed(insight),
+                                onToggleCollapse: { toggleCollapse(insight) },
+                                onJump: { transcriptJumpTarget = insight.callTime },
+                                onDismiss: {
+                                    withAnimation(.spring(duration: 0.25)) {
+                                        engine.dismiss(insight)
+                                    }
+                                }
+                            )
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
-                    .coordinateSpace(name: "copilotScroll")
+                    .padding(10)
                 }
+                .coordinateSpace(name: "copilotScroll")
                 .onPreferenceChange(AtTopPreferenceKey.self) { isAtTop in
                     atTop = isAtTop
                     if isAtTop {
@@ -299,7 +297,7 @@ struct CopilotPanelView: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(.purple, in: Capsule())
+                            .background(Theme.Colors.accent, in: Capsule())
                             .foregroundStyle(.white)
                             .shadow(radius: 3, y: 1)
                     }
@@ -313,18 +311,17 @@ struct CopilotPanelView: View {
 
     // MARK: - Collapse logic
 
-    private func isCollapsed(_ insight: Insight, now: Date) -> Bool {
-        if expandedOverrides.contains(insight.id) { return false }
-        // Handled blockers collapse immediately; others age out.
-        if insight.kind == .blocker && insight.isHandled { return true }
-        return now.timeIntervalSince(insight.createdAt) > Self.collapseAge
+    private func isCollapsed(_ insight: Insight) -> Bool {
+        if manuallyCollapsed.contains(insight.id) { return true }
+        // Handled blockers tuck themselves away; everything else stays open.
+        return insight.kind == .blocker && insight.isHandled
     }
 
     private func toggleCollapse(_ insight: Insight) {
-        if expandedOverrides.contains(insight.id) {
-            expandedOverrides.remove(insight.id)
+        if manuallyCollapsed.contains(insight.id) {
+            manuallyCollapsed.remove(insight.id)
         } else {
-            expandedOverrides.insert(insight.id)
+            manuallyCollapsed.insert(insight.id)
         }
     }
 }
@@ -411,7 +408,7 @@ struct InsightCard: View {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.right")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.ink3)
 
                 Image(systemName: insight.kind.icon)
                     .font(.caption)
@@ -419,13 +416,13 @@ struct InsightCard: View {
 
                 Text(insight.title)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
 
                 if insight.kind == .blocker && insight.isHandled {
                     Image(systemName: "checkmark")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Colors.action)
                 }
 
                 Spacer()
@@ -433,15 +430,15 @@ struct InsightCard: View {
                 Text(insight.formattedCallTime)
                     .font(.caption2)
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.ink3)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var expandedCard: some View {
@@ -454,7 +451,7 @@ struct InsightCard: View {
                 if insight.kind == .blocker && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Colors.action)
                 }
 
                 Spacer()
@@ -482,25 +479,38 @@ struct InsightCard: View {
 
             Text(insight.title)
                 .font(.callout.weight(.semibold))
+                .foregroundStyle(Theme.Colors.ink)
 
             Text(insight.detail)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
 
             if let source = insight.source {
                 Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.ink3)
             }
         }
-        .padding(10)
+        .padding(.vertical, 11)
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(insight.kind.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(insight.kind.color.opacity(0.25))
+        .background(
+            insight.kind == .blocker ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
+            in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .strokeBorder(Theme.Colors.line)
+        )
+        // Colored accent stripe on the leading edge, in place of a tinted fill.
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(insight.kind.color)
+                .frame(width: 3)
+                .padding(.vertical, 9)
+        }
         .onTapGesture(count: 2) {
             onToggleCollapse()
         }
@@ -548,11 +558,11 @@ extension Insight.Kind {
 
     var color: Color {
         switch self {
-        case .suggestion: .blue
-        case .question: .teal
-        case .blocker: .orange
-        case .actionItem: .green
-        case .feedback: .purple
+        case .suggestion: Theme.Colors.subtle
+        case .question: Theme.Colors.accent
+        case .blocker: Theme.Colors.blocker
+        case .actionItem: Theme.Colors.action
+        case .feedback: Theme.Colors.ink2
         }
     }
 }

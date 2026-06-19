@@ -29,12 +29,12 @@ struct LiveRecordingView: View {
 
             Divider()
 
-            // Live transcript + copilot
-            HStack(spacing: 0) {
+            // Live transcript + copilot — drag the divider to resize either side.
+            HSplitView {
                 transcriptArea
+                    .frame(minWidth: 380, maxWidth: .infinity)
 
                 if copilotEnabled && showCopilot {
-                    Divider()
                     CopilotPanelView(transcriptJumpTarget: $copilotJumpTarget)
                 }
             }

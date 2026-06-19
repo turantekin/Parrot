@@ -21,8 +21,9 @@ truth for the post-test improvement effort. Update the status table as work land
 | **A** | A1 · Streaming transcription (no more paragraph dumps) | 🟡 built | Chunk cap + interim callback; **compiles**, awaiting on-device test |
 | **A** | A2 · CPU/perf quick wins | 🟡 built | Sort-cache + echo-canceller ring buffer + level throttle; **compiles**, awaiting test |
 | **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + 2-insight/response cap + hard `source` validation; **compiles**, awaiting test |
-| **B** | B1 · Copilot panel redesign (resizable, readable) | ⬜ not started | |
-| **B** | B2 · Post-meeting report redesign (tabs, structure) | ⬜ not started | |
+| **B** | B0 · App design system (Granola-style theme) | 🟡 built | `Theme.swift` (adaptive tokens); **compiles**, awaiting on-device |
+| **B** | B1 · Copilot panel redesign (resizable, readable) | 🟡 built | HSplitView resize + accent-stripe cards, no grey-out; **compiles** |
+| **B** | B2 · Post-meeting report redesign (tabs, structure) | ⬜ next | Sidebar + tabs; "Ask Parrot" panel deferred |
 | **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ not started | Big feature |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
@@ -57,6 +58,19 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
     `CallAnalysisEngine` now passes the KB document names into the request.
   - Verified with `swift build` (exit 0). **Phase A is feature-complete pending
     the on-device test.**
+
+- **2026-06-19** — Started Phase B (design approved against Granola). Landed B0 + B1:
+  - `Parrot/Views/Theme.swift` (B0): adaptive light/dark design tokens — canvas,
+    panel, chip, line, ink/ink2/ink3, slate label, accent (calm blue-teal `#2F7E96`),
+    action green, blocker amber, subtle indigo; serif `title()`, type scale, metrics.
+  - `LiveRecordingView.swift` (B1): transcript ↔ copilot is now an **`HSplitView`**
+    (drag to resize); copilot widened to 280–640 pt.
+  - `CopilotPanelView.swift` (B1): dropped age-based auto-collapse (the "grey wall");
+    cards now use a **colored left accent stripe** + full-contrast text on the theme
+    panel; collapsed rows are a readable chip; kind colors + header + "new" pill on
+    the theme palette; removed the now-pointless periodic re-render.
+  - Verified `swift build` (exit 0). **B2 (report tabs) is next.** On-device test of
+    all Phase B comes at the end, like Phase A.
 
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
@@ -240,6 +254,48 @@ hitches in the transcript list (verify with Instruments).
 `source` values are only real doc names or "general knowledge".
 
 ---
+
+## Phase B — detailed design (approved 2026-06-19)
+
+Direction approved by Uygar against a **Granola-style** reference: calm, editorial,
+near-white canvas, serif headings, lots of whitespace, almost no boxes/borders.
+Visual mockup (source of truth for the look): `.context/mockups/parrot-redesign.html`
+(+ `.png`). This is an **app-wide** restyle so the redesigned panels don't clash.
+
+### B0 · Design system (`Theme`) — build first, everything depends on it
+A lightweight SwiftUI theme (Color + Font + spacing tokens). Tokens (from the mockup):
+- **Canvas** near-white; **sidebar/panels** a faint warm off-white; hairline dividers
+  (`~#ececea`) only — no card borders in the report.
+- **Type:** titles in **New York** (system serif) → `.system(…, design: .serif)`;
+  body/UI in **SF Pro** (system default). Small **slate section labels**
+  (`~#6b7686`, 13.5pt semibold). Generous line-height (~1.5).
+- **Accent: calm blue-teal `#2F7E96`** (brand / primary actions, active states,
+  talk-ratio "me", links, the hero "suggested answer"). **Green `#3F9168`** for the
+  action-item semantic only; **amber `#E8943A`** for blockers; **muted indigo
+  `#4F6FB0`** for sub-points. Ink `#1C1C1E` / secondary `#5F6470` / tertiary `#9AA0AA`.
+- **Shape/space:** 10px radii, pill chips, comfortable padding, content max-width
+  ~640pt in the report.
+
+### B1 · Live Copilot panel + recording layout
+- **Resizable** (Uygar's explicit ask): the transcript ↔ copilot split is
+  drag-resizable via **`HSplitView`**, width persisted (`@AppStorage`). Regions use
+  flexible frames so they grow/shrink with the window ("up and down"). *(Open: a
+  vertical splitter to trade waveform vs transcript height — add if wanted.)*
+- **No more grey-out:** drop the age-based auto-collapse (A3 cut the volume). Cards
+  stay readable — a **colored left accent stripe** by kind (suggestion = blue-teal,
+  action = green, blocker = amber) + full-contrast text + prominent copy on
+  suggestions. Keep manual tap-to-collapse and the pinned-blocker zone.
+
+### B2 · Post-meeting report
+- **Sidebar** restyle: meetings grouped by day, avatar initials, two-line items.
+- **Tabs: Report / Transcript / Insights** — each gets the full pane with a single
+  scroll (kills today's stacked 180/220px mini-scrollers). Serif title + meta pills,
+  clean sections, a slim **talk-ratio bar**. Audio player bar persists above tabs.
+- **Deferred:** the right-hand **"Ask Parrot"** chat/share panel (chat the meeting,
+  draft follow-up) — keep in the vision, build in a later phase.
+
+**Implementation order:** B0 (theme) → B1 → B2, each compiled (`swift build`) and
+committed like Phase A.
 
 ## Build & verification notes
 
