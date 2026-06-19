@@ -7,6 +7,13 @@ enum ReportTab: String, CaseIterable, Identifiable {
     case transcript = "Transcript"
     case insights = "Insights"
     var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .report: "doc.text"
+        case .transcript: "text.bubble"
+        case .insights: "sparkles"
+        }
+    }
 }
 
 struct MeetingDetailView: View {
@@ -39,7 +46,9 @@ struct MeetingDetailView: View {
             // Tabs — each gets the full pane with a single scroll, instead of the
             // old stack of fixed-height mini-scrollers.
             Picker("View", selection: $tab) {
-                ForEach(ReportTab.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(ReportTab.allCases) { t in
+                    Label(t.rawValue, systemImage: t.icon).tag(t)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()

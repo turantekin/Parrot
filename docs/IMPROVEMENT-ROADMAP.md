@@ -23,7 +23,8 @@ truth for the post-test improvement effort. Update the status table as work land
 | **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + 2-insight/response cap + hard `source` validation; **compiles**, awaiting test |
 | **B** | B0 · App design system (Granola-style theme) | 🟡 built | `Theme.swift` (adaptive tokens); **compiles**, awaiting on-device |
 | **B** | B1 · Copilot panel redesign (resizable, readable) | 🟡 built | HSplitView resize + accent-stripe cards, no grey-out; **compiles** |
-| **B** | B2 · Post-meeting report redesign (tabs, structure) | 🟡 built | Report/Transcript/Insights tabs, serif title, themed; **compiles** |
+| **B** | B2 · Post-meeting report redesign (tabs, structure) | 🟡 built | Report/Transcript/Insights tabs (now icon'd), serif title, themed |
+| **B** | B3 · Sidebar + dashboard restyle, in-app Settings | 🟡 built | Custom tight sidebar (icons, dots, account), themed dashboard, Settings sheet |
 | **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ not started | Big feature |
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused

@@ -16,7 +16,7 @@ struct ContentView: View {
                 showDashboard: $showDashboard,
                 searchText: $searchText
             )
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
+            .navigationSplitViewColumnWidth(min: 215, ideal: 236, max: 320)
         } detail: {
             if recordingManager.isRecording {
                 LiveRecordingView()
@@ -31,7 +31,6 @@ struct ContentView: View {
                 EmptyStateView()
             }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search transcripts")
         .task {
             guard !hasLoadedModel else { return }
             hasLoadedModel = true

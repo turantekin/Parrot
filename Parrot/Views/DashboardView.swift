@@ -16,27 +16,26 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
-                // Record button
+            VStack(spacing: 28) {
                 recordButton
-                    .padding(.top, 40)
+                    .padding(.top, 44)
 
-                // Model status
                 modelStatus
 
-                // Stats
                 statsRow
 
-                // Recent meetings
                 if !recentMeetings.isEmpty {
                     recentMeetingsSection
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 40)
+            .frame(maxWidth: 600)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.Colors.canvas)
         .alert("Recording Error", isPresented: .constant(errorMessage != nil)) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -93,13 +92,13 @@ struct DashboardView: View {
             .buttonStyle(.plain)
             .disabled(!recordingManager.transcriptionEngine.isReady)
 
-            Text("Start Recording")
-                .font(.headline)
-                .foregroundStyle(.primary)
+            Text("Start recording")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Theme.Colors.ink)
 
-            Text("Captures system audio and microphone")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("Captures system audio + your mic, transcribed on-device.")
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
 
             if copilotEnabled {
                 callBriefField
@@ -165,22 +164,10 @@ struct DashboardView: View {
     // MARK: - Stats Row
 
     private var statsRow: some View {
-        HStack(spacing: 24) {
-            StatCard(
-                title: "Meetings",
-                value: "\(meetings.count)",
-                icon: "doc.text"
-            )
-            StatCard(
-                title: "Hours Recorded",
-                value: String(format: "%.1f", totalHours),
-                icon: "clock"
-            )
-            StatCard(
-                title: "Words Transcribed",
-                value: formatNumber(totalWords),
-                icon: "text.alignleft"
-            )
+        HStack(spacing: 12) {
+            StatTile(value: "\(meetings.count)", label: "Meetings")
+            StatTile(value: String(format: "%.1f", totalHours), label: "Hours")
+            StatTile(value: formatNumber(totalWords), label: "Words")
         }
     }
 
@@ -208,77 +195,83 @@ struct DashboardView: View {
     }
 
     private var recentMeetingsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent Meetings")
-                .font(.title3)
-                .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Recent meetings")
+                .font(Theme.Typography.cap)
+                .foregroundStyle(Theme.Colors.ink3)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 2)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(recentMeetings) { meeting in
-                        RecentMeetingCard(meeting: meeting)
-                            .onTapGesture {
-                                selectedMeeting = meeting
-                                showDashboard = false
-                            }
-                    }
+            ForEach(recentMeetings) { meeting in
+                Button {
+                    selectedMeeting = meeting
+                    showDashboard = false
+                } label: {
+                    DashboardMeetingRow(meeting: meeting)
                 }
+                .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // MARK: - Stat Card
 
-struct StatCard: View {
-    let title: String
+struct StatTile: View {
     let value: String
-    let icon: String
+    let label: String
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(.title)
-                .fontWeight(.bold)
+                .font(Theme.Typography.title(22))
+                .foregroundStyle(Theme.Colors.ink)
                 .monospacedDigit()
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(label)
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
-        .frame(width: 120, height: 100)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Colors.line))
     }
 }
 
 // MARK: - Recent Meeting Card
 
-struct RecentMeetingCard: View {
+struct DashboardMeetingRow: View {
     let meeting: Meeting
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(meeting.title)
-                .font(.headline)
-                .lineLimit(2)
-
-            HStack(spacing: 6) {
-                Text(meeting.date, style: .date)
-                Text(meeting.formattedDuration)
+        HStack(spacing: 11) {
+            Circle()
+                .fill(Theme.Colors.accent.opacity(0.8))
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(meeting.title)
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.ink)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .lineLimit(1)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            if meeting.speakerCount > 0 {
-                Label("\(meeting.speakerCount) speakers", systemImage: "person.2")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.Colors.ink3)
         }
-        .padding(12)
-        .frame(width: 180, height: 100, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+    }
+
+    private var subtitle: String {
+        let who = meeting.themName?.nilIfEmpty
+            ?? (meeting.speakerCount > 1 ? "\(meeting.speakerCount) people" : "Them")
+        return "\(meeting.date.formatted(date: .abbreviated, time: .shortened)) · \(who) · \(meeting.formattedDuration)"
     }
 }
