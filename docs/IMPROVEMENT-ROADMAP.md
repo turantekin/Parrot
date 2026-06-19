@@ -18,16 +18,18 @@ truth for the post-test improvement effort. Update the status table as work land
 |---|---|---|---|
 | — | Analysis of Meeting #48 | ✅ done | See Part 1 |
 | — | Root-cause trace of all 5 issues | ✅ done | See Part 2 |
-| **A** | A1 · Streaming transcription (no more paragraph dumps) | 🟡 built | Chunk cap + interim callback; **compiles**, awaiting on-device test |
-| **A** | A2 · CPU/perf quick wins | 🟡 built | Sort-cache + echo-canceller ring buffer + level throttle; **compiles**, awaiting test |
-| **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + 2-insight/response cap + hard `source` validation; **compiles**, awaiting test |
-| **B** | B0 · App design system (Granola-style theme) | 🟡 built | `Theme.swift` (adaptive tokens); **compiles**, awaiting on-device |
-| **B** | B1 · Copilot panel redesign (resizable, readable) | 🟡 built | HSplitView resize + accent-stripe cards, no grey-out; **compiles** |
-| **B** | B2 · Post-meeting report redesign (tabs, structure) | 🟡 built | Report/Transcript/Insights tabs (now icon'd), serif title, themed |
-| **B** | B3 · Sidebar + dashboard restyle, in-app Settings | 🟡 built | Custom tight sidebar (icons, dots, account), themed dashboard, Settings sheet |
-| **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ not started | Big feature |
+| **A** | A1 · Streaming transcription | 🟡 fixed + verified | Chunk cap + interim + **regression fix** (special-token gibberish, repetition loops, throughput). Verified clean on the real `.caf`; needs **1 live recording** to confirm it keeps pace end-to-end. |
+| **A** | A2 · CPU/perf quick wins | 🟡 built | Sort-cache + echo-canceller ring buffer + level throttle. Re-check **CPU under load** on device. |
+| **A** | A3 · Insight volume + `source` quality | 🟡 built | Rarer feedback + ≤2 insights/response + hard `source` validation. Confirm **volume** on a live call. |
+| **B** | B0 · App design system (`Theme.swift`) | ✅ done | Adaptive tokens; calm blue-teal accent, serif titles. Used app-wide. |
+| **B** | B1 · Copilot panel (resizable, readable) | 🟡 built | HSplitView resize + accent-stripe cards, no grey-out. Eyeball live. |
+| **B** | B2 · Post-meeting report (tabs + parsed content) | ✅ done | Tabs + `ReportContentView` (styled sections/bullets/ratio bar); verified vs mockup via snapshot. |
+| **B** | B3 · Sidebar + dashboard + in-app Settings | 🟡 built | Tight sidebar (icons, dots, account), themed dashboard, Settings sheet. Eyeball live. |
+| — | Release `.app` build + install | ✅ done | `/Applications/Parrot.app`; recipe in Build notes. |
+| — | Offscreen verification harnesses | ✅ done | `--snapshot` (report) + `--transcribe-test` (decode on real audio). No more shipping blind. |
+| **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ next | The big feature. See Phase C plan in Part 3 / Issue 5. |
 
-Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
+Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
@@ -108,6 +110,19 @@ Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
   - **Verified on the real recording** via a new `--transcribe-test` mode (loads the
     cached model, transcribes the meeting's `.caf` with the production options):
     1640 chars of clean prose, **zero `<|` tokens, no repetition**.
+
+- **2026-06-19 — session checkpoint.** Phases **A and B are implemented, built,
+  and installed** as a signed Release app at `/Applications/Parrot.app` (commits
+  `c582e59` → `f8a7c0a`). What's **verified**: B2 report rendering (snapshot vs
+  mockup) and the transcription decode fix (`--transcribe-test` on the real `.caf`,
+  clean + no tokens/repetition). What still needs **Uygar's live confirmation** (one
+  more real recording): transcription keeps pace end-to-end (A1), CPU under load
+  (A2), copilot insight volume (A3), and an eyeball of the redesigned sidebar /
+  dashboard / live copilot panel (B1, B3). **Next:** close those out, then start
+  **Phase C — Call Profiles** (pre-call profile picker, profile-scoped knowledge/RAG,
+  per-call-type persona/strategy, real-time tone/sentiment; see Part 2 · Issue 5).
+  Deferred polish: "Ask Parrot" chat panel, sidebar avatars, transcript-row theming,
+  Whisper model-variant tuning, optional vertical resize in the live view.
 
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
