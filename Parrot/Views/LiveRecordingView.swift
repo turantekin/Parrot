@@ -6,6 +6,11 @@ struct LiveRecordingView: View {
     @State private var autoScroll = true
     @State private var showCopilot = true
     @State private var copilotJumpTarget: TimeInterval?
+    /// Time-sorted segments for the live list, recomputed only when a new segment
+    /// is committed (the count changes) — not on every interim transcript tick —
+    /// so the streaming live text doesn't re-sort the whole transcript several
+    /// times a second.
+    @State private var displayedSegments: [TranscriptSegment] = []
     @AppStorage("copilotEnabled") private var copilotEnabled = false
 
     var body: some View {
@@ -139,11 +144,9 @@ struct LiveRecordingView: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        if let meeting = recordingManager.currentMeeting {
-                            ForEach(meeting.sortedSegments) { segment in
-                                LiveSegmentRow(segment: segment)
-                                    .id(segment.id)
-                            }
+                        ForEach(displayedSegments) { segment in
+                            LiveSegmentRow(segment: segment)
+                                .id(segment.id)
                         }
 
                         if !recordingManager.transcriptionEngine.currentText.isEmpty {
@@ -188,11 +191,19 @@ struct LiveRecordingView: View {
                 }
             }
             .onChange(of: recordingManager.currentMeeting?.segments.count) {
+                // A new segment was committed — refresh the cached sorted list
+                // (the only place the sort runs now).
+                displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
                 if autoScroll {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("currentText", anchor: .bottom)
                     }
                 }
+            }
+            .task(id: recordingManager.currentMeeting?.id) {
+                // Seed on appear and reseed if the meeting changes (e.g. navigating
+                // back into a live recording).
+                displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
             }
             .onChange(of: copilotJumpTarget) { _, target in
                 guard let target,

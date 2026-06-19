@@ -18,8 +18,8 @@ truth for the post-test improvement effort. Update the status table as work land
 |---|---|---|---|
 | — | Analysis of Meeting #48 | ✅ done | See Part 1 |
 | — | Root-cause trace of all 5 issues | ✅ done | See Part 2 |
-| **A** | A1 · Streaming transcription (no more paragraph dumps) | ⬜ not started | Core fix |
-| **A** | A2 · CPU/perf quick wins | ⬜ not started | Linked to A1 |
+| **A** | A1 · Streaming transcription (no more paragraph dumps) | 🟡 built | Chunk cap + interim callback; **compiles**, awaiting on-device test |
+| **A** | A2 · CPU/perf quick wins | 🟡 partial | Sort-cache **done**; echo-canceller ring buffer + level throttle remain |
 | **A** | A3 · Insight volume + `source` quality | ⬜ not started | Tames the firehose |
 | **B** | B1 · Copilot panel redesign (resizable, readable) | ⬜ not started | |
 | **B** | B2 · Post-meeting report redesign (tabs, structure) | ⬜ not started | |
@@ -28,6 +28,20 @@ truth for the post-test improvement effort. Update the status table as work land
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⏸ paused
 
 ---
+
+## Progress log
+
+- **2026-06-19** — Phase A started. Landed A1 (transcription) + A2 sort-cache:
+  - `TranscriptionEngine.swift`: per-pass chunk now capped at `maxChunkSamples`
+    (one ~2 s window, remainder left for next pass) so a backlog drains as small
+    segments instead of a paragraph; added a `TranscriptionCallback` that streams
+    interim `progress.text` into the existing live line.
+  - `LiveRecordingView.swift`: live list reads a cached `displayedSegments`
+    refreshed only on segment-count change (+ `.task(id:)` seed), so interim text
+    ticks no longer re-sort the whole transcript.
+  - `Package.swift`: added the missing `CSpeexDSP` dependency so `swift build`
+    works (was WhisperKit-only; `project.yml` already had it).
+  - Verified with `swift build` (exit 0). On-device test still pending.
 
 ## Part 1 — Meeting #48 analysis (the test that started this)
 
@@ -211,6 +225,26 @@ hitches in the transcript list (verify with Instruments).
 `source` values are only real doc names or "general knowledge".
 
 ---
+
+## Build & verification notes
+
+- CLI builds in the Conductor worktree hit two **Xcode 26.5 explicit-modules**
+  bugs in WhisperKit's transitive deps (not our code):
+  - `swift-jinja` → "unable to resolve module dependency: 'OrderedCollections'"
+    — fixed by deleting this worktree's DerivedData
+    (`~/Library/Developer/Xcode/DerivedData/Parrot-<hash>`, the one whose
+    `info.plist` `WorkspacePath` points at this worktree) and rebuilding.
+  - `yyjson` → explicit precompiled module `_DarwinFoundation2-*.pcm` "not found"
+    — worked around with `SWIFT_ENABLE_EXPLICIT_MODULES=NO` (and/or building in
+    Xcode directly, which the author does successfully).
+- There is **no shared scheme** and `.xcodeproj` is git-tracked (xcodegen source
+  is `project.yml`). CLI builds use `-target Parrot` (so `-derivedDataPath`,
+  which requires `-scheme`, can't be used). Sign-less check:
+  `xcodebuild -project Parrot.xcodeproj -target Parrot -configuration Debug build
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`.
+- A1's real verification is **on-device**: record a continuous-speech session,
+  then re-run the segment-duration query from Part 1 — the `>20s` bucket should
+  be gone and live text should update within ~1–2 s.
 
 ## Key file reference map
 

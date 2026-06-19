@@ -9,6 +9,10 @@ DerivedData/
 # SPM
 .build/
 .swiftpm/
+/Package.resolved
+# Build output (swift build / xcodebuild scratch)
+/build/
+Vendor/*/build/
 
 # macOS
 .DS_Store

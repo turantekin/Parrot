@@ -128,8 +128,16 @@ final class TranscriptionEngine {
         transcriptionTask = Task { [weak self] in
             guard let self else { return }
 
-            // Process audio in chunks (~2 seconds at 16kHz) per stream
+            // Trigger a transcription pass once a stream has buffered at least
+            // ~2 s of audio (32k samples at 16 kHz).
             let chunkSize = 32000
+            // Hard cap on how much audio a single pass consumes. Without this, a
+            // slow Whisper pass (CPU spike, larger model) lets the buffer grow
+            // unbounded and the next pass transcribes 30–70 s of speech as ONE
+            // giant segment — the "silent for minutes, then a wall of text" bug.
+            // Capping keeps every emitted segment ~2 s; under sustained load
+            // latency grows gracefully instead of dumping a paragraph.
+            let maxChunkSamples = 32000
             // Total samples consumed (and freed) per stream. The audio buffers only
             // ever hold not-yet-transcribed samples, so memory stays flat over a long
             // call; these running totals keep segment timestamps absolute regardless.
@@ -139,14 +147,18 @@ final class TranscriptionEngine {
                 try? await Task.sleep(for: .milliseconds(500))
 
                 for source in AudioSource.allCases {
-                    // Pull everything buffered for this stream and clear it in one
-                    // locked step — freeing the consumed audio (so it doesn't pile up
-                    // for the whole call) and avoiding any index race with a reset.
+                    // Pull one bounded window for this stream under the lock —
+                    // freeing the consumed audio (so it doesn't pile up for the
+                    // whole call) and avoiding any index race with a reset.
                     let chunk: [Float] = self.bufferLock.withLock {
                         guard let buffered = self.audioBuffers[source],
                               buffered.count >= chunkSize else { return [] }
-                        self.audioBuffers[source] = []
-                        return buffered
+                        // Take at most one bounded window and leave the remainder
+                        // for the next pass, so a backlog drains as several small
+                        // segments rather than one giant paragraph.
+                        let take = min(buffered.count, maxChunkSamples)
+                        self.audioBuffers[source] = Array(buffered[take...])
+                        return Array(buffered[..<take])
                     }
                     guard !chunk.isEmpty else { continue }
 
@@ -164,7 +176,21 @@ final class TranscriptionEngine {
 
                     do {
                         guard let whisperKit = self.whisperKit else { continue }
-                        let result = try await whisperKit.transcribe(audioArray: chunk, decodeOptions: decodeOptions)
+                        // Stream interim words to the live view as they decode, so
+                        // text appears within the pass instead of only when the
+                        // whole chunk finishes. Returning nil never early-stops.
+                        let interimCallback: TranscriptionCallback = { [weak self] progress in
+                            let partial = progress.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !partial.isEmpty {
+                                Task { @MainActor in self?.currentText = partial }
+                            }
+                            return nil
+                        }
+                        let result = try await whisperKit.transcribe(
+                            audioArray: chunk,
+                            decodeOptions: decodeOptions,
+                            callback: interimCallback
+                        )
 
                         for transcription in result {
                             let text = transcription.text.trimmingCharacters(in: .whitespacesAndNewlines)
