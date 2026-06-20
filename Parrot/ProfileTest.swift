@@ -16,6 +16,7 @@ enum ProfileTest {
         testHexColor()
         testInsightKey()
         testCallProfile()
+        testPresets()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -49,6 +50,18 @@ enum ProfileTest {
         check("profile style label", style?.label == "Objection")
         check("profile style pinned", style?.isPinned == true)
         check("profile unknown key nil", p.style(forKey: "nope") == nil)
+    }
+
+    static func testPresets() {
+        let all = ProfilePresets.all()
+        check("six presets", all.count == 6)
+        check("default first by sortOrder", all.sorted { $0.sortOrder < $1.sortOrder }.first?.id == ProfilePresets.defaultProfileID)
+        let coaching = all.first { $0.name == "1:1 coaching" }
+        check("coaching has reflection kind", coaching?.kinds.contains { $0.key == "reflection" } == true)
+        check("coaching has NO blocker kind", coaching?.kinds.contains { $0.key == "blocker" } == false)
+        check("sales has buying_temperature gauge", all.first { $0.name == "Sales discovery" }?.gauges.contains { $0.key == "buying_temperature" } == true)
+        let def = all.first { $0.id == ProfilePresets.defaultProfileID }
+        check("default has today's five keys", Set(def?.kinds.map(\.key) ?? []) == ["suggestion", "question", "blocker", "action_item", "feedback"])
     }
 
     static func testHexColor() {
