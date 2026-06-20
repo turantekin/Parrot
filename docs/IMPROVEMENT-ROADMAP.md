@@ -27,13 +27,44 @@ truth for the post-test improvement effort. Update the status table as work land
 | **B** | B3 · Sidebar + dashboard + in-app Settings | 🟡 built | Tight sidebar (icons, dots, account), themed dashboard, Settings sheet. Eyeball live. |
 | — | Release `.app` build + install | ✅ done | `/Applications/Parrot.app`; recipe in Build notes. |
 | — | Offscreen verification harnesses | ✅ done | `--snapshot` (report) + `--transcribe-test` (decode on real audio). No more shipping blind. |
-| **C** | C1 · Call Profiles + customizable copilot + tone | ⬜ next | The big feature. See Phase C plan in Part 3 / Issue 5. |
+| **C** | C1 · Call Profiles + customizable copilot + tone | 🟡 built | Full reshapable-lens build (14 tasks). Profiles own their insight kinds + sentiment gauges; per-profile prompt/schema; scoped KB; always-on sentiment strip; inline picker; Profiles settings editor; Default-profile migration preserves today. Spec + plan in `docs/superpowers/`. Needs **on-device eyeball** (see 2026-06-20 log). |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-06-20** — **Phase C built** (Call Profiles + customizable copilot + tone).
+  Brainstormed → spec (`docs/superpowers/specs/2026-06-20-phase-c-call-profiles-design.md`)
+  → 14-task plan (`docs/superpowers/plans/2026-06-20-phase-c-call-profiles.md`) →
+  executed task-by-task with per-task review (subagent-driven). What landed:
+  - **Reshapable lens:** insight `kind` is now a string `kindKey` end-to-end (was a
+    fixed enum); a `CallProfile` `@Model` owns its own `[ProfileKind]` (key/label/
+    color/icon/trigger/pinned) and `[SentimentGauge]`. The Claude system prompt +
+    JSON-schema enum are built per profile; cards style themselves via
+    `KindResolver` (active-profile → meeting snapshot → neutral fallback).
+  - **Sentiment strip:** each analysis pass returns a structured `sentiment` object;
+    `CopilotPanelView` shows an always-on `SentimentStripView` (profile gauges,
+    `my_dominance` reuses the computed talk balance). The old fixed suggestions/
+    blockers/actions filter is gone — now a profile-driven pinned-zone + single feed.
+  - **6 presets:** Default (= today's 5 kinds), Sales, Coaching, Interview, Support,
+    Generic. **Migration** seeds them on first launch, folds the old global
+    `copilotInstructions`/fallback/KB docs into Default, so existing setup is unchanged.
+  - **KB scoping:** `KBDocument.profileIDs` + `search(profileID:)`; many-to-many tags.
+  - **UI:** inline profile picker on the dashboard (last-used default in the menu bar);
+    Profiles settings tab (light editor + doc tagging + "Edit advanced" kind/gauge rows);
+    profile/brief/kind-snapshot persisted on `Meeting` so old reports stay renderable.
+  - **Verified (automated):** `swift build` clean; offscreen `--profile-test` harness
+    ALL PASS (kind resolution, presets, migration idempotency, KB scoping, dynamic
+    prompt/schema enum, kind-validation, snapshot round-trip); `--snapshot` renders.
+  - **Needs Uygar's on-device eyeball** (one real recording each): (1) install release,
+    no first-launch crash + 6 profiles seeded; (2) record under Default → today's 5
+    card kinds/colors (parity); (3) record under Coaching vs Sales → lens visibly
+    changes (coaching kinds, no "objection" framing; sentiment strip updates);
+    (4) open a pre-Phase-C meeting → renders via fallback, no crash; (5) tag a doc into
+    only one profile → it doesn't surface on another profile's call; (6) Profiles tab:
+    duplicate a preset, Edit advanced, confirm fields + Remove are reachable and edits persist.
 
 - **2026-06-19** — Phase A started. Landed A1 (transcription) + A2 sort-cache:
   - `TranscriptionEngine.swift`: per-pass chunk now capped at `maxChunkSamples`
