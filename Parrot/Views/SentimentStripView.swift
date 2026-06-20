@@ -18,6 +18,9 @@ struct SentimentStripView: View {
                 }
                 ForEach(gauges) { gauge in
                     let v = values[gauge.key]
+                    // Clamp the meter fill: model-returned values aren't fully
+                    // trusted, so an out-of-range value can't overflow the track.
+                    let fill = CGFloat(min(max(v ?? 0, 0), 100)) / 100
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
                             Text(gauge.label)
@@ -33,7 +36,7 @@ struct SentimentStripView: View {
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Theme.Colors.line).frame(height: 5)
                                 Capsule().fill(Color(hex: gauge.colorHex))
-                                    .frame(width: geo.size.width * CGFloat(v ?? 0) / 100, height: 5)
+                                    .frame(width: geo.size.width * fill, height: 5)
                                     .animation(.easeOut(duration: 0.4), value: v)
                             }
                         }.frame(height: 5)
