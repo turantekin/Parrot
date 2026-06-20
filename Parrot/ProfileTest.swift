@@ -21,6 +21,7 @@ enum ProfileTest {
         testKBScoping()
         testMigration()
         testPromptAndSchema()
+        testSnapshotPersistence()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -125,6 +126,15 @@ enum ProfileTest {
              InsightDraft(kindKey: "objection", title: "t", detail: "d", source: nil)],
             allowed: Set(kinds.map(\.key)))
         check("validatingKinds drops out-of-lens", valid.count == 1 && valid.first?.kindKey == "reflection")
+    }
+
+    static func testSnapshotPersistence() {
+        let kinds = ProfilePresets.all().first!.kinds
+        let data = try? JSONEncoder().encode(kinds)
+        let m = Meeting()
+        m.profileSnapshotData = data
+        check("snapshot decodes back", m.snapshotKinds.count == kinds.count)
+        check("snapshot preserves first key", m.snapshotKinds.first?.key == kinds.first?.key)
     }
 
     static func testHexColor() {

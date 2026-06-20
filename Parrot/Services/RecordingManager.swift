@@ -10,6 +10,7 @@ final class RecordingManager {
     let diarizationEngine = DiarizationEngine()
     let callAnalysisEngine = CallAnalysisEngine()
     let knowledgeBase = KnowledgeBaseService()
+    let profileStore = ProfileStore()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -34,6 +35,7 @@ final class RecordingManager {
     func prepare(modelContext: ModelContext) async {
         self.modelContext = modelContext
         Self.reconcileOrphanedRecordings(in: modelContext)
+        profileStore.seedAndMigrateIfNeeded(context: modelContext, knowledgeBase: knowledgeBase)
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
@@ -73,6 +75,12 @@ final class RecordingManager {
         let meeting = Meeting()
         modelContext.insert(meeting)
 
+        // Persist active profile/brief/snapshot onto the meeting
+        let profile = profileStore.activeProfile
+        meeting.profile = profile
+        meeting.brief = nextCallBrief.nilIfEmpty
+        meeting.profileSnapshotData = profile.map { try? JSONEncoder().encode($0.kinds) } ?? nil
+
         // Set up audio capture
         try await audioCaptureManager.startCapture()
         meeting.systemAudioPath = audioCaptureManager.systemAudioURL?.path ?? ""
@@ -97,7 +105,7 @@ final class RecordingManager {
 
         // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
-        callAnalysisEngine.start(profile: nil, brief: nextCallBrief)
+        callAnalysisEngine.start(profile: profile, brief: nextCallBrief)
 
         currentMeeting = meeting
         recordingStartTime = .now
@@ -195,7 +203,7 @@ final class RecordingManager {
             .map { "[\($0.formattedTimestamp)] \($0.speakerLabel ?? "Speaker"): \($0.text)" }
             .joined(separator: "\n")
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
-        let instructions = UserDefaults.standard.string(forKey: "copilotInstructions") ?? ""
+        let instructions = meeting.profile?.tone ?? (UserDefaults.standard.string(forKey: "copilotInstructions") ?? "")
 
         do {
             let summary = try await callAnalysisEngine.provider.summarize(

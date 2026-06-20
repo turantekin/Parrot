@@ -29,7 +29,7 @@ struct ParrotApp: App {
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false
@@ -45,6 +45,7 @@ struct ParrotApp: App {
         WindowGroup {
             ContentView()
                 .environment(recordingManager)
+                .environment(recordingManager.profileStore)
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView(isPresented: $showOnboarding)
                         .environment(recordingManager)
@@ -57,6 +58,7 @@ struct ParrotApp: App {
         MenuBarExtra {
             MenuBarView()
                 .environment(recordingManager)
+                .environment(recordingManager.profileStore)
                 .modelContainer(sharedModelContainer)
         } label: {
             Image(systemName: recordingManager.isRecording ? "waveform.circle.fill" : "waveform")
@@ -65,6 +67,7 @@ struct ParrotApp: App {
         Settings {
             SettingsView()
                 .environment(recordingManager)
+                .environment(recordingManager.profileStore)
         }
     }
 }
