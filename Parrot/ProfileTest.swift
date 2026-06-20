@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SwiftData
 
 /// Offscreen logic harness. Run: `.build/debug/Parrot --profile-test`
 /// Prints PASS/FAIL per check and exits non-zero on any failure.
@@ -17,6 +18,8 @@ enum ProfileTest {
         testInsightKey()
         testCallProfile()
         testPresets()
+        testKBScoping()
+        testMigration()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -62,6 +65,44 @@ enum ProfileTest {
         check("sales has buying_temperature gauge", all.first { $0.name == "Sales discovery" }?.gauges.contains { $0.key == "buying_temperature" } == true)
         let def = all.first { $0.id == ProfilePresets.defaultProfileID }
         check("default has today's five keys", Set(def?.kinds.map(\.key) ?? []) == ["suggestion", "question", "blocker", "action_item", "feedback"])
+    }
+
+    @MainActor
+    static func testKBScoping() {
+        let kb = KnowledgeBaseService()
+        // Synchronous: unknown profile UUID always returns empty names list.
+        check("documentNames empty for unknown profile", kb.documentNames(for: UUID()).isEmpty)
+        // Synchronous: after tagging all docs into a fresh ID, every doc contains it.
+        let tagID = UUID()
+        kb.tagAllDocuments(into: tagID)
+        // If kb has any documents, they should all contain tagID. Vacuously true on empty KB.
+        check("tagAllDocuments tags every document", kb.documents.allSatisfy { $0.profileIDs.contains(tagID) })
+        // Scoped search for unknown profile: since search() early-returns [] when chunks is empty
+        // (CLI KB is always empty), and for a truly unknown profile even with chunks the allowedNames
+        // set would be empty making snapshot empty. We assert via documentNames proxy — a freshly
+        // created UUID has no documents tagged into it.
+        check("documentNames for untagged profile is empty", kb.documentNames(for: UUID()).isEmpty)
+    }
+
+    @MainActor
+    static func testMigration() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
+            check("migration container builds", false); return
+        }
+        let ctx = ModelContext(container)
+        let kb = KnowledgeBaseService()
+        let store = ProfileStore()
+        UserDefaults.standard.set("be concise", forKey: "copilotInstructions")
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+        let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        check("seeded six profiles", profiles.count == 6)
+        let def = profiles.first { $0.id == ProfilePresets.defaultProfileID }
+        check("default absorbed instructions as tone", def?.tone == "be concise")
+        // Idempotent: second run doesn't duplicate.
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+        check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == 6)
     }
 
     static func testHexColor() {

@@ -86,14 +86,40 @@ final class KnowledgeBaseService {
         save()
     }
 
+    // MARK: - Profile Scoping
+
+    /// Tags every document in the KB into the given profile ID.
+    func tagAllDocuments(into id: UUID) {
+        for i in documents.indices { documents[i].profileIDs.insert(id) }
+        save()
+    }
+
+    /// Replaces the full set of profile tags for a document.
+    func setProfiles(_ ids: Set<UUID>, for document: KBDocument) {
+        guard let i = documents.firstIndex(where: { $0.id == document.id }) else { return }
+        documents[i].profileIDs = ids
+        save()
+    }
+
+    /// Returns the names of documents tagged into the given profile ID.
+    func documentNames(for profileID: UUID) -> [String] {
+        documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)
+    }
+
     // MARK: - Retrieval
 
     /// Returns the best-matching chunks for the recent conversation, joined with
-    /// each document's current note.
-    func search(query: String, topK: Int = 4) async -> [KBReference] {
+    /// each document's current note. Pass `profileID` to restrict to documents
+    /// tagged into that profile; `nil` searches all (back-compat).
+    func search(query: String, profileID: UUID? = nil, topK: Int = 4) async -> [KBReference] {
         guard !chunks.isEmpty, !query.isEmpty else { return [] }
 
-        let snapshot = chunks
+        // Restrict to documents tagged into this profile (nil = all, back-compat).
+        let allowedNames: Set<String>? = profileID.map { id in
+            Set(documents.filter { $0.profileIDs.contains(id) }.map(\.name))
+        }
+        let snapshot = allowedNames.map { names in chunks.filter { names.contains($0.documentName) } } ?? chunks
+        guard !snapshot.isEmpty else { return [] }
         let notesByDocument = Dictionary(
             documents.map { ($0.name, $0.note) },
             uniquingKeysWith: { first, _ in first }
