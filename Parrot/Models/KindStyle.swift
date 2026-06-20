@@ -34,6 +34,19 @@ enum KindResolver {
     }
 }
 
+extension KindResolver {
+    /// Profile-aware resolver: walks active profile → snapshot kinds → fallback table.
+    /// Live cards pass `snapshot: []`; report cards pass `meeting.snapshotKinds`.
+    static func style(forKey key: String, profile: CallProfile?, snapshot: [ProfileKind]) -> KindStyle {
+        if let s = profile?.style(forKey: key) { return s }
+        if let k = snapshot.first(where: { $0.key == key }) {
+            return KindStyle(label: k.label, color: Color(hex: k.colorHex),
+                             iconSystemName: k.iconSystemName, isPinned: k.isPinned)
+        }
+        return fallbackStyle(forKey: key)
+    }
+}
+
 extension Color {
     /// Parses "RRGGBB" or "#RRGGBB". Falls back to gray on malformed input so a
     /// bad profile color can never crash the UI.

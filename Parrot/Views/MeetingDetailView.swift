@@ -271,7 +271,14 @@ struct MeetingDetailView: View {
                     emptyTabState("No copilot insights were captured on this call.")
                 } else {
                     ForEach(meeting.sortedInsights) { insight in
-                        StoredInsightRow(insight: insight) {
+                        StoredInsightRow(
+                            insight: insight,
+                            kindStyle: KindResolver.style(
+                                forKey: insight.kindRaw,
+                                profile: meeting.profile,
+                                snapshot: meeting.snapshotKinds
+                            )
+                        ) {
                             seekTo(insight.callTime)
                         }
                     }
@@ -477,6 +484,8 @@ struct TranscriptSegmentRow: View {
 
 struct StoredInsightRow: View {
     let insight: CallInsight
+    /// Resolved visual style — caller supplies via KindResolver so the row is profile-aware.
+    let kindStyle: KindStyle
     let onSeek: () -> Void
 
     var body: some View {
@@ -491,9 +500,9 @@ struct StoredInsightRow: View {
             .buttonStyle(.plain)
             .help("Play from this moment")
 
-            Image(systemName: insight.style.iconSystemName)
+            Image(systemName: kindStyle.iconSystemName)
                 .font(.caption)
-                .foregroundStyle(insight.style.color)
+                .foregroundStyle(kindStyle.color)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {

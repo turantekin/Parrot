@@ -13,7 +13,6 @@ struct CopilotPanelView: View {
     /// Set by tapping a card timestamp; LiveRecordingView scrolls the transcript there.
     @Binding var transcriptJumpTarget: TimeInterval?
 
-    @State private var filter: InsightFilter = .all
     @State private var atTop = true
     @State private var unseenCount = 0
     @State private var seenInsightCount = 0
@@ -25,26 +24,9 @@ struct CopilotPanelView: View {
 
     private var engine: CallAnalysisEngine { recordingManager.callAnalysisEngine }
 
-    enum InsightFilter: String, CaseIterable {
-        case all, suggestions, blockers, actions
-
-        var icon: String {
-            switch self {
-            case .all: "square.grid.2x2"
-            case .suggestions: "lightbulb"
-            case .blockers: "exclamationmark.triangle"
-            case .actions: "checkmark.circle"
-            }
-        }
-
-        func matches(_ insight: Insight) -> Bool {
-            switch self {
-            case .all: true
-            case .suggestions: !insight.style.isPinned && insight.kindKey != "action_item"
-            case .blockers: insight.style.isPinned
-            case .actions: insight.kindKey == "action_item"
-            }
-        }
+    /// Profile-aware style resolver for a live insight.
+    private func style(for insight: Insight) -> KindStyle {
+        KindResolver.style(forKey: insight.kindKey, profile: engine.activeProfile, snapshot: [])
     }
 
     var body: some View {
@@ -62,68 +44,35 @@ struct CopilotPanelView: View {
     // MARK: - Derived lists
 
     private var pinnedBlockers: [Insight] {
-        engine.insights.filter { $0.style.isPinned && !$0.isHandled }
+        engine.insights.filter { style(for: $0).isPinned && !$0.isHandled }
     }
 
     private var feedInsights: [Insight] {
-        engine.insights.filter { insight in
-            // Unhandled pinned insights live in the pinned zone, not the feed.
-            if insight.style.isPinned && !insight.isHandled { return false }
-            return filter.matches(insight)
-        }
-    }
-
-    private var actionItemCount: Int {
-        engine.insights.filter { $0.kindKey == "action_item" }.count
+        // Everything except unhandled pinned insights (those live in the pinned zone).
+        engine.insights.filter { !(style(for: $0).isPinned && !$0.isHandled) }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(Theme.Colors.accent)
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Theme.Colors.accent)
 
-                Text("Copilot")
-                    .font(.headline)
+            Text("Copilot")
+                .font(.headline)
 
-                if actionItemCount > 0 {
-                    Button {
-                        filter = filter == .actions ? .all : .actions
-                    } label: {
-                        Label("\(actionItemCount)", systemImage: "checkmark.circle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.green.opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Action items captured so far")
-                }
+            Spacer()
 
-                Spacer()
-
-                if let percent = engine.userTalkPercent {
-                    Text("You \(percent)%")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(percent > 70 ? .orange : .secondary)
-                        .help("Your share of the conversation so far")
-                }
-
-                statusBadge
+            if let percent = engine.userTalkPercent {
+                Text("You \(percent)%")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(percent > 70 ? .orange : .secondary)
+                    .help("Your share of the conversation so far")
             }
 
-            Picker("Filter", selection: $filter) {
-                ForEach(InsightFilter.allCases, id: \.self) { option in
-                    Image(systemName: option.icon).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
+            statusBadge
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -183,6 +132,14 @@ struct CopilotPanelView: View {
     @ViewBuilder
     private func feedArea(errorMessage: String?) -> some View {
         VStack(spacing: 0) {
+            // Always-on sentiment strip — shown whenever the active profile has gauges.
+            SentimentStripView(
+                gauges: engine.activeProfile?.gauges ?? [],
+                values: engine.sentiment,
+                read: engine.sentimentRead
+            )
+            .padding(.horizontal, 12).padding(.top, 8)
+
             if !pinnedBlockers.isEmpty {
                 pinnedZone
                 Divider()
@@ -254,6 +211,7 @@ struct CopilotPanelView: View {
                         ForEach(feedInsights) { insight in
                             InsightCard(
                                 insight: insight,
+                                kindStyle: style(for: insight),
                                 isCollapsed: isCollapsed(insight),
                                 onToggleCollapse: { toggleCollapse(insight) },
                                 onJump: { transcriptJumpTarget = insight.callTime },
@@ -314,7 +272,7 @@ struct CopilotPanelView: View {
     private func isCollapsed(_ insight: Insight) -> Bool {
         if manuallyCollapsed.contains(insight.id) { return true }
         // Handled pinned insights tuck themselves away; everything else stays open.
-        return insight.style.isPinned && insight.isHandled
+        return style(for: insight).isPinned && insight.isHandled
     }
 
     private func toggleCollapse(_ insight: Insight) {
@@ -382,6 +340,9 @@ struct PinnedBlockerRow: View {
 
 struct InsightCard: View {
     let insight: Insight
+    /// Resolved visual style — callers supply this via KindResolver so the card
+    /// never hard-codes the fallback table and is profile-aware.
+    let kindStyle: KindStyle
     let isCollapsed: Bool
     let onToggleCollapse: () -> Void
     let onJump: () -> Void
@@ -410,16 +371,16 @@ struct InsightCard: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.Colors.ink3)
 
-                Image(systemName: insight.style.iconSystemName)
+                Image(systemName: kindStyle.iconSystemName)
                     .font(.caption)
-                    .foregroundStyle(insight.style.color)
+                    .foregroundStyle(kindStyle.color)
 
                 Text(insight.title)
                     .font(.callout)
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
 
-                if insight.style.isPinned && insight.isHandled {
+                if kindStyle.isPinned && insight.isHandled {
                     Image(systemName: "checkmark")
                         .font(.caption2)
                         .foregroundStyle(Theme.Colors.action)
@@ -444,11 +405,11 @@ struct InsightCard: View {
     private var expandedCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: insight.style.iconSystemName)
-                Text(insight.style.label)
+                Image(systemName: kindStyle.iconSystemName)
+                Text(kindStyle.label)
                     .font(.caption.weight(.semibold))
 
-                if insight.style.isPinned && insight.isHandled {
+                if kindStyle.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
                         .font(.caption2)
                         .foregroundStyle(Theme.Colors.action)
@@ -475,7 +436,7 @@ struct InsightCard: View {
                     .help("Copy suggested answer")
                 }
             }
-            .foregroundStyle(insight.style.color)
+            .foregroundStyle(kindStyle.color)
 
             Text(insight.title)
                 .font(.callout.weight(.semibold))
@@ -497,7 +458,7 @@ struct InsightCard: View {
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            insight.style.isPinned ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
+            kindStyle.isPinned ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
             in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
         )
         .overlay(
@@ -507,7 +468,7 @@ struct InsightCard: View {
         // Colored accent stripe on the leading edge, in place of a tinted fill.
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(insight.style.color)
+                .fill(kindStyle.color)
                 .frame(width: 3)
                 .padding(.vertical, 9)
         }
