@@ -70,7 +70,7 @@ final class CallProfile {
     /// Profile-defined style for a key, or nil if this profile doesn't define it.
     func style(forKey key: String) -> KindStyle? {
         guard let k = kinds.first(where: { $0.key == key }) else { return nil }
-        return KindStyle(label: k.label, color: Color(hex: k.colorHex),
+        return KindStyle(label: k.label, color: KindResolver.adaptiveColor(forHex: k.colorHex),
                          iconSystemName: k.iconSystemName, isPinned: k.isPinned)
     }
 }

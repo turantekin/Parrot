@@ -37,8 +37,9 @@ enum ExportService {
         if !meeting.insights.isEmpty {
             output += "\n=== Copilot Insights ===\n\n"
             for insight in meeting.sortedInsights {
-                var line = "[\(insight.formattedCallTime)] \(insight.style.label): \(insight.title)"
-                if insight.kindRaw == "blocker" {
+                let style = KindResolver.style(forKey: insight.kindRaw, profile: meeting.profile, snapshot: meeting.snapshotKinds)
+                var line = "[\(insight.formattedCallTime)] \(style.label): \(insight.title)"
+                if style.isPinned {
                     line += insight.isHandled ? " (handled)" : " (UNRESOLVED)"
                 }
                 output += line + "\n"

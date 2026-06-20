@@ -40,10 +40,26 @@ extension KindResolver {
     static func style(forKey key: String, profile: CallProfile?, snapshot: [ProfileKind]) -> KindStyle {
         if let s = profile?.style(forKey: key) { return s }
         if let k = snapshot.first(where: { $0.key == key }) {
-            return KindStyle(label: k.label, color: Color(hex: k.colorHex),
+            return KindStyle(label: k.label, color: adaptiveColor(forHex: k.colorHex),
                              iconSystemName: k.iconSystemName, isPinned: k.isPinned)
         }
         return fallbackStyle(forKey: key)
+    }
+
+    /// Maps known Theme-palette light hexes to their adaptive dark counterparts so that
+    /// profile-stored colors (which are persisted as single light hex values) remain
+    /// appearance-correct in dark mode. Unknown custom hexes fall back to a fixed color.
+    static func adaptiveColor(forHex hex: String) -> Color {
+        // Normalise: uppercase, strip leading '#'.
+        let s = hex.hasPrefix("#") ? String(hex.dropFirst().uppercased()) : hex.uppercased()
+        switch s {
+        case "4F6FB0": return Color(lightHex: 0x4F6FB0, darkHex: 0x8AA0D0) // subtle
+        case "2F7E96": return Color(lightHex: 0x2F7E96, darkHex: 0x57AEC6) // accent
+        case "E8943A": return Color(lightHex: 0xE8943A, darkHex: 0xE8A85C) // blocker
+        case "3F9168": return Color(lightHex: 0x3F9168, darkHex: 0x5BBE8C) // action
+        case "5F6470": return Color(lightHex: 0x5F6470, darkHex: 0xA0A4AD) // ink2
+        default:       return Color(hex: hex)
+        }
     }
 }
 

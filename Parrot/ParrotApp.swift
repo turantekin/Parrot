@@ -69,5 +69,6 @@ struct ParrotApp: App {
                 .environment(recordingManager)
                 .environment(recordingManager.profileStore)
         }
+        .modelContainer(sharedModelContainer)
     }
 }
