@@ -18,8 +18,11 @@ final class KnowledgeBaseService {
 
     var isEmpty: Bool { documents.isEmpty }
 
-    init() {
-        load()
+    private let persistent: Bool
+
+    init(persistent: Bool = true) {
+        self.persistent = persistent
+        if persistent { load() }
     }
 
     // MARK: - Document Management
@@ -229,6 +232,7 @@ final class KnowledgeBaseService {
     }
 
     private func save() {
+        guard persistent else { return }
         guard let data = try? JSONEncoder().encode(Store(documents: documents, chunks: chunks)) else { return }
         try? data.write(to: Self.storeURL, options: .atomic)
     }

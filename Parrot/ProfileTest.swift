@@ -69,7 +69,7 @@ enum ProfileTest {
 
     @MainActor
     static func testKBScoping() {
-        let kb = KnowledgeBaseService()
+        let kb = KnowledgeBaseService(persistent: false)
         // Synchronous: unknown profile UUID always returns empty names list.
         check("documentNames empty for unknown profile", kb.documentNames(for: UUID()).isEmpty)
         // Synchronous: after tagging all docs into a fresh ID, every doc contains it.
@@ -92,9 +92,10 @@ enum ProfileTest {
             check("migration container builds", false); return
         }
         let ctx = ModelContext(container)
-        let kb = KnowledgeBaseService()
+        let kb = KnowledgeBaseService(persistent: false)
         let store = ProfileStore()
         UserDefaults.standard.set("be concise", forKey: "copilotInstructions")
+        defer { UserDefaults.standard.removeObject(forKey: "copilotInstructions") }
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
         let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
         check("seeded six profiles", profiles.count == 6)
