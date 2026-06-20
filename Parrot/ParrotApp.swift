@@ -16,6 +16,10 @@ struct ParrotMain {
             TranscribeTest.run(audioPath: args[i + 1], modelFolder: modelFolder)
             return
         }
+        if args.contains("--profile-test") {
+            MainActor.assumeIsolated { ProfileTest.run() }
+            return
+        }
         ParrotApp.main()
     }
 }
