@@ -6,8 +6,6 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("copilotEnabled") private var copilotEnabled = false
-    @AppStorage("copilotInstructions") private var copilotInstructions = ""
-    @AppStorage("copilotGeneralFallback") private var copilotGeneralFallback = true
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
@@ -30,6 +28,11 @@ struct SettingsView: View {
             copilotTab
                 .tabItem {
                     Label("Copilot", systemImage: "sparkles")
+                }
+
+            ProfilesSettingsView()
+                .tabItem {
+                    Label("Profiles", systemImage: "person.2.badge.gearshape")
                 }
 
             knowledgeTab
@@ -244,28 +247,6 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.yellow)
                 }
-            }
-
-            Section("Coaching Instructions") {
-                TextEditor(text: $copilotInstructions)
-                    .font(.callout)
-                    .frame(height: 70)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(.quaternary)
-                    )
-
-                Text("Standing guidance for every call — tone, style, behavior. E.g. \"Keep answers casual and short. Always offer Good/Better/Best when price comes up.\"")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Answer from general knowledge when my documents don't cover it", isOn: $copilotGeneralFallback)
-
-                Text("Cards always show where an answer came from: your document's name, or \"general knowledge\".")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding()
