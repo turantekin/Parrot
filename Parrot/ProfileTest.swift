@@ -15,6 +15,7 @@ enum ProfileTest {
         testKindStyleFallback()
         testHexColor()
         testInsightKey()
+        testCallProfile()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -34,6 +35,20 @@ enum ProfileTest {
         let insight = Insight(kindKey: "buying_signal", title: "t", detail: "d", callTime: 0, source: nil)
         check("insight style resolves unknown key", insight.style.label == "Buying Signal")
         check("insight known key pinned", Insight(kindKey: "blocker", title: "t", detail: "d", callTime: 0, source: nil).style.isPinned)
+    }
+
+    static func testCallProfile() {
+        let kind = ProfileKind(id: UUID(), key: "objection", label: "Objection",
+            colorHex: "E8943A", iconSystemName: "hand.raised.fill",
+            triggerDescription: "Them raised a concern", isPinned: true, priority: 10)
+        let p = CallProfile(name: "Sales", iconSystemName: "dollarsign.circle",
+            summary: "x", isBuiltIn: true, sortOrder: 0, persona: "p", tone: "t",
+            allowGeneralKnowledge: true, kinds: [kind], gauges: [])
+        check("profile round-trips kinds", p.kinds.first?.key == "objection")
+        let style = p.style(forKey: "objection")
+        check("profile style label", style?.label == "Objection")
+        check("profile style pinned", style?.isPinned == true)
+        check("profile unknown key nil", p.style(forKey: "nope") == nil)
     }
 
     static func testHexColor() {
