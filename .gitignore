@@ -21,3 +21,6 @@ Vendor/*/build/
 
 # Dependencies
 Packages/
+
+# Subagent-driven execution scratch (ledger, briefs, diffs)
+.superpowers/
