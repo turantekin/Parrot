@@ -40,9 +40,9 @@ struct CopilotPanelView: View {
         func matches(_ insight: Insight) -> Bool {
             switch self {
             case .all: true
-            case .suggestions: insight.kind == .suggestion || insight.kind == .feedback || insight.kind == .question
-            case .blockers: insight.kind == .blocker
-            case .actions: insight.kind == .actionItem
+            case .suggestions: !insight.style.isPinned && insight.kindKey != "action_item"
+            case .blockers: insight.style.isPinned
+            case .actions: insight.kindKey == "action_item"
             }
         }
     }
@@ -62,19 +62,19 @@ struct CopilotPanelView: View {
     // MARK: - Derived lists
 
     private var pinnedBlockers: [Insight] {
-        engine.insights.filter { $0.kind == .blocker && !$0.isHandled }
+        engine.insights.filter { $0.style.isPinned && !$0.isHandled }
     }
 
     private var feedInsights: [Insight] {
         engine.insights.filter { insight in
-            // Unhandled blockers live in the pinned zone, not the feed.
-            if insight.kind == .blocker && !insight.isHandled { return false }
+            // Unhandled pinned insights live in the pinned zone, not the feed.
+            if insight.style.isPinned && !insight.isHandled { return false }
             return filter.matches(insight)
         }
     }
 
     private var actionItemCount: Int {
-        engine.insights.filter { $0.kind == .actionItem }.count
+        engine.insights.filter { $0.kindKey == "action_item" }.count
     }
 
     // MARK: - Header
@@ -313,8 +313,8 @@ struct CopilotPanelView: View {
 
     private func isCollapsed(_ insight: Insight) -> Bool {
         if manuallyCollapsed.contains(insight.id) { return true }
-        // Handled blockers tuck themselves away; everything else stays open.
-        return insight.kind == .blocker && insight.isHandled
+        // Handled pinned insights tuck themselves away; everything else stays open.
+        return insight.style.isPinned && insight.isHandled
     }
 
     private func toggleCollapse(_ insight: Insight) {
@@ -410,16 +410,16 @@ struct InsightCard: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.Colors.ink3)
 
-                Image(systemName: insight.kind.icon)
+                Image(systemName: insight.style.iconSystemName)
                     .font(.caption)
-                    .foregroundStyle(insight.kind.color)
+                    .foregroundStyle(insight.style.color)
 
                 Text(insight.title)
                     .font(.callout)
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
 
-                if insight.kind == .blocker && insight.isHandled {
+                if insight.style.isPinned && insight.isHandled {
                     Image(systemName: "checkmark")
                         .font(.caption2)
                         .foregroundStyle(Theme.Colors.action)
@@ -444,11 +444,11 @@ struct InsightCard: View {
     private var expandedCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: insight.kind.icon)
-                Text(insight.kind.label)
+                Image(systemName: insight.style.iconSystemName)
+                Text(insight.style.label)
                     .font(.caption.weight(.semibold))
 
-                if insight.kind == .blocker && insight.isHandled {
+                if insight.style.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
                         .font(.caption2)
                         .foregroundStyle(Theme.Colors.action)
@@ -458,7 +458,7 @@ struct InsightCard: View {
 
                 TimestampButton(insight: insight, action: onJump)
 
-                if insight.kind == .suggestion {
+                if insight.kindKey == "suggestion" {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(insight.detail, forType: .string)
@@ -475,7 +475,7 @@ struct InsightCard: View {
                     .help("Copy suggested answer")
                 }
             }
-            .foregroundStyle(insight.kind.color)
+            .foregroundStyle(insight.style.color)
 
             Text(insight.title)
                 .font(.callout.weight(.semibold))
@@ -497,7 +497,7 @@ struct InsightCard: View {
         .padding(.trailing, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            insight.kind == .blocker ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
+            insight.style.isPinned ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
             in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
         )
         .overlay(
@@ -507,7 +507,7 @@ struct InsightCard: View {
         // Colored accent stripe on the leading edge, in place of a tinted fill.
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(insight.kind.color)
+                .fill(insight.style.color)
                 .frame(width: 3)
                 .padding(.vertical, 9)
         }
@@ -535,34 +535,3 @@ struct TimestampButton: View {
     }
 }
 
-extension Insight.Kind {
-    var label: String {
-        switch self {
-        case .suggestion: "Suggested answer"
-        case .question: "Open question"
-        case .blocker: "Blocker"
-        case .actionItem: "Action item"
-        case .feedback: "Feedback"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .suggestion: "lightbulb.fill"
-        case .question: "questionmark.circle.fill"
-        case .blocker: "exclamationmark.triangle.fill"
-        case .actionItem: "checkmark.circle.fill"
-        case .feedback: "chart.line.uptrend.xyaxis"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .suggestion: Theme.Colors.subtle
-        case .question: Theme.Colors.accent
-        case .blocker: Theme.Colors.blocker
-        case .actionItem: Theme.Colors.action
-        case .feedback: Theme.Colors.ink2
-        }
-    }
-}

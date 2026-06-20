@@ -186,7 +186,7 @@ final class CallAnalysisEngine {
                 .filter { !existingTitles.contains($0.title.lowercased()) }
                 .map {
                     Insight(
-                        kind: $0.kind,
+                        kindKey: $0.kindKey,
                         title: $0.title,
                         detail: $0.detail,
                         callTime: anchorTime,

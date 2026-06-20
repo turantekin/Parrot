@@ -14,6 +14,7 @@ enum ProfileTest {
     static func run() {
         testKindStyleFallback()
         testHexColor()
+        testInsightKey()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -25,6 +26,14 @@ enum ProfileTest {
         let unknown = KindResolver.fallbackStyle(forKey: "totally_made_up")
         check("fallback unknown not pinned", unknown.isPinned == false)
         check("fallback unknown has a label", !unknown.label.isEmpty)
+    }
+
+    static func testInsightKey() {
+        let draft = InsightDraft(kindKey: "blocker", title: "Price too high", detail: "x", source: nil)
+        check("draft carries kindKey", draft.kindKey == "blocker")
+        let insight = Insight(kindKey: "buying_signal", title: "t", detail: "d", callTime: 0, source: nil)
+        check("insight style resolves unknown key", insight.style.label == "Buying Signal")
+        check("insight known key pinned", Insight(kindKey: "blocker", title: "t", detail: "d", callTime: 0, source: nil).style.isPinned)
     }
 
     static func testHexColor() {

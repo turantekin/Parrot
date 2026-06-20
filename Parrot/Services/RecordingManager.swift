@@ -194,7 +194,7 @@ final class RecordingManager {
         let transcript = segments
             .map { "[\($0.formattedTimestamp)] \($0.speakerLabel ?? "Speaker"): \($0.text)" }
             .joined(separator: "\n")
-        let insightTitles = meeting.sortedInsights.map { "\($0.kind.label): \($0.title)" }
+        let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
         let instructions = UserDefaults.standard.string(forKey: "copilotInstructions") ?? ""
 
         do {

@@ -491,9 +491,9 @@ struct StoredInsightRow: View {
             .buttonStyle(.plain)
             .help("Play from this moment")
 
-            Image(systemName: insight.kind.icon)
+            Image(systemName: insight.style.iconSystemName)
                 .font(.caption)
-                .foregroundStyle(insight.kind.color)
+                .foregroundStyle(insight.style.color)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -501,7 +501,7 @@ struct StoredInsightRow: View {
                     Text(insight.title)
                         .font(.callout.weight(.medium))
 
-                    if insight.kind == .blocker {
+                    if insight.kindRaw == "blocker" {
                         Label(
                             insight.isHandled ? "Handled" : "Unresolved",
                             systemImage: insight.isHandled ? "checkmark" : "exclamationmark.circle"

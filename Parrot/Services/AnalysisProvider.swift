@@ -3,7 +3,7 @@ import Security
 
 /// Raw insight returned by a provider; the engine attaches call timing.
 struct InsightDraft {
-    let kind: Insight.Kind
+    let kindKey: String
     let title: String
     let detail: String
     /// Document name the answer is grounded in, or "general knowledge".
@@ -322,7 +322,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             if normalized == "general knowledge" || valid.contains(normalized) {
                 return draft
             }
-            return InsightDraft(kind: draft.kind, title: draft.title, detail: draft.detail, source: nil)
+            return InsightDraft(kindKey: draft.kindKey, title: draft.title, detail: draft.detail, source: nil)
         }
     }
 
@@ -333,14 +333,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             throw AnalysisError.badResponse("Empty model response")
         }
         let payload = try JSONDecoder().decode(InsightsPayload.self, from: jsonData)
-        return payload.insights.compactMap { item in
-            guard let kind = Insight.Kind(rawValue: item.kind) else { return nil }
-            return InsightDraft(
-                kind: kind,
-                title: item.title,
-                detail: item.detail,
-                source: item.source?.nilIfEmpty
-            )
+        return payload.insights.map { item in
+            InsightDraft(kindKey: item.kind, title: item.title, detail: item.detail, source: item.source?.nilIfEmpty)
         }
     }
 
