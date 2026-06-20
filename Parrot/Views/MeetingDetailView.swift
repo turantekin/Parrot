@@ -510,7 +510,7 @@ struct StoredInsightRow: View {
                     Text(insight.title)
                         .font(.callout.weight(.medium))
 
-                    if insight.kindRaw == "blocker" {
+                    if kindStyle.isPinned {
                         Label(
                             insight.isHandled ? "Handled" : "Unresolved",
                             systemImage: insight.isHandled ? "checkmark" : "exclamationmark.circle"
