@@ -26,6 +26,14 @@ final class Meeting {
     /// replaces "Them"/"Speaker N" labels in the transcript and reports.
     var themName: String?
 
+    /// Profile recorded under (nil for pre-Phase-C meetings).
+    var profile: CallProfile?
+    /// One-line brief for this specific call (was ephemeral nextCallBrief).
+    var brief: String?
+    /// Denormalized [ProfileKind] used at record time, so the report renders with
+    /// the right kind labels/colors even if the profile is later edited/deleted.
+    var profileSnapshotData: Data?
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
@@ -63,6 +71,11 @@ final class Meeting {
 
     var sortedSegments: [TranscriptSegment] {
         segments.sorted { $0.startTime < $1.startTime }
+    }
+
+    var snapshotKinds: [ProfileKind] {
+        guard let data = profileSnapshotData else { return [] }
+        return (try? JSONDecoder().decode([ProfileKind].self, from: data)) ?? []
     }
 
     /// Number of distinct participants by display name. Counting display names
