@@ -97,7 +97,7 @@ final class RecordingManager {
 
         // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
-        callAnalysisEngine.start(brief: nextCallBrief)
+        callAnalysisEngine.start(profile: nil, brief: nextCallBrief)
 
         currentMeeting = meeting
         recordingStartTime = .now

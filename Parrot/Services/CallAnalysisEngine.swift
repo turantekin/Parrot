@@ -21,6 +21,9 @@ final class CallAnalysisEngine {
     private(set) var insights: [Insight] = []
     private(set) var status: Status = .off
     private(set) var isActive = false
+    private(set) var sentiment: [String: Int] = [:]
+    private(set) var sentimentRead: String?
+    private(set) var activeProfile: CallProfile?
 
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
@@ -55,7 +58,7 @@ final class CallAnalysisEngine {
         UserDefaults.standard.bool(forKey: "copilotEnabled")
     }
 
-    func start(brief: String = "") {
+    func start(profile: CallProfile?, brief: String = "") {
         guard isEnabled else {
             status = .off
             return
@@ -67,6 +70,8 @@ final class CallAnalysisEngine {
         oldestPendingSince = nil
         meCharacters = 0
         themCharacters = 0
+        sentiment = [:]; sentimentRead = nil
+        activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
@@ -163,36 +168,39 @@ final class CallAnalysisEngine {
 
         // Retrieve knowledge base material matching the most recent speech.
         let query = segments.suffix(8).map(\.text).joined(separator: " ")
-        let references = await knowledgeBase?.search(query: query) ?? []
+        let profile = activeProfile
+        let references = await knowledgeBase?.search(query: query, profileID: profile?.id) ?? []
 
         let request = AnalysisRequest(
             transcript: transcript,
             knownInsightTitles: Array(knownTitles),
             references: references,
-            instructions: UserDefaults.standard.string(forKey: "copilotInstructions") ?? "",
+            instructions: profile?.tone ?? "",
             callBrief: callBrief,
-            allowGeneralKnowledge: UserDefaults.standard.object(forKey: "copilotGeneralFallback") as? Bool ?? true,
-            knownDocumentNames: knowledgeBase?.documents.map(\.name) ?? []
+            allowGeneralKnowledge: profile?.allowGeneralKnowledge ?? true,
+            knownDocumentNames: profile.map { knowledgeBase?.documentNames(for: $0.id) ?? [] } ?? (knowledgeBase?.documents.map(\.name) ?? []),
+            persona: profile?.persona ?? "",
+            kinds: profile?.kinds ?? [],
+            gauges: profile?.gauges ?? []
         )
 
         do {
-            let drafts = try await provider.analyze(request)
+            let result = try await provider.analyze(request)
             guard isActive else {
                 analysisTask = nil
                 return
             }
+            // Merge model sentiment; overlay the computed talk-balance gauge if present.
+            var merged = result.sentiment
+            if let pct = userTalkPercent, (profile?.gauges.contains { $0.key == "my_dominance" } ?? false) {
+                merged["my_dominance"] = pct
+            }
+            sentiment = merged
+            sentimentRead = result.read
             let existingTitles = Set(insights.map { $0.title.lowercased() })
-            let unique = drafts
+            let unique = result.insights
                 .filter { !existingTitles.contains($0.title.lowercased()) }
-                .map {
-                    Insight(
-                        kindKey: $0.kindKey,
-                        title: $0.title,
-                        detail: $0.detail,
-                        callTime: anchorTime,
-                        source: $0.source
-                    )
-                }
+                .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source) }
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
         } catch let error as AnalysisError {
