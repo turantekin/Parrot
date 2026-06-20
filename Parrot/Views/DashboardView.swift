@@ -8,8 +8,10 @@ struct DashboardView: View {
     @Binding var showDashboard: Bool
 
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(ProfileStore.self) private var profileStore
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
+    @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
 
     @State private var errorMessage: String?
     @AppStorage("copilotEnabled") private var copilotEnabled = false
@@ -101,9 +103,33 @@ struct DashboardView: View {
                 .foregroundStyle(Theme.Colors.ink2)
 
             if copilotEnabled {
+                profilePicker
                 callBriefField
             }
         }
+    }
+
+    private var profilePicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(allProfiles.sorted { $0.sortOrder < $1.sortOrder }) { profile in
+                    let isActive = profileStore.activeProfile?.id == profile.id
+                    Button { profileStore.setActive(profile) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: profile.iconSystemName).font(.caption)
+                            Text(profile.name).font(.system(size: 12.5, weight: .medium))
+                        }
+                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .background(isActive ? Theme.Colors.accent : Theme.Colors.chip,
+                                    in: Capsule())
+                        .foregroundStyle(isActive ? .white : Theme.Colors.ink)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .frame(maxWidth: 460)
     }
 
     /// Optional one-line context the copilot gets from second one of the call.

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(ProfileStore.self) private var profileStore
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
@@ -30,6 +31,10 @@ struct MenuBarView: View {
                     .font(.headline)
 
                 Text(recordingManager.transcriptionEngine.isReady ? "Ready to record" : "Loading model...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(profileStore.activeProfile?.name ?? "Default")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
