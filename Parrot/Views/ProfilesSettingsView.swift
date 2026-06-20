@@ -330,11 +330,15 @@ private struct DocTagToggle: View {
 // MARK: - Kind Editor Row
 
 private struct KindEditorRow: View {
+    /// Source-of-truth element passed from the parent ForEach.
+    /// Stored as a `let` so `.onChange(of: element)` can detect external mutations.
+    let element: ProfileKind
     @State private var draft: ProfileKind
     let onUpdate: (ProfileKind) -> Void
     let onDelete: () -> Void
 
     init(kind: ProfileKind, onUpdate: @escaping (ProfileKind) -> Void, onDelete: @escaping () -> Void) {
+        self.element = kind
         _draft = State(initialValue: kind)
         self.onUpdate = onUpdate
         self.onDelete = onDelete
@@ -342,112 +346,132 @@ private struct KindEditorRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            // Row 1: Key + Label
+            HStack(spacing: 6) {
                 TextField("Key", text: $draft.key)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
-                    .frame(width: 90)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("Label", text: $draft.label)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
-                    .frame(width: 90)
                     .onSubmit { onUpdate(draft) }
+            }
 
+            // Row 2: Color + Icon
+            HStack(spacing: 6) {
                 TextField("#hex", text: $draft.colorHex)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
-                    .frame(width: 60)
+                    .frame(maxWidth: 80)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("SF Symbol", text: $draft.iconSystemName)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
-                    .frame(width: 100)
                     .onSubmit { onUpdate(draft) }
-
-                Button { onDelete() } label: {
-                    Image(systemName: "minus.circle")
-                        .foregroundStyle(.red)
-                }
-                .buttonStyle(.plain)
             }
 
-            HStack {
-                TextField("Trigger description", text: $draft.triggerDescription)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
-                    .onSubmit { onUpdate(draft) }
+            // Row 3: Trigger description
+            TextField("Trigger description", text: $draft.triggerDescription)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+                .onSubmit { onUpdate(draft) }
 
+            // Row 4: Pinned toggle + Priority stepper + Remove button
+            HStack(spacing: 8) {
                 Toggle("Pinned", isOn: $draft.isPinned)
                     .font(.caption)
                     .onChange(of: draft.isPinned) { onUpdate(draft) }
-                    .frame(width: 72)
 
                 Stepper("Priority: \(draft.priority)", value: $draft.priority, in: 0...99)
                     .font(.caption)
                     .onChange(of: draft.priority) { onUpdate(draft) }
-                    .frame(width: 130)
+
+                Spacer()
+
+                Button(role: .destructive) { onDelete() } label: {
+                    Label("Remove", systemImage: "minus.circle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        // Fix 2: re-sync draft when the element is externally mutated
+        .onChange(of: element) { _, newElement in
+            draft = newElement
+        }
     }
 }
 
 // MARK: - Gauge Editor Row
 
 private struct GaugeEditorRow: View {
+    /// Source-of-truth element passed from the parent ForEach.
+    /// Stored as a `let` so `.onChange(of: element)` can detect external mutations.
+    let element: SentimentGauge
     @State private var draft: SentimentGauge
     let onUpdate: (SentimentGauge) -> Void
     let onDelete: () -> Void
 
     init(gauge: SentimentGauge, onUpdate: @escaping (SentimentGauge) -> Void, onDelete: @escaping () -> Void) {
+        self.element = gauge
         _draft = State(initialValue: gauge)
         self.onUpdate = onUpdate
         self.onDelete = onDelete
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            TextField("Key", text: $draft.key)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 80)
-                .onSubmit { onUpdate(draft) }
+        VStack(alignment: .leading, spacing: 4) {
+            // Row 1: Key + Label
+            HStack(spacing: 6) {
+                TextField("Key", text: $draft.key)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onSubmit { onUpdate(draft) }
 
-            TextField("Label", text: $draft.label)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 80)
-                .onSubmit { onUpdate(draft) }
-
-            TextField("Low label", text: $draft.lowLabel)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 70)
-                .onSubmit { onUpdate(draft) }
-
-            TextField("High label", text: $draft.highLabel)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 70)
-                .onSubmit { onUpdate(draft) }
-
-            TextField("#hex", text: $draft.colorHex)
-                .textFieldStyle(.roundedBorder)
-                .font(.caption)
-                .frame(width: 60)
-                .onSubmit { onUpdate(draft) }
-
-            Button { onDelete() } label: {
-                Image(systemName: "minus.circle")
-                    .foregroundStyle(.red)
+                TextField("Label", text: $draft.label)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onSubmit { onUpdate(draft) }
             }
-            .buttonStyle(.plain)
+
+            // Row 2: Low label + High label + Color hex + Remove button
+            HStack(spacing: 6) {
+                TextField("Low label", text: $draft.lowLabel)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onSubmit { onUpdate(draft) }
+
+                TextField("High label", text: $draft.highLabel)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .onSubmit { onUpdate(draft) }
+
+                TextField("#hex", text: $draft.colorHex)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .frame(maxWidth: 80)
+                    .onSubmit { onUpdate(draft) }
+
+                Button(role: .destructive) { onDelete() } label: {
+                    Image(systemName: "minus.circle")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        // Fix 2: re-sync draft when the element is externally mutated
+        .onChange(of: element) { _, newElement in
+            draft = newElement
+        }
     }
 }
