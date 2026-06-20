@@ -16,7 +16,7 @@ struct AnalysisRequest {
     let knownInsightTitles: [String]
     /// Best-matching knowledge base chunks for the recent conversation.
     let references: [KBReference]
-    /// The user's standing coaching instructions (tone, style, behavior).
+    /// Tone/style for this call (carries the profile's `tone`).
     let instructions: String
     /// Optional one-line context for this specific call.
     let callBrief: String
@@ -25,13 +25,26 @@ struct AnalysisRequest {
     /// All knowledge-base document names. Used to validate the model's "source"
     /// tag so it can't invent provenance like "call transcript".
     let knownDocumentNames: [String]
+    /// Profile persona/framing paragraph.
+    let persona: String
+    /// Reshapable insight kinds — drive the prompt's kind list and the schema enum.
+    let kinds: [ProfileKind]
+    /// Sentiment gauges to read each pass.
+    let gauges: [SentimentGauge]
+}
+
+/// Combined result from one analysis pass: structured insights plus a sentiment reading.
+struct AnalysisResult {
+    let insights: [InsightDraft]
+    let sentiment: [String: Int]
+    let read: String?
 }
 
 /// Backend that turns a transcript window into structured insights.
 /// Pluggable so a local-model provider can be added later without touching the engine.
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
-    func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft]
+    func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult
     func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String
     /// Post-call coaching + follow-ups: talk balance, what went well / to improve,
     /// objections handled vs missed, and commitments with any timing.
@@ -59,46 +72,80 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         APIKeyStore.load()?.isEmpty == false
     }
 
-    private static let systemPrompt = """
-    You are a live call copilot. You receive a rolling transcript of an ongoing call \
-    recorded on the user's Mac. Transcription is automatic, so expect minor errors, \
-    missing punctuation, and chopped sentences. Each transcript line is prefixed with \
-    the speaker: "Me" is the user you are assisting; "Them" is everyone else on the \
-    call. Draft suggestions for Me to say.
+    // MARK: - Pure static helpers (network-free, testable)
 
-    Produce only NEW, high-value insights about the most recent part of the conversation:
-    - suggestion: Them asked something or raised a topic — draft a short, concrete \
-    answer Me can say right now.
-    - question: Them asked a direct question that Me has NOT answered yet — surface \
-    it briefly so Me doesn't lose track of it. (Use this for open/unanswered \
-    questions; use suggestion when you can actually draft the answer.)
-    - blocker: Them raised an objection or obstacle (price, timing, missing decision \
-    maker, competitor) that Me has not resolved yet.
-    - action_item: Me committed to do something after the call. If a time or date \
-    was mentioned ("by Friday", "next week"), include it in the detail.
-    - feedback: a brief read on a SIGNIFICANT shift only — Them clearly turning \
-    hesitant, frustrated, or enthusiastic, or Me dominating for a long stretch. Use \
-    this sparingly (at most once every few minutes); skip routine commentary.
+    static func buildKindList(_ kinds: [ProfileKind]) -> String {
+        kinds.sorted { $0.priority > $1.priority }
+            .map { "- \($0.key): \($0.triggerDescription)" }
+            .joined(separator: "\n")
+    }
 
-    Grounding rules: when reference material from the user's knowledge base is provided \
-    and covers a question, base the suggestion on it and set "source" to that document's \
-    EXACT name. Never invent specifics (prices, terms, availability) that the references \
-    don't state.
+    static func systemPrompt(persona: String, kinds: [ProfileKind], gauges: [SentimentGauge]) -> String {
+        var p = """
+        You are a live call copilot. You receive a rolling transcript of an ongoing call. \
+        Transcription is automatic, so expect minor errors and chopped sentences. Each line \
+        is prefixed with the speaker: "Me" is the user you assist; "Them" is everyone else.
 
-    The "source" field is only a provenance tag. Set it to exactly one of: the exact \
-    name of a provided knowledge-base document, or the literal "general knowledge" (only \
-    when answering from general knowledge and that is allowed). Otherwise OMIT "source" \
-    entirely. Never describe the conversation in it (e.g. "call transcript", "the \
-    conversation", "rolling transcript") — that is always wrong.
+        \(persona)
 
-    Rules: never repeat an insight whose title you were told already exists. Return at \
-    most the 2 most valuable NEW insights per response — prefer fewer, and an empty list \
-    when nothing important is new (that is common and expected, not a failure). Keep \
-    titles under 8 words and details under 2 sentences. Write in the same language as \
-    the conversation.
-    """
+        Produce only NEW, high-value insights about the most recent part of the conversation. \
+        Each insight has a "kind" — use exactly one of these and follow its rule:
+        \(buildKindList(kinds))
 
-    func analyze(_ request: AnalysisRequest) async throws -> [InsightDraft] {
+        Grounding: when knowledge-base reference material is provided and covers a question, \
+        base the answer on it and set "source" to that document's EXACT name. Never invent \
+        specifics the references don't state. The "source" field is only a provenance tag: set \
+        it to exactly the name of a provided document, or the literal "general knowledge" (only \
+        when allowed), otherwise OMIT it. Never describe the conversation in it.
+
+        Rules: never repeat an insight whose title already exists. Return at most the 2 most \
+        valuable NEW insights per response — prefer fewer; an empty list is common and fine. \
+        Keep titles under 8 words and details under 2 sentences. Same language as the call.
+        """
+        if !gauges.isEmpty {
+            let list = gauges.map { "- \($0.key): 0 = \($0.lowLabel), 100 = \($0.highLabel) (\($0.label))" }.joined(separator: "\n")
+            p += """
+
+
+            Also return a "sentiment" object reading the room right now, as an integer 0–100 for \
+            each gauge, plus a one-word "read":
+            \(list)
+            """
+        }
+        return p
+    }
+
+    static func schema(kinds: [ProfileKind], gauges: [SentimentGauge]) -> [String: Any] {
+        let itemSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "kind": ["type": "string", "enum": kinds.map(\.key)],
+                "title": ["type": "string"],
+                "detail": ["type": "string"],
+                "source": ["type": "string", "description": "Exact KB document name, or 'general knowledge'. Omit otherwise."],
+            ],
+            "required": ["kind", "title", "detail"],
+            "additionalProperties": false,
+        ]
+        var properties: [String: Any] = ["insights": ["type": "array", "items": itemSchema]]
+        var required = ["insights"]
+        if !gauges.isEmpty {
+            var sentProps: [String: Any] = [:]
+            for g in gauges { sentProps[g.key] = ["type": "integer", "minimum": 0, "maximum": 100] }
+            sentProps["read"] = ["type": "string"]
+            properties["sentiment"] = ["type": "object", "properties": sentProps, "additionalProperties": false]
+            required.append("sentiment")
+        }
+        return ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
+    }
+
+    static func validatingKinds(_ drafts: [InsightDraft], allowed: Set<String>) -> [InsightDraft] {
+        drafts.filter { allowed.contains($0.kindKey) }
+    }
+
+    // MARK: - Live Analysis
+
+    func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
         guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
             throw AnalysisError.missingAPIKey
         }
@@ -110,7 +157,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         var sections: [String] = []
 
         if !request.instructions.isEmpty {
-            sections.append("Coaching instructions from the user:\n\(request.instructions)")
+            sections.append("Tone/style from the user:\n\(request.instructions)")
         }
 
         if !request.callBrief.isEmpty {
@@ -141,37 +188,22 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
         let userContent = sections.joined(separator: "\n\n---\n\n")
 
-        let itemSchema: [String: Any] = [
-            "type": "object",
-            "properties": [
-                "kind": ["type": "string", "enum": ["suggestion", "question", "blocker", "action_item", "feedback"]],
-                "title": ["type": "string"],
-                "detail": ["type": "string"],
-                "source": ["type": "string", "description": "Exact knowledge-base document name, or 'general knowledge'. Omit otherwise — never a description of the conversation."],
-            ],
-            "required": ["kind", "title", "detail"],
-            "additionalProperties": false,
-        ]
-        let schema: [String: Any] = [
-            "type": "object",
-            "properties": [
-                "insights": ["type": "array", "items": itemSchema],
-            ],
-            "required": ["insights"],
-            "additionalProperties": false,
-        ]
+        let sys = Self.systemPrompt(persona: request.persona, kinds: request.kinds, gauges: request.gauges)
+        let schemaObj = Self.schema(kinds: request.kinds, gauges: request.gauges)
 
         let body: [String: Any] = [
             "model": Self.model,
             "max_tokens": 1024,
-            "system": Self.systemPrompt,
+            "system": sys,
             "messages": [["role": "user", "content": userContent]],
-            "output_config": ["format": ["type": "json_schema", "schema": schema]],
+            "output_config": ["format": ["type": "json_schema", "schema": schemaObj]],
         ]
 
         let data = try await performRequest(body: body, apiKey: apiKey)
-        let drafts = try Self.parseInsights(from: data)
-        return Self.validatingSources(drafts, knownDocuments: request.knownDocumentNames)
+        let parsed = try Self.parseResult(from: data)
+        let sourceValidated = Self.validatingSources(parsed.insights, knownDocuments: request.knownDocumentNames)
+        let kindValidated = Self.validatingKinds(sourceValidated, allowed: Set(request.kinds.map(\.key)))
+        return AnalysisResult(insights: kindValidated, sentiment: parsed.sentiment, read: parsed.read)
     }
 
     // MARK: - Post-Call Summary
@@ -297,16 +329,6 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let content: [ContentBlock]
     }
 
-    private struct InsightsPayload: Decodable {
-        struct Item: Decodable {
-            let kind: String
-            let title: String
-            let detail: String
-            let source: String?
-        }
-        let insights: [Item]
-    }
-
     /// The model occasionally invents a "source" that describes the conversation
     /// ("call transcript", "rolling transcript", "conversation with coach"). Keep
     /// "source" only when it's a real KB document name or the literal "general
@@ -326,16 +348,29 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         }
     }
 
-    private static func parseInsights(from data: Data) throws -> [InsightDraft] {
+    private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?) {
         let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
         guard let text = response.content.first(where: { $0.type == "text" })?.text,
               let jsonData = text.data(using: .utf8) else {
             throw AnalysisError.badResponse("Empty model response")
         }
-        let payload = try JSONDecoder().decode(InsightsPayload.self, from: jsonData)
-        return payload.insights.map { item in
-            InsightDraft(kindKey: item.kind, title: item.title, detail: item.detail, source: item.source?.nilIfEmpty)
+        let obj = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] ?? [:]
+        let items = (obj["insights"] as? [[String: Any]]) ?? []
+        let drafts = items.compactMap { item -> InsightDraft? in
+            guard let kind = item["kind"] as? String, let title = item["title"] as? String,
+                  let detail = item["detail"] as? String else { return nil }
+            return InsightDraft(kindKey: kind, title: title, detail: detail, source: (item["source"] as? String)?.nilIfEmpty)
         }
+        var sentiment: [String: Int] = [:]
+        var read: String? = nil
+        if let s = obj["sentiment"] as? [String: Any] {
+            for (k, v) in s {
+                if k == "read" { read = v as? String }
+                else if let i = v as? Int { sentiment[k] = i }
+                else if let d = v as? Double { sentiment[k] = Int(d) }
+            }
+        }
+        return (drafts, sentiment, read)
     }
 
     private static func errorMessage(from data: Data) -> String? {

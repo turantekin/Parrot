@@ -20,6 +20,7 @@ enum ProfileTest {
         testPresets()
         testKBScoping()
         testMigration()
+        testPromptAndSchema()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -104,6 +105,26 @@ enum ProfileTest {
         // Idempotent: second run doesn't duplicate.
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
         check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == 6)
+    }
+
+    static func testPromptAndSchema() {
+        let kinds = ProfilePresets.all().first { $0.name == "1:1 coaching" }!.kinds
+        let prompt = ClaudeAnalysisProvider.systemPrompt(persona: "P", kinds: kinds, gauges: [])
+        check("prompt includes persona", prompt.contains("P"))
+        check("prompt lists reflection key", prompt.contains("reflection"))
+        check("prompt has no hardcoded 'objection'", !prompt.lowercased().contains("objection"))
+        let schema = ClaudeAnalysisProvider.schema(kinds: kinds, gauges: [SentimentGauge(id: UUID(), key: "client_openness", label: "x", lowLabel: "a", highLabel: "b", colorHex: "2F7E96")])
+        // enum equals the profile's keys
+        let insightsProp = ((schema["properties"] as? [String: Any])?["insights"] as? [String: Any])
+        let items = insightsProp?["items"] as? [String: Any]
+        let kindEnum = ((items?["properties"] as? [String: Any])?["kind"] as? [String: Any])?["enum"] as? [String]
+        check("schema enum == profile keys", Set(kindEnum ?? []) == Set(kinds.map(\.key)))
+        check("schema has sentiment object", (schema["properties"] as? [String: Any])?["sentiment"] != nil)
+        let valid = ClaudeAnalysisProvider.validatingKinds(
+            [InsightDraft(kindKey: "reflection", title: "t", detail: "d", source: nil),
+             InsightDraft(kindKey: "objection", title: "t", detail: "d", source: nil)],
+            allowed: Set(kinds.map(\.key)))
+        check("validatingKinds drops out-of-lens", valid.count == 1 && valid.first?.kindKey == "reflection")
     }
 
     static func testHexColor() {
