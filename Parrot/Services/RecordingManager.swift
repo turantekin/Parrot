@@ -79,7 +79,7 @@ final class RecordingManager {
         let profile = profileStore.activeProfile
         meeting.profile = profile
         meeting.brief = nextCallBrief.nilIfEmpty
-        meeting.profileSnapshotData = profile.map { try? JSONEncoder().encode($0.kinds) } ?? nil
+        meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
 
         // Set up audio capture
         try await audioCaptureManager.startCapture()
