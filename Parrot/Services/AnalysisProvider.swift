@@ -131,7 +131,10 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         var required = ["insights"]
         if !gauges.isEmpty {
             var sentProps: [String: Any] = [:]
-            for g in gauges { sentProps[g.key] = ["type": "integer", "minimum": 0, "maximum": 100] }
+            // Claude structured outputs reject numeric constraints (minimum/maximum) on
+            // integer types — sending them 400s the whole request. The 0–100 range is
+            // enforced via the prompt instead, and clamped on parse.
+            for g in gauges { sentProps[g.key] = ["type": "integer"] }
             sentProps["read"] = ["type": "string"]
             properties["sentiment"] = ["type": "object", "properties": sentProps, "additionalProperties": false]
             required.append("sentiment")
@@ -366,8 +369,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         if let s = obj["sentiment"] as? [String: Any] {
             for (k, v) in s {
                 if k == "read" { read = v as? String }
-                else if let i = v as? Int { sentiment[k] = i }
-                else if let d = v as? Double { sentiment[k] = Int(d) }
+                else if let i = v as? Int { sentiment[k] = min(100, max(0, i)) }
+                else if let d = v as? Double { sentiment[k] = min(100, max(0, Int(d))) }
             }
         }
         return (drafts, sentiment, read)
