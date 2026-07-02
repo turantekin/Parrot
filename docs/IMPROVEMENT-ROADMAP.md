@@ -29,12 +29,36 @@ truth for the post-test improvement effort. Update the status table as work land
 | — | Offscreen verification harnesses | ✅ done | `--snapshot` (report) + `--transcribe-test` (decode on real audio). No more shipping blind. |
 | **C** | C1 · Call Profiles + customizable copilot + tone | 🟡 built | Full reshapable-lens build (14 tasks). Profiles own their insight kinds + sentiment gauges; per-profile prompt/schema; scoped KB; always-on sentiment strip; inline picker; Profiles settings editor; Default-profile migration preserves today. Spec + plan in `docs/superpowers/`. Needs **on-device eyeball** (see 2026-06-20 log). |
 | **R** | R1–R6 · Full-review remediation | 🟡 built | 2026-07-02 project review (3-agent deep pass) → 6-phase fix plan, all landed as commits `Phase R1`–`R6`. Data-loss races closed (stop truncation, transcript tail, wrong-meeting state), analysis-engine cancellation/retry/schema guards, preset-refresh + KB persistence safety, **meeting deletion**, playback/permissions/scroll UX, prompt-injection delimiters, AEC starvation surfacing, diarization streaming. Zero build warnings; `--profile-test` extended (+10 checks) ALL PASS. Needs **1 live recording** to smoke stop-drain + "Finalizing…" + delete. |
+| **T** | T1–T3 · Pluggable transcription (local + BYO-key cloud) | 🟡 built | Backend seam in `TranscriptionEngine`: on-device Whisper (default, free) / Groq whisper-large-v3-turbo (chunk POSTs, ~$0.04/hr) / Deepgram Nova-3 (dual websockets, word-by-word interims ~300 ms). Cloud error → local fallback + device-bar chip. Opt-in post-call **polish pass** re-transcribes both `.caf` tracks via Groq and rebuilds segments before diarization/summary. Settings → Transcription (engine picker + key fields + polish toggle). Local path verified; **Groq/Deepgram live paths need your keys** to smoke. |
+| **$** | Per-call AI cost transparency | 🟡 built | Every Anthropic response's `usage` tokens metered in the provider; frozen to `Meeting.aiUsageData` at end of post-call chain with transcription/polish audio seconds. `AIPricing` table (haiku $1/$5 per MTok verified 2026-07-02) + pure `costBreakdown()` (12 harness checks). Detail header shows "AI cost ~$X" row with click-to-expand breakdown popover, labeled estimated; old meetings show nothing. Eyeball after next recorded call. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-07-02** — **Phases T + $ built** (pluggable transcription & AI cost
+  transparency; commits `T1`–`T3`, `C1`, `C2`). Users pick their engine in
+  Settings → Transcription: **on-device Whisper** stays the private/free
+  default; **Groq** reuses the 2s-chunk loop with WAV-encoded POSTs for
+  big-model accuracy; **Deepgram** streams both tracks over websockets
+  (mic="Me", system="Them") with interims driving the typing bubble and
+  provider timestamps on finals — the fix for "transcription is late". Cloud
+  failure falls back to the always-loaded local model with a status chip.
+  Optional **polish pass** re-transcribes both saved `.caf` files through Groq
+  after Stop and rebuilds the transcript before diarization + reports (chain
+  is now strictly sequential). Cost side: the Claude provider meters
+  `usage.input_tokens/output_tokens` on every call (copilot + summary +
+  coaching), RecordingManager freezes an `AIUsage` JSON snapshot onto the
+  meeting at the end of the post-call chain, and the meeting header shows
+  "AI cost ~$X — Copilot · Transcription · Polish" with a breakdown popover
+  ("estimated" disclaimer). Pricing constants live in `AIPricing`
+  (claude-haiku-4-5 $1/$5 per MTok verified against current list prices
+  2026-07-02; Groq $0.04/audio-hr; Deepgram ~$0.0077/min/stream). Harness
+  +20 checks (WAV encoder, backend default, cost math, round-trip) ALL PASS.
+  **To verify live:** record one call per engine (Groq/Deepgram need your
+  keys), confirm the cost row appears and roughly matches console usage.
 
 - **2026-07-02** — **Phase R built** (full-review remediation). A whole-project
   review (three parallel deep reviews: audio pipeline, AI/analysis layer, UI)

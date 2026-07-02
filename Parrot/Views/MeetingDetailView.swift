@@ -35,6 +35,7 @@ struct MeetingDetailView: View {
     @State private var activeSegmentID: UUID?
     @State private var tab: ReportTab = .report
     @State private var themNameText = ""
+    @State private var showCostBreakdown = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -138,6 +139,11 @@ struct MeetingDetailView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
 
+            // What the AI cost for this call (estimated); old meetings have no data.
+            if let usage = meeting.aiUsage {
+                aiCostRow(usage)
+            }
+
             // Name the other party so the transcript/report read naturally.
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle")
@@ -152,6 +158,69 @@ struct MeetingDetailView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One-line estimated AI cost; click for the per-line breakdown.
+    private func aiCostRow(_ usage: AIUsage) -> some View {
+        Button {
+            showCostBreakdown.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "cpu")
+                    .foregroundStyle(.secondary)
+                Text("AI cost ~\(AIUsage.formatUSD(usage.totalUSD))")
+                    .fontWeight(.medium)
+                    .foregroundStyle(Theme.Colors.ink)
+                Text(usage.costBreakdown()
+                    .map { "\($0.label) \(AIUsage.formatUSD($0.usd))" }
+                    .joined(separator: " · "))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showCostBreakdown, arrowEdge: .bottom) {
+            costBreakdownPopover(usage)
+        }
+    }
+
+    private func costBreakdownPopover(_ usage: AIUsage) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("AI cost breakdown")
+                .font(Theme.Typography.sectionLabel)
+            ForEach(Array(usage.costBreakdown().enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.label)
+                            .font(Theme.Typography.secondary)
+                        Text(item.detail)
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 24)
+                    Text(AIUsage.formatUSD(item.usd))
+                        .font(Theme.Typography.secondary)
+                        .monospacedDigit()
+                }
+            }
+            Divider()
+            HStack {
+                Text("Total").font(Theme.Typography.secondary.weight(.semibold))
+                Spacer()
+                Text(AIUsage.formatUSD(usage.totalUSD))
+                    .font(Theme.Typography.secondary.weight(.semibold))
+                    .monospacedDigit()
+            }
+            Text("Estimated from provider list prices — not a bill.")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 320)
     }
 
     @ViewBuilder
