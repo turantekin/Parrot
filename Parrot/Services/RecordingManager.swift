@@ -207,15 +207,15 @@ final class RecordingManager {
             }
             try? modelContext?.save()
 
-            // Start post-processing (diarization)
+            // Post-processing chain, strictly sequential: polish rebuilds the
+            // transcript (optional, best-effort), diarization refines labels on
+            // whatever transcript survived, and the report is generated from
+            // the FINAL text — never from a transcript that's about to change.
             let meetingRef = meeting
             Task {
+                await self.polishTranscript(meeting: meetingRef)
                 await self.postProcess(meeting: meetingRef)
-            }
-
-            // Generate the post-call report in the background (best-effort)
-            if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
-                Task {
+                if self.callAnalysisEngine.isEnabled, self.callAnalysisEngine.provider.isConfigured {
                     await self.generateSummary(meeting: meetingRef)
                 }
             }
@@ -308,6 +308,46 @@ final class RecordingManager {
             try? modelContext?.save()
         } catch {
             // Best-effort.
+        }
+    }
+
+    // MARK: - Post-call polish
+
+    /// Re-transcribe the saved audio through Groq's large model and replace the
+    /// live transcript with the cleaner one. Opt-in, best-effort: any failure
+    /// leaves the live transcript untouched.
+    private func polishTranscript(meeting: Meeting) async {
+        guard UserDefaults.standard.bool(forKey: "polishAfterCall"),
+              let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
+              !key.isEmpty,
+              let modelContext else { return }
+
+        let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        let language = (setting == nil || setting == "auto") ? nil : setting
+
+        do {
+            let polished = try await TranscriptPolisher.polish(
+                systemPath: meeting.systemAudioPath.nilIfEmpty,
+                micPath: meeting.micAudioPath?.nilIfEmpty,
+                language: language,
+                apiKey: key
+            )
+            guard !polished.isEmpty else { return }
+
+            for old in meeting.segments {
+                modelContext.delete(old)
+            }
+            for s in polished {
+                let segment = TranscriptSegment(
+                    startTime: s.start, endTime: s.end,
+                    text: s.text, speakerLabel: s.speaker, confidence: nil)
+                modelContext.insert(segment)
+                segment.meeting = meeting
+            }
+            try? modelContext.save()
+            NSLog("Parrot: transcript polished — \(polished.count) segments")
+        } catch {
+            NSLog("Parrot: polish failed, keeping live transcript — \(error.localizedDescription)")
         }
     }
 

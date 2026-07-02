@@ -273,3 +273,83 @@ final class DeepgramStreamer {
         }
     }
 }
+
+// MARK: - Post-call polish (whole-file re-transcription)
+
+import AVFoundation
+
+/// Re-transcribes the saved call audio through Groq's large model after the
+/// call ends — the live view stays instant (whatever engine ran), the stored
+/// transcript gets big-model accuracy for ~$0.04 per audio hour.
+enum TranscriptPolisher {
+    /// Groq caps upload size, and an hour of 16-bit WAV is ~115 MB — split
+    /// into 10-minute parts and shift timestamps. A word clipped at a part
+    /// boundary is acceptable for a best-effort polish.
+    static let partSeconds = 600
+
+    struct PolishedSegment {
+        let text: String
+        let start: Double
+        let end: Double
+        let speaker: String
+    }
+
+    /// Both tracks (system = "Them", mic = "Me"), file-relative timestamps.
+    /// Throws on any API failure — caller keeps the live transcript.
+    static func polish(systemPath: String?, micPath: String?,
+                       language: String?, apiKey: String) async throws -> [PolishedSegment] {
+        var out: [PolishedSegment] = []
+        for (path, speaker) in [(systemPath, "Them"), (micPath, "Me")] {
+            guard let path, FileManager.default.fileExists(atPath: path) else { continue }
+            guard let samples = try? AudioFileLoader.load16kMono(url: URL(fileURLWithPath: path)) else {
+                NSLog("Parrot: polish skipped \(speaker) track — unsupported format")
+                continue
+            }
+            let partLength = 16000 * partSeconds
+            var offset = 0
+            while offset < samples.count {
+                let part = Array(samples[offset ..< min(offset + partLength, samples.count)])
+                let shift = Double(offset) / 16000.0
+                let segments = try await GroqTranscriber.transcribeFile(
+                    WAVEncoder.encode(samples: part, sampleRate: 16000),
+                    fileName: "part.wav", language: language, apiKey: apiKey)
+                for s in segments {
+                    let text = TranscriptionEngine.cleaned(s.text)
+                    guard !text.isEmpty else { continue }
+                    out.append(PolishedSegment(text: text, start: s.start + shift,
+                                               end: s.end + shift, speaker: speaker))
+                }
+                offset += partLength
+            }
+        }
+        return out.sorted { $0.start < $1.start }
+    }
+}
+
+/// Loads a recorded .caf as 16 kHz mono floats.
+enum AudioFileLoader {
+    enum LoadError: Error { case unsupportedFormat }
+
+    // ponytail: fast path only — our recordings are written as 16 kHz mono by
+    // construction; the rare non-16k system track (already surfaced by the
+    // echo-canceller notice) skips polish rather than growing a converter loop.
+    static func load16kMono(url: URL) throws -> [Float] {
+        let file = try AVAudioFile(forReading: url)
+        let format = file.processingFormat
+        guard format.sampleRate == 16000, format.channelCount == 1 else {
+            throw LoadError.unsupportedFormat
+        }
+        var samples: [Float] = []
+        samples.reserveCapacity(Int(file.length))
+        let block: AVAudioFrameCount = 1 << 18
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: block) else {
+            throw LoadError.unsupportedFormat
+        }
+        while file.framePosition < file.length {
+            try file.read(into: buffer, frameCount: block)
+            guard buffer.frameLength > 0, let ch = buffer.floatChannelData?[0] else { break }
+            samples.append(contentsOf: UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
+        }
+        return samples
+    }
+}

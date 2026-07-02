@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
+    @AppStorage("polishAfterCall") private var polishAfterCall = false
     @State private var apiKey = APIKeyStore.load() ?? ""
     @State private var keySaved = false
     @State private var keySaveFailed = false
@@ -90,6 +91,22 @@ struct SettingsView: View {
                 Text("On-device keeps every second of audio on this Mac. Cloud engines trade that for accuracy — bring your own key, pay the provider directly.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Divider()
+
+                Toggle("Polish transcript after each call (Groq)", isOn: $polishAfterCall)
+                Text("When you hit Stop, the saved audio is re-transcribed with a large model (~$0.04 per call hour, ~15s per hour of audio) and the report is regenerated from the cleaner text. The live view is unaffected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if polishAfterCall && transcriptionBackend != TranscriptionBackend.groq.rawValue {
+                    ProviderKeyField(
+                        label: "Groq API key",
+                        account: TranscriptionBackend.groq.keychainAccount!,
+                        placeholder: "gsk_…",
+                        hint: "Polish uses Groq — get a key at console.groq.com."
+                    )
+                }
             }
 
             Section("WhisperKit Model") {
