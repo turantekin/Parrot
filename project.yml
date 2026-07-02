@@ -41,6 +41,8 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         GENERATE_INFOPLIST_FILE: false
         ENABLE_HARDENED_RUNTIME: true
+        # App icon lives in Parrot/Assets.xcassets/AppIcon.appiconset.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: WhisperKit
         product: WhisperKit
@@ -72,3 +74,6 @@ targets:
         # Shown when macOS asks for Screen Recording, which Parrot uses to capture
         # system audio via ScreenCaptureKit. Also lives here so xcodegen keeps it.
         NSScreenCaptureUsageDescription: "Parrot captures system audio from your meetings via screen recording. Only audio is used — never screen content."
+        # Points Finder/Dock at the asset-catalog icon (asset compiler doesn't
+        # inject this when the Info.plist is static).
+        CFBundleIconName: AppIcon
