@@ -361,15 +361,16 @@ struct PinnedBlockerRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if expanded, let reply = insight.reply {
+                // The answer is the valuable part — always visible, no click.
+                if let reply = insight.reply {
                     SuggestedReplyBox(reply: reply)
                         .padding(.top, 2)
                 }
 
                 // ponytail: length heuristic for "is it truncated" — measuring
                 // real truncation in SwiftUI needs a two-pass text layout.
-                if !expanded && (insight.reply != nil || insight.detail.count > 120) {
-                    Text(insight.reply != nil ? "show answer" : "show more")
+                if !expanded && insight.detail.count > 120 {
+                    Text("show more")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.orange)
                 }

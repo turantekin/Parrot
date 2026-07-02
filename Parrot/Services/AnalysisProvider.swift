@@ -120,16 +120,19 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         it to exactly the name of a provided document, or the literal "general knowledge" (only \
         when allowed), otherwise OMIT it. Never describe the conversation in it.
 
-        For any insight that flags an unresolved item (a concern, an unanswered question, \
-        an obstacle), ALSO set "reply": one short, concrete line the user could say right now \
+        EVERY insight that flags an unresolved item (a concern, an unanswered question, \
+        an obstacle) MUST set "reply": one short, concrete line the user could say right now \
         to address it — grounded in the reference material when it covers the topic, otherwise \
-        from general knowledge when allowed. Keep it to a single sentence. Omit "reply" for \
-        kinds that don't call for one.
+        from general knowledge when allowed. Keep it to a single sentence. Set "reply" to the \
+        empty string only for kinds that don't call for one.
 
         Rules: never repeat an insight whose title already exists. Return at most the 2 most \
         valuable NEW insights per response — prefer fewer; an empty list is common and fine. \
-        Flag at most ONE unresolved item (unanswered question, concern, obstacle) per \
-        response, and never re-flag one already shown — pile-ups bury the user. \
+        Unresolved items STAY VISIBLE to the user until dealt with, so flagging an issue ONCE \
+        is enough for the whole call: NEVER create another insight about the same underlying \
+        issue, however reworded — no "still unanswered" / "still live" update cards, ever. \
+        Before flagging anything, check the already-shown list: if any entry covers the same \
+        issue in different words, skip it. At most ONE new unresolved flag per response. \
         Keep titles under 8 words and details under 2 sentences. Same language as the call.
 
         Also return "resolved": the EXACT titles of any already-shown items that the \
@@ -164,9 +167,12 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                 "title": ["type": "string"],
                 "detail": ["type": "string"],
                 "source": ["type": "string", "description": "Exact KB document name, or 'general knowledge'. Omit otherwise."],
-                "reply": ["type": "string", "description": "For unresolved flags only: one short line the user could say to address it."],
+                "reply": ["type": "string", "description": "For unresolved flags: one short line the user could say to address it. Empty string for kinds that don't need one."],
             ],
-            "required": ["kind", "title", "detail"],
+            // reply is required (empty string = none): optional fields get
+            // sporadic compliance, which showed up as answers on some orange
+            // cards and not others.
+            "required": ["kind", "title", "detail", "reply"],
             "additionalProperties": false,
         ]
         var properties: [String: Any] = ["insights": ["type": "array", "items": itemSchema]]

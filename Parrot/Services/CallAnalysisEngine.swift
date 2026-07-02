@@ -232,8 +232,20 @@ final class CallAnalysisEngine {
                 }
             }
             let existingTitles = Set(insights.map { $0.title.lowercased() })
+            // Beyond exact titles: drop reworded re-flags of an issue that is
+            // still open. A real 11-min call produced TEN variants of the same
+            // tax question ("…unknown", "…still unanswered", "…still live") —
+            // prompt instructions alone don't stop it, so enforce it here.
+            let openInsights = insights.filter { !$0.isHandled }
             let unique = result.insights
                 .filter { !existingTitles.contains($0.title.lowercased()) }
+                .filter { draft in
+                    !openInsights.contains { existing in
+                        existing.kindKey == draft.kindKey && Self.isNearDuplicate(
+                            "\(draft.title) \(draft.detail)",
+                            "\(existing.title) \(existing.detail)")
+                    }
+                }
                 .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
@@ -298,6 +310,27 @@ final class CallAnalysisEngine {
     }
 
     // MARK: - Heuristics
+
+    /// Cheap "same issue, different words" check: significant-word overlap,
+    /// normalized by the smaller set. Catches "Morocco tax obligations—still
+    /// live" vs "Do I owe tax to Morocco on UK company earnings?" while
+    /// keeping genuinely distinct topics apart.
+    // ponytail: bag-of-words similarity; upgrade path is embedding distance
+    // via the KB's embedder if rewording ever gets past this.
+    nonisolated static func isNearDuplicate(_ a: String, _ b: String) -> Bool {
+        let stop: Set<String> = ["the", "and", "for", "you", "your", "they", "their", "them",
+                                 "what", "whats", "how", "does", "still", "with", "about",
+                                 "from", "that", "this", "are", "isnt", "not", "have", "has"]
+        func tokens(_ s: String) -> Set<String> {
+            Set(s.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 2 && !stop.contains($0) })
+        }
+        let ta = tokens(a), tb = tokens(b)
+        guard !ta.isEmpty, !tb.isEmpty else { return false }
+        let overlap = Double(ta.intersection(tb).count)
+        return overlap / Double(min(ta.count, tb.count)) >= 0.6
+    }
 
     /// Cheap detector that fast-tracks analysis when someone asks something.
     static func looksLikeQuestion(_ text: String) -> Bool {

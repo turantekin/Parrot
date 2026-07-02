@@ -25,6 +25,7 @@ enum ProfileTest {
         testSnapshotPersistence()
         testLenientKBDecode()
         testStableHash()
+        testNearDuplicate()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -166,6 +167,21 @@ enum ProfileTest {
         check("KB doc decodes without note", doc != nil)
         check("KB doc missing note defaults empty", doc?.note == "")
         check("KB doc missing profileIDs defaults empty", doc?.profileIDs.isEmpty == true)
+    }
+
+    static func testNearDuplicate() {
+        // Real reworded re-flags from the 2026-07-02 test call — must match.
+        check("dedup catches reworded tax question", CallAnalysisEngine.isNearDuplicate(
+            "Morocco tax obligations on UK company—still live Prospect directly asked whether they owe tax or penalties to Morocco on a UK company run from Morocco.",
+            "Do I owe tax to Morocco on UK company earnings? Prospect explicitly asked whether operating a UK Ltd from Morocco creates tax or regulatory obligations to the Moroccan government."))
+        check("dedup catches reworded docs question", CallAnalysisEngine.isNearDuplicate(
+            "What docs do fintech partners actually need? The prospect just asked what documents UK fintechs require to open an account.",
+            "What documents do fintech partners require? The prospect asked directly what verification documents the fintech banks need."))
+        // Distinct topics from the same call — must NOT match.
+        check("dedup keeps distinct topics apart", !CallAnalysisEngine.isNearDuplicate(
+            "What are the actual requirements for UK bank account? Prospect asked what's needed to open a UK business bank account as a Moroccan resident.",
+            "France customer base de-risks Stripe acceptance Prospect has customers in France which helps with processor acceptance."))
+        check("dedup empty strings safe", !CallAnalysisEngine.isNearDuplicate("", "anything"))
     }
 
     static func testStableHash() {
