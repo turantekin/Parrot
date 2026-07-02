@@ -28,12 +28,43 @@ truth for the post-test improvement effort. Update the status table as work land
 | — | Release `.app` build + install | ✅ done | `/Applications/Parrot.app`; recipe in Build notes. |
 | — | Offscreen verification harnesses | ✅ done | `--snapshot` (report) + `--transcribe-test` (decode on real audio). No more shipping blind. |
 | **C** | C1 · Call Profiles + customizable copilot + tone | 🟡 built | Full reshapable-lens build (14 tasks). Profiles own their insight kinds + sentiment gauges; per-profile prompt/schema; scoped KB; always-on sentiment strip; inline picker; Profiles settings editor; Default-profile migration preserves today. Spec + plan in `docs/superpowers/`. Needs **on-device eyeball** (see 2026-06-20 log). |
+| **R** | R1–R6 · Full-review remediation | 🟡 built | 2026-07-02 project review (3-agent deep pass) → 6-phase fix plan, all landed as commits `Phase R1`–`R6`. Data-loss races closed (stop truncation, transcript tail, wrong-meeting state), analysis-engine cancellation/retry/schema guards, preset-refresh + KB persistence safety, **meeting deletion**, playback/permissions/scroll UX, prompt-injection delimiters, AEC starvation surfacing, diarization streaming. Zero build warnings; `--profile-test` extended (+10 checks) ALL PASS. Needs **1 live recording** to smoke stop-drain + "Finalizing…" + delete. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-07-02** — **Phase R built** (full-review remediation). A whole-project
+  review (three parallel deep reviews: audio pipeline, AI/analysis layer, UI)
+  found 2 critical + 4 high + ~13 medium issues; everything judged necessary was
+  fixed in six phased commits (`Phase R1`–`Phase R6`):
+  - **R1 data loss:** `.id(meeting.id)` kills wrong-meeting state reuse (stale
+    audio, cross-meeting title writes); `filesClosed` flag closes the stop-race
+    that could truncate a finished `.caf` or hijack the next recording's URL;
+    `stopTranscribing` now drains the backlog (final words no longer dropped —
+    stop shows "Finalizing…"); `isStopping` re-entrancy guard; diarization
+    failure degrades to `.done`.
+  - **R2 analysis engine:** stale-task cancellation guards, failed windows
+    re-arm for retry, single 429/5xx retry, `stop_reason` truncation check,
+    empty-kinds schema guard (was a guaranteed 400).
+  - **R3 persistence:** `isUserModified` protects tuned built-in profiles from
+    preset refreshes; KB index decode failure renames aside instead of letting
+    the next save wipe it; keychain save failures surface in Settings.
+  - **R4 UX:** meeting deletion exists now (toolbar + sidebar context menu,
+    removes audio files); playback end detection; shared permission preflight
+    (menu-bar start no longer silently fails); onboarding no longer triggers
+    the OS prompt on appear; live transcript stops yanking to bottom mid-read;
+    profile-editor rows commit on focus loss; small-fix batch (stable colors,
+    export filename sanitize, ghost-meeting cleanup, alert binding).
+  - **R5 hardening:** transcript/KB text delimited as data (prompt injection);
+    AVAudioConverter contract fix (mic duplication); AEC starvation surfaced in
+    the device bar; diarization streams energies (~460 MB → ~KBs for 2 h) and
+    reads the file's own format; CFString warning fixed — **zero warnings**.
+  - **R6 verification:** `--profile-test` +10 checks (preset-refresh guard,
+    lenient KB decode, stableHash, injection line) — ALL PASS.
+  Full plan archived in the session plan file; findings in the 2026-07-02 chat.
 
 - **2026-06-20** — **Phase C built** (Call Profiles + customizable copilot + tone).
   Brainstormed → spec (`docs/superpowers/specs/2026-06-20-phase-c-call-profiles-design.md`)

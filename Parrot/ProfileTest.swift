@@ -20,8 +20,11 @@ enum ProfileTest {
         testPresets()
         testKBScoping()
         testMigration()
+        testPresetRefresh()
         testPromptAndSchema()
         testSnapshotPersistence()
+        testLenientKBDecode()
+        testStableHash()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -117,6 +120,60 @@ enum ProfileTest {
         check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == 6)
     }
 
+    @MainActor
+    static func testPresetRefresh() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
+            check("refresh container builds", false); return
+        }
+        let ctx = ModelContext(container)
+        let kb = KnowledgeBaseService(persistent: false)
+        let store = ProfileStore()
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+
+        let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        guard let sales = profiles.first(where: { $0.name == "Sales discovery" }),
+              let support = profiles.first(where: { $0.name == "Customer support" }) else {
+            check("refresh finds built-ins", false); return
+        }
+
+        // A user-tuned built-in must survive a preset-version bump untouched...
+        sales.persona = "my custom persona"
+        sales.isUserModified = true
+        sales.presetVersion = 0
+        // ...while an untouched stale built-in picks up the shipped preset.
+        support.persona = "stale junk"
+        support.presetVersion = 0
+        try? ctx.save()
+
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+        check("refresh preserves user-tuned built-in", sales.persona == "my custom persona")
+        check("refresh bumps tuned profile's version", sales.presetVersion == ProfilePresets.presetVersion)
+        let presetSupport = ProfilePresets.all().first { $0.id == support.id }
+        check("refresh restores untouched built-in", support.persona == presetSupport?.persona)
+    }
+
+    static func testLenientKBDecode() {
+        // A KBDocument saved before `note` existed must still decode — a strict
+        // decode fails the whole store load and the next save wipes the KB.
+        let legacy = """
+        {"id":"\(UUID().uuidString)","name":"pricing.pdf","chunkCount":3,"addedAt":700000000}
+        """.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let doc = try? decoder.decode(KBDocument.self, from: legacy)
+        check("KB doc decodes without note", doc != nil)
+        check("KB doc missing note defaults empty", doc?.note == "")
+        check("KB doc missing profileIDs defaults empty", doc?.profileIDs.isEmpty == true)
+    }
+
+    static func testStableHash() {
+        check("stableHash deterministic", "Speaker 1".stableHash == "Speaker 1".stableHash)
+        check("stableHash non-negative", "".stableHash >= 0 && "🦜 émojî".stableHash >= 0)
+        check("stableHash differs across labels", "Speaker 1".stableHash != "Speaker 2".stableHash)
+    }
+
     static func testPromptAndSchema() {
         let kinds = ProfilePresets.all().first { $0.name == "1:1 coaching" }!.kinds
         let prompt = ClaudeAnalysisProvider.systemPrompt(persona: "P", kinds: kinds, gauges: [])
@@ -130,6 +187,8 @@ enum ProfileTest {
         let kindEnum = ((items?["properties"] as? [String: Any])?["kind"] as? [String: Any])?["enum"] as? [String]
         check("schema enum == profile keys", Set(kindEnum ?? []) == Set(kinds.map(\.key)))
         check("schema has sentiment object", (schema["properties"] as? [String: Any])?["sentiment"] != nil)
+        // Injection hardening: transcript/document text is declared data-only.
+        check("prompt declares tagged text as data", prompt.contains("<transcript>"))
         let valid = ClaudeAnalysisProvider.validatingKinds(
             [InsightDraft(kindKey: "reflection", title: "t", detail: "d", source: nil),
              InsightDraft(kindKey: "objection", title: "t", detail: "d", source: nil)],
