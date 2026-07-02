@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
+    @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @State private var apiKey = APIKeyStore.load() ?? ""
     @State private var keySaved = false
     @State private var keySaveFailed = false
@@ -60,6 +61,27 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
+            Section("Transcription Engine") {
+                Picker("Engine", selection: $transcriptionBackend) {
+                    Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
+                    Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
+                }
+                .pickerStyle(.radioGroup)
+
+                if transcriptionBackend == TranscriptionBackend.groq.rawValue {
+                    ProviderKeyField(
+                        label: "Groq API key",
+                        account: TranscriptionBackend.groq.keychainAccount!,
+                        placeholder: "gsk_…",
+                        hint: "Audio chunks are sent to Groq for transcription. Get a key at console.groq.com. Applies from the next recording; on-device remains the automatic fallback."
+                    )
+                }
+
+                Text("On-device keeps every second of audio on this Mac. Cloud engines trade that for accuracy — bring your own key, pay the provider directly.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("WhisperKit Model") {
                 Picker("Model", selection: $selectedModel) {
                     Text("Tiny (~40MB) — Fastest, lower accuracy").tag("tiny")
@@ -348,5 +370,62 @@ struct KBDocumentRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Provider API key field
+
+/// Reusable BYO-key field with the same save/verify UX as the Claude key:
+/// Keychain-backed, explicit Save, and a visible error when the write fails.
+struct ProviderKeyField: View {
+    let label: String
+    let account: String
+    let placeholder: String
+    let hint: String
+
+    @State private var key: String
+    @State private var saved = false
+    @State private var failed = false
+
+    init(label: String, account: String, placeholder: String, hint: String) {
+        self.label = label
+        self.account = account
+        self.placeholder = placeholder
+        self.hint = hint
+        _key = State(initialValue: APIKeyStore.load(account: account) ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SecureField(placeholder, text: $key, prompt: Text(placeholder))
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: key) {
+                    saved = false
+                    failed = false
+                }
+
+            HStack {
+                Button("Save \(label)") {
+                    failed = !APIKeyStore.save(key.trimmingCharacters(in: .whitespacesAndNewlines),
+                                               account: account)
+                    saved = !failed
+                }
+                .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if saved {
+                    Label("Saved", systemImage: "checkmark.circle")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                } else if failed {
+                    Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
+            }
+
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }

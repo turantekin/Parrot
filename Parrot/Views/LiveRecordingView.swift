@@ -155,6 +155,12 @@ struct LiveRecordingView: View {
                     .help("System audio isn't in the expected format, so speaker bleed may transcribe as \"Me\". Headphones avoid this entirely.")
             }
 
+            if let notice = recordingManager.transcriptionEngine.cloudNotice {
+                Label(notice, systemImage: "icloud.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
             Spacer()
 
             Image(systemName: "speaker.wave.2.fill")

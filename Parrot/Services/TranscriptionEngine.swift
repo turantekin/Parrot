@@ -32,6 +32,10 @@ final class TranscriptionEngine {
     private(set) var isTranscribing = false
     private(set) var currentText = ""
     private(set) var modelState: ModelState = .notLoaded
+    /// One-line notice when a cloud backend can't be used (missing key, API
+    /// errors) and the session is running on-device instead. Shown in the
+    /// live device bar.
+    private(set) var cloudNotice: String?
 
     /// Called when a finalized transcript segment is ready
     var onSegment: ((TranscriptionResult) -> Void)?
@@ -96,6 +100,24 @@ final class TranscriptionEngine {
         transcriptionTask?.cancel()
         transcriptionTask = nil
         isTranscribing = true
+
+        // Resolve the transcription backend for this session. Cloud backends
+        // need their key; anything missing falls back to on-device with a
+        // visible notice. (Deepgram streaming lands separately; until then it
+        // behaves as local.)
+        var backend = TranscriptionBackend.selected
+        var groqKey: String?
+        cloudNotice = nil
+        if backend == .groq {
+            groqKey = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!)
+            if groqKey?.isEmpty != false {
+                backend = .local
+                cloudNotice = "Groq key missing — using on-device Whisper"
+            }
+        }
+        if backend == .deepgram {
+            backend = .local
+        }
 
         // Resolve the user's transcription language ("auto"/nil = auto-detect).
         let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
@@ -191,8 +213,10 @@ final class TranscriptionEngine {
                     let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
                     guard energy > 0.002 else { continue }
 
-                    do {
-                        guard let whisperKit = self.whisperKit else { continue }
+                    // On-device decode — the default path, and the per-chunk
+                    // fallback when a cloud backend hiccups (never lose a chunk).
+                    func decodeLocally() async throws -> [(text: String, confidence: Float?)] {
+                        guard let whisperKit = self.whisperKit else { return [] }
                         // Stream interim words to the live view as they decode; strip
                         // any stray special/timestamp tokens defensively.
                         let interimCallback: TranscriptionCallback = { [weak self] progress in
@@ -207,17 +231,37 @@ final class TranscriptionEngine {
                             decodeOptions: decodeOptions,
                             callback: interimCallback
                         )
+                        return result.map { transcription in
+                            (transcription.text,
+                             transcription.segments.map(\.avgLogprob).reduce(0, +)
+                                / Float(max(transcription.segments.count, 1)))
+                        }
+                    }
 
-                        for transcription in result {
-                            let text = Self.cleaned(transcription.text)
+                    do {
+                        let pieces: [(text: String, confidence: Float?)]
+                        if backend == .groq, let groqKey {
+                            do {
+                                pieces = [(try await GroqTranscriber.transcribe(
+                                    samples: chunk, language: language, apiKey: groqKey), nil)]
+                            } catch {
+                                NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
+                                await MainActor.run {
+                                    self.cloudNotice = "Groq error — on-device fallback for failed chunks"
+                                }
+                                pieces = try await decodeLocally()
+                            }
+                        } else {
+                            pieces = try await decodeLocally()
+                        }
+
+                        for piece in pieces {
+                            let text = Self.cleaned(piece.text)
                             guard !text.isEmpty else { continue }
                             // Silence hallucinations ("you", "Thank you.",
                             // "Okay.") flooded real transcripts — drop them
                             // when the chunk was near-silent.
                             guard !Self.isLikelyHallucination(text, energy: energy) else { continue }
-
-                            let avgLogProb = transcription.segments.map(\.avgLogprob).reduce(0, +)
-                                / Float(max(transcription.segments.count, 1))
 
                             await MainActor.run {
                                 self.currentText = text
@@ -226,7 +270,7 @@ final class TranscriptionEngine {
                                     source: source,
                                     startTime: startTime,
                                     endTime: endTime,
-                                    confidence: avgLogProb
+                                    confidence: piece.confidence
                                 ))
                             }
                         }

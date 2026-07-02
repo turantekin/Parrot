@@ -27,6 +27,7 @@ enum ProfileTest {
         testStableHash()
         testNearDuplicate()
         testHallucinationFilter()
+        testWAVEncoder()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -195,6 +196,24 @@ enum ProfileTest {
         check("halluc: real sentence kept", !TranscriptionEngine.isLikelyHallucination("Can you hear me?", energy: 0.002))
         check("halluc: loud 'Okay.' kept", !TranscriptionEngine.isLikelyHallucination("Okay.", energy: 0.02))
         check("halluc: loud 'Thank you.' kept", !TranscriptionEngine.isLikelyHallucination("Thank you.", energy: 0.03))
+    }
+
+    static func testWAVEncoder() {
+        let wav = WAVEncoder.encode(samples: [0, 0.5, -0.5, 2.0], sampleRate: 16000)
+        check("wav total size", wav.count == 44 + 8)
+        check("wav RIFF magic", wav.prefix(4) == Data("RIFF".utf8))
+        check("wav WAVE magic", wav[8..<12] == Data("WAVE".utf8))
+        func u32(_ offset: Int) -> UInt32 {
+            wav[offset..<offset + 4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.littleEndian
+        }
+        func i16(_ offset: Int) -> Int16 {
+            wav[offset..<offset + 2].withUnsafeBytes { $0.loadUnaligned(as: Int16.self) }.littleEndian
+        }
+        check("wav sample rate field", u32(24) == 16000)
+        check("wav data size field", u32(40) == 8)
+        check("wav first sample zero", i16(44) == 0)
+        check("wav clamps overdrive to Int16.max-ish", i16(50) == 32767)
+        check("backend defaults to local", TranscriptionBackend.selected == .local)
     }
 
     static func testStableHash() {

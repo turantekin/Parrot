@@ -492,16 +492,16 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     }
 }
 
-/// Stores the Claude API key in the user's keychain.
+/// Stores API keys in the user's keychain. One service, one account per
+/// provider — "claude-api-key" (default), "groq-api-key", "deepgram-api-key".
 enum APIKeyStore {
     private static let service = "com.uygar.parrot"
-    private static let account = "claude-api-key"
 
     /// Returns false if the keychain rejected the write — the UI must say so,
     /// or the user believes the key is saved and every call fails "missing key".
     @discardableResult
-    static func save(_ key: String) -> Bool {
-        delete()
+    static func save(_ key: String, account: String = "claude-api-key") -> Bool {
+        delete(account: account)
         guard !key.isEmpty, let data = key.data(using: .utf8) else { return false }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -512,7 +512,7 @@ enum APIKeyStore {
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
-    static func load() -> String? {
+    static func load(account: String = "claude-api-key") -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -526,7 +526,7 @@ enum APIKeyStore {
         return String(data: data, encoding: .utf8)
     }
 
-    static func delete() {
+    static func delete(account: String = "claude-api-key") {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

@@ -34,6 +34,7 @@
 		C8002A3F47345F064BB3BA98 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63A84D1204A30379B79627C /* ContentView.swift */; };
 		C8804B03958954B9D8BEA6FA /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */; };
 		CC22CC7B3CBD14D2B4606E16 /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */; };
+		D28B45E6E6089E715CAA52C0 /* CloudTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28857A0DAA1D83C066023B14 /* CloudTranscription.swift */; };
 		D41FEC78937277879CA64EBB /* AnalysisProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FCC0E7326A41C441C77FAC4 /* AnalysisProvider.swift */; };
 		D7B87E120F1187AE11BD8F89 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 531A69C106428442DDDF25EF /* Assets.xcassets */; };
 		D80161EBEE86C38E11105708 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */; };
@@ -52,6 +53,7 @@
 		1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallAnalysisEngine.swift; sourceTree = "<group>"; };
 		1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		200FE5120F42A3BB47933EB7 /* ParrotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParrotApp.swift; sourceTree = "<group>"; };
+		28857A0DAA1D83C066023B14 /* CloudTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudTranscription.swift; sourceTree = "<group>"; };
 		2AA62BB3552276743C5C57CB /* Parrot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Parrot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2CE74071DA1946404F9FD84C /* SnapshotTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTool.swift; sourceTree = "<group>"; };
 		2DE0CCC714BADC67C8D26E20 /* Meeting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Meeting.swift; sourceTree = "<group>"; };
@@ -179,6 +181,7 @@
 				5FCC0E7326A41C441C77FAC4 /* AnalysisProvider.swift */,
 				F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */,
 				1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */,
+				28857A0DAA1D83C066023B14 /* CloudTranscription.swift */,
 				9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */,
 				59587E1F3FF92A07FD404042 /* EchoCanceller.swift */,
 				7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */,
@@ -273,6 +276,7 @@
 				E4E9A631759BFBCB14131A34 /* AudioCaptureManager.swift in Sources */,
 				1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */,
 				9889613E7875868152583C8F /* CallProfile.swift in Sources */,
+				D28B45E6E6089E715CAA52C0 /* CloudTranscription.swift in Sources */,
 				C8002A3F47345F064BB3BA98 /* ContentView.swift in Sources */,
 				8B131BE512D811DC7F495E0A /* CopilotPanelView.swift in Sources */,
 				FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */,
