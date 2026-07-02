@@ -28,6 +28,7 @@ enum ProfileTest {
         testNearDuplicate()
         testHallucinationFilter()
         testWAVEncoder()
+        testAIUsageCost()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -214,6 +215,42 @@ enum ProfileTest {
         check("wav first sample zero", i16(44) == 0)
         check("wav clamps overdrive to Int16.max-ish", i16(50) == 32767)
         check("backend defaults to local", TranscriptionBackend.selected == .local)
+    }
+
+    static func testAIUsageCost() {
+        // Known tokens → known dollars: 1M in ($1.00) + 200k out ($1.00) = $2.00;
+        // Deepgram 10 min × 2 tracks = 20 min × $0.0077 = $0.154;
+        // polish 20 min = 1/3 hr × $0.04 ≈ $0.0133.
+        var usage = AIUsage()
+        usage.copilotModel = "claude-haiku-4-5"
+        usage.copilot = AITokenTotals(inputTokens: 1_000_000, outputTokens: 200_000, calls: 41)
+        usage.transcriptionBackend = TranscriptionBackend.deepgram.rawValue
+        usage.transcriptionSeconds = 600
+        usage.transcriptionTracks = 2
+        usage.polishSeconds = 1200
+
+        let items = usage.costBreakdown()
+        check("cost has 3 line items", items.count == 3)
+        check("copilot cost $2.00", abs(items[0].usd - 2.00) < 0.0001)
+        check("copilot detail has calls + tokens", items[0].detail.contains("41 calls") && items[0].detail.contains("1000k in"))
+        check("deepgram cost $0.154", abs(items[1].usd - 0.154) < 0.0001)
+        check("polish cost ~$0.0133", abs(items[2].usd - 1200.0 / 3600 * 0.04) < 0.0001)
+        check("total sums line items", abs(usage.totalUSD - items.reduce(0) { $0 + $1.usd }) < 0.0001)
+
+        // Local + no copilot calls + no polish → one free line only.
+        var free = AIUsage()
+        free.transcriptionSeconds = 600
+        let freeItems = free.costBreakdown()
+        check("local-only is 1 free line", freeItems.count == 1 && freeItems[0].usd == 0)
+        check("local detail says on-device", freeItems[0].detail == "on-device")
+
+        // Codable round-trip (this is what Meeting.aiUsageData stores).
+        let decoded = (try? JSONEncoder().encode(usage)).flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
+        check("AIUsage round-trips", decoded?.copilot == usage.copilot && decoded?.polishSeconds == 1200)
+
+        check("formatUSD cents", AIUsage.formatUSD(0.154) == "$0.15")
+        check("formatUSD sub-cent shows 3 decimals", AIUsage.formatUSD(0.0013) == "$0.001")
+        check("formatUSD zero", AIUsage.formatUSD(0) == "$0.00")
     }
 
     static func testStableHash() {

@@ -63,6 +63,15 @@ protocol AnalysisProvider {
     /// objections handled vs missed, and commitments with any timing.
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String) async throws -> String
+    /// Cumulative token usage since the last reset — drives the per-meeting
+    /// cost row. Defaults below keep non-metering providers/mocks unchanged.
+    var usageTotals: AITokenTotals { get }
+    func resetUsage()
+}
+
+extension AnalysisProvider {
+    var usageTotals: AITokenTotals { AITokenTotals() }
+    func resetUsage() {}
 }
 
 enum AnalysisError: LocalizedError {
@@ -84,6 +93,43 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     var isConfigured: Bool {
         APIKeyStore.load()?.isEmpty == false
+    }
+
+    // MARK: - Usage Metering
+
+    // performRequest resumes off the main actor, so the counters get a lock.
+    private let usageLock = NSLock()
+    private var meteredUsage = AITokenTotals()
+
+    var usageTotals: AITokenTotals {
+        usageLock.lock(); defer { usageLock.unlock() }
+        return meteredUsage
+    }
+
+    func resetUsage() {
+        usageLock.lock(); defer { usageLock.unlock() }
+        meteredUsage = AITokenTotals()
+    }
+
+    /// Every Anthropic response carries `usage {input_tokens, output_tokens}`;
+    /// accumulate it here so analyze/summarize/coaching are all metered in one place.
+    private func recordUsage(from data: Data) {
+        struct Envelope: Decodable {
+            struct U: Decodable {
+                let inputTokens: Int?
+                let outputTokens: Int?
+                enum CodingKeys: String, CodingKey {
+                    case inputTokens = "input_tokens"
+                    case outputTokens = "output_tokens"
+                }
+            }
+            let usage: U?
+        }
+        guard let usage = (try? JSONDecoder().decode(Envelope.self, from: data))?.usage else { return }
+        usageLock.lock(); defer { usageLock.unlock() }
+        meteredUsage.inputTokens += usage.inputTokens ?? 0
+        meteredUsage.outputTokens += usage.outputTokens ?? 0
+        meteredUsage.calls += 1
     }
 
     // MARK: - Pure static helpers (network-free, testable)
@@ -405,6 +451,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             guard http.statusCode == 200 else {
                 throw AnalysisError.badResponse(Self.errorMessage(from: data) ?? "HTTP \(http.statusCode)")
             }
+            recordUsage(from: data)
             return data
         }
         throw AnalysisError.badResponse("Unreachable")  // loop always returns or throws

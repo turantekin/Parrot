@@ -154,6 +154,7 @@ final class RecordingManager {
 
         // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
+        callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
         callAnalysisEngine.start(profile: profile, brief: nextCallBrief)
 
         currentMeeting = meeting
@@ -213,11 +214,13 @@ final class RecordingManager {
             // the FINAL text — never from a transcript that's about to change.
             let meetingRef = meeting
             Task {
-                await self.polishTranscript(meeting: meetingRef)
+                let polishSeconds = await self.polishTranscript(meeting: meetingRef)
                 await self.postProcess(meeting: meetingRef)
                 if self.callAnalysisEngine.isEnabled, self.callAnalysisEngine.provider.isConfigured {
                     await self.generateSummary(meeting: meetingRef)
                 }
+                // Last in the chain so the meter has seen the summary/coaching calls too.
+                self.writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
             }
         }
 
@@ -316,11 +319,14 @@ final class RecordingManager {
     /// Re-transcribe the saved audio through Groq's large model and replace the
     /// live transcript with the cleaner one. Opt-in, best-effort: any failure
     /// leaves the live transcript untouched.
-    private func polishTranscript(meeting: Meeting) async {
+    /// Returns the seconds of audio billed (all tracks summed) for cost tracking,
+    /// 0 when polish didn't run.
+    @discardableResult
+    private func polishTranscript(meeting: Meeting) async -> Double {
         guard UserDefaults.standard.bool(forKey: "polishAfterCall"),
               let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
               !key.isEmpty,
-              let modelContext else { return }
+              let modelContext else { return 0 }
 
         let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
         let language = (setting == nil || setting == "auto") ? nil : setting
@@ -332,7 +338,7 @@ final class RecordingManager {
                 language: language,
                 apiKey: key
             )
-            guard !polished.isEmpty else { return }
+            guard !polished.isEmpty else { return 0 }
 
             for old in meeting.segments {
                 modelContext.delete(old)
@@ -346,9 +352,32 @@ final class RecordingManager {
             }
             try? modelContext.save()
             NSLog("Parrot: transcript polished — \(polished.count) segments")
+            // Billed audio ≈ call duration per re-transcribed track.
+            let tracks = [meeting.systemAudioPath.nilIfEmpty, meeting.micAudioPath?.nilIfEmpty]
+                .compactMap { $0 }.count
+            return meeting.duration * Double(tracks)
         } catch {
             NSLog("Parrot: polish failed, keeping live transcript — \(error.localizedDescription)")
+            return 0
         }
+    }
+
+    // MARK: - AI usage snapshot
+
+    /// Freezes this call's AI usage (copilot tokens + transcription/polish audio
+    /// seconds) onto the meeting so the detail view can show what it cost.
+    private func writeAIUsage(meeting: Meeting, polishSeconds: Double) {
+        var usage = AIUsage()
+        usage.copilotModel = ClaudeAnalysisProvider.model
+        usage.copilot = callAnalysisEngine.provider.usageTotals
+        // ponytail: reads the backend setting at stop time; a mid-call engine
+        // switch or cloud→local fallback mislabels one estimated row.
+        usage.transcriptionBackend = TranscriptionBackend.selected.rawValue
+        usage.transcriptionSeconds = meeting.duration
+        usage.transcriptionTracks = meeting.micAudioPath?.nilIfEmpty != nil ? 2 : 1
+        usage.polishSeconds = polishSeconds
+        meeting.aiUsageData = try? JSONEncoder().encode(usage)
+        try? modelContext?.save()
     }
 
     // MARK: - Post-Processing
