@@ -197,10 +197,16 @@ struct LiveRecordingView: View {
                     }
                     .padding()
                 }
+                // Native chat-style behavior: content stays pinned to the live
+                // edge while the user is at the bottom, and holds position when
+                // they scroll up. Replaces the per-segment scrollTo, which
+                // fought the user's own scrolling (and broke entirely when the
+                // window was resized — "can't reach the latest lines").
+                .defaultScrollAnchor(.bottom)
                 .coordinateSpace(name: "liveTranscript")
                 .onPreferenceChange(BottomDistancePreferenceKey.self) { distance in
-                    // Hysteresis: a freshly appended row (~60pt) mid-animation
-                    // must not cancel auto-scroll, but a real upward scroll must.
+                    // Drives only the "Resume live" pill now (with hysteresis so
+                    // a freshly appended row doesn't flicker it).
                     if distance > 150 {
                         autoScroll = false
                     } else if distance < 60 {
@@ -230,13 +236,9 @@ struct LiveRecordingView: View {
             }
             .onChange(of: recordingManager.currentMeeting?.segments.count) {
                 // A new segment was committed — refresh the cached sorted list
-                // (the only place the sort runs now).
+                // (the only place the sort runs now). Scrolling is handled by
+                // defaultScrollAnchor(.bottom); no programmatic scroll here.
                 displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
-                if autoScroll {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo("liveEdge", anchor: .bottom)
-                    }
-                }
             }
             .task(id: recordingManager.currentMeeting?.id) {
                 // Seed on appear and reseed if the meeting changes (e.g. navigating

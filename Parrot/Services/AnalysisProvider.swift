@@ -39,8 +39,11 @@ struct AnalysisRequest {
 /// Combined result from one analysis pass: structured insights plus a sentiment reading.
 struct AnalysisResult {
     let insights: [InsightDraft]
+    /// Gauge values by key, plus "score" (overall 0-100 call score).
     let sentiment: [String: Int]
     let read: String?
+    /// One-sentence live-coaching verdict ("Going well — now ask who signs off.").
+    let coach: String?
 }
 
 /// Backend that turns a transcript window into structured insights.
@@ -113,15 +116,23 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
         Rules: never repeat an insight whose title already exists. Return at most the 2 most \
         valuable NEW insights per response — prefer fewer; an empty list is common and fine. \
+        Flag at most ONE unresolved item (unanswered question, concern, obstacle) per \
+        response, and never re-flag one already shown — pile-ups bury the user. \
         Keep titles under 8 words and details under 2 sentences. Same language as the call.
+
+        Also return a "sentiment" object reading the room RIGHT NOW:
+        - "coach": ONE short, direct live-coaching sentence — how it's going plus the single \
+        most useful thing to do next (e.g. "Going well — now ask who signs off."). Blunt, \
+        specific, same language as the call.
+        - "score": integer 0–100 — overall, how well is this call going for the user right \
+        now (0 = disaster, 50 = neutral, 100 = excellent).
+        - "read": one word for the room.
         """
         if !gauges.isEmpty {
             let list = gauges.map { "- \($0.key): 0 = \($0.lowLabel), 100 = \($0.highLabel) (\($0.label))" }.joined(separator: "\n")
             p += """
 
-
-            Also return a "sentiment" object reading the room right now, as an integer 0–100 for \
-            each gauge, plus a one-word "read":
+            Plus an integer 0–100 for each gauge:
             \(list)
             """
         }
@@ -141,17 +152,22 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             "additionalProperties": false,
         ]
         var properties: [String: Any] = ["insights": ["type": "array", "items": itemSchema]]
-        var required = ["insights"]
-        if !gauges.isEmpty {
-            var sentProps: [String: Any] = [:]
-            // Claude structured outputs reject numeric constraints (minimum/maximum) on
-            // integer types — sending them 400s the whole request. The 0–100 range is
-            // enforced via the prompt instead, and clamped on parse.
-            for g in gauges { sentProps[g.key] = ["type": "integer"] }
-            sentProps["read"] = ["type": "string"]
-            properties["sentiment"] = ["type": "object", "properties": sentProps, "additionalProperties": false]
-            required.append("sentiment")
-        }
+        // Sentiment is always requested: the coach line + call score drive the
+        // always-on summary card, independent of profile gauges.
+        var sentProps: [String: Any] = [
+            "coach": ["type": "string", "description": "One short live-coaching sentence: how it's going + what to do next."],
+            "score": ["type": "integer", "description": "0-100 how well the call is going for the user right now."],
+            "read": ["type": "string"],
+        ]
+        // Claude structured outputs reject numeric constraints (minimum/maximum) on
+        // integer types — sending them 400s the whole request. The 0–100 range is
+        // enforced via the prompt instead, and clamped on parse.
+        for g in gauges { sentProps[g.key] = ["type": "integer"] }
+        properties["sentiment"] = [
+            "type": "object", "properties": sentProps,
+            "required": ["coach", "score", "read"], "additionalProperties": false,
+        ]
+        let required = ["insights", "sentiment"]
         return ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
 
@@ -223,7 +239,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let parsed = try Self.parseResult(from: data)
         let sourceValidated = Self.validatingSources(parsed.insights, knownDocuments: request.knownDocumentNames)
         let kindValidated = Self.validatingKinds(sourceValidated, allowed: Set(request.kinds.map(\.key)))
-        return AnalysisResult(insights: kindValidated, sentiment: parsed.sentiment, read: parsed.read)
+        return AnalysisResult(insights: kindValidated, sentiment: parsed.sentiment,
+                              read: parsed.read, coach: parsed.coach)
     }
 
     // MARK: - Post-Call Summary
@@ -398,7 +415,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         }
     }
 
-    private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?) {
+    private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?, coach: String?) {
         let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
         // Truncated structured output is unparseable half-JSON; silently treating
         // it as "no insights" made whole windows vanish. Throw so the engine
@@ -421,14 +438,16 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         }
         var sentiment: [String: Int] = [:]
         var read: String? = nil
+        var coach: String? = nil
         if let s = obj["sentiment"] as? [String: Any] {
             for (k, v) in s {
                 if k == "read" { read = v as? String }
+                else if k == "coach" { coach = (v as? String)?.nilIfEmpty }
                 else if let i = v as? Int { sentiment[k] = min(100, max(0, i)) }
                 else if let d = v as? Double { sentiment[k] = min(100, max(0, Int(d))) }
             }
         }
-        return (drafts, sentiment, read)
+        return (drafts, sentiment, read, coach)
     }
 
     private static func errorMessage(from data: Data) -> String? {

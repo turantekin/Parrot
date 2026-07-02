@@ -81,8 +81,9 @@ enum CopilotSnapshot {
         rm.callAnalysisEngine.seedForSnapshot(
             profile: profile,
             insights: insights,
-            sentiment: ["buying_temperature": 62, "my_dominance": 55],
+            sentiment: ["buying_temperature": 62, "my_dominance": 55, "score": 68],
             read: "warming",
+            coach: "Going well — stop listing features and ask who signs off on budget.",
             meCharacters: 1300, themCharacters: 900
         )
 

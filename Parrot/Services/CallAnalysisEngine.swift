@@ -23,7 +23,13 @@ final class CallAnalysisEngine {
     private(set) var isActive = false
     private(set) var sentiment: [String: Int] = [:]
     private(set) var sentimentRead: String?
+    /// One-sentence live-coaching verdict from the latest pass — drives the
+    /// always-on coach card ("Going well — now ask who signs off.").
+    private(set) var coachLine: String?
     private(set) var activeProfile: CallProfile?
+
+    /// Overall 0-100 "how is this call going" from the latest pass.
+    var callScore: Int? { sentiment["score"] }
 
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
@@ -70,7 +76,7 @@ final class CallAnalysisEngine {
         oldestPendingSince = nil
         meCharacters = 0
         themCharacters = 0
-        sentiment = [:]; sentimentRead = nil
+        sentiment = [:]; sentimentRead = nil; coachLine = nil
         activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         isActive = true
@@ -215,6 +221,7 @@ final class CallAnalysisEngine {
             }
             sentiment = merged
             sentimentRead = result.read
+            if let coach = result.coach { coachLine = coach }
             let existingTitles = Set(insights.map { $0.title.lowercased() })
             let unique = result.insights
                 .filter { !existingTitles.contains($0.title.lowercased()) }
@@ -256,12 +263,13 @@ final class CallAnalysisEngine {
     /// Dev-harness only: seed the engine with fake state so the copilot panel
     /// can be rendered offscreen (`--copilot-snapshot`) without a live call.
     func seedForSnapshot(profile: CallProfile?, insights: [Insight],
-                         sentiment: [String: Int], read: String?,
+                         sentiment: [String: Int], read: String?, coach: String? = nil,
                          meCharacters: Int, themCharacters: Int) {
         activeProfile = profile
         self.insights = insights
         self.sentiment = sentiment
         sentimentRead = read
+        coachLine = coach
         self.meCharacters = meCharacters
         self.themCharacters = themCharacters
         isActive = true

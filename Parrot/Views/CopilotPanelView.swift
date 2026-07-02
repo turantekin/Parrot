@@ -134,20 +134,12 @@ struct CopilotPanelView: View {
     @ViewBuilder
     private func feedArea(errorMessage: String?) -> some View {
         VStack(spacing: 0) {
-            // Compact always-on sentiment chips — one row, details in tooltips.
-            SentimentStripView(
-                gauges: engine.activeProfile?.gauges ?? [],
-                values: engine.sentiment,
-                read: engine.sentimentRead
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-
-            if !pinnedBlockers.isEmpty {
-                pinnedZone
-                Divider()
-            }
+            // Always-on live summary: call score + one-line coach verdict +
+            // sentiment chips + open-blocker count. THE glanceable answer to
+            // "how is it going and what should I do".
+            coachCard
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
 
             if engine.insights.isEmpty && errorMessage == nil {
                 emptyState
@@ -157,20 +149,63 @@ struct CopilotPanelView: View {
         }
     }
 
-    private var pinnedZone: some View {
-        VStack(spacing: 6) {
-            ForEach(pinnedBlockers) { insight in
-                PinnedBlockerRow(insight: insight) {
-                    withAnimation(.spring(duration: 0.3)) {
-                        engine.markHandled(insight)
+    // MARK: - Coach card
+
+    private func scoreColor(_ score: Int) -> Color {
+        score >= 70 ? Theme.Colors.action
+            : score >= 40 ? Theme.Colors.blocker
+            : Color(hex: "C0563B")
+    }
+
+    private var coachCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                if let score = engine.callScore {
+                    Text("\(score)")
+                        .font(.system(size: 24, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(scoreColor(score))
+                        .contentTransition(.numericText())
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("CALL SCORE")
+                            .font(Theme.Typography.cap)
+                            .foregroundStyle(Theme.Colors.ink3)
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Theme.Colors.line)
+                            Capsule().fill(scoreColor(score))
+                                .frame(width: 72 * CGFloat(score) / 100)
+                        }
+                        .frame(width: 72, height: 4)
                     }
-                } onJump: {
-                    transcriptJumpTarget = insight.callTime
+                }
+
+                Spacer()
+
+                if !pinnedBlockers.isEmpty {
+                    Label("\(pinnedBlockers.count) open", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .help("Unresolved blockers — they're at the top of the feed below")
                 }
             }
+
+            Text(engine.coachLine ?? "Warming up — the coach reads the room after the first exchanges.")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(engine.coachLine == nil ? Theme.Colors.ink3 : Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SentimentStripView(
+                gauges: engine.activeProfile?.gauges ?? [],
+                values: engine.sentiment,
+                read: engine.sentimentRead
+            )
         }
-        .padding(10)
-        .background(.orange.opacity(0.04))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Colors.line))
+        .animation(.easeOut(duration: 0.3), value: engine.coachLine)
+        .animation(.easeOut(duration: 0.3), value: engine.callScore)
     }
 
     private var emptyState: some View {
@@ -218,19 +253,34 @@ struct CopilotPanelView: View {
                 .padding(.top, 10)
             }
 
-            if !historyInsights.isEmpty {
-                Text("EARLIER")
-                    .font(Theme.Typography.cap)
-                    .foregroundStyle(Theme.Colors.ink3)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 14)
-                    .padding(.bottom, 4)
+            // Everything below the hero scrolls together: open blockers first
+            // (they used to live in an UNBOUNDED fixed zone that could swallow
+            // the whole panel — 16 unhandled cards left no room and no scroll),
+            // then the compact history.
+            ScrollView {
+                // Plain VStack: insight volume is modest, and lazy stacks don't
+                // lay out under ImageRenderer, which would blind the
+                // --copilot-snapshot harness.
+                VStack(alignment: .leading, spacing: 6) {
+                    if !pinnedBlockers.isEmpty {
+                        ForEach(pinnedBlockers) { insight in
+                            PinnedBlockerRow(insight: insight) {
+                                withAnimation(.spring(duration: 0.3)) {
+                                    engine.markHandled(insight)
+                                }
+                            } onJump: {
+                                transcriptJumpTarget = insight.callTime
+                            }
+                        }
+                    }
 
-                ScrollView {
-                    // Plain VStack: insight volume is capped (≤2 per analysis
-                    // pass), and lazy stacks don't lay out under ImageRenderer,
-                    // which would blind the --copilot-snapshot harness.
-                    VStack(spacing: 6) {
+                    if !historyInsights.isEmpty {
+                        Text("EARLIER")
+                            .font(Theme.Typography.cap)
+                            .foregroundStyle(Theme.Colors.ink3)
+                            .padding(.horizontal, 2)
+                            .padding(.top, pinnedBlockers.isEmpty ? 2 : 8)
+
                         ForEach(historyInsights) { insight in
                             InsightCard(
                                 insight: insight,
@@ -247,11 +297,9 @@ struct CopilotPanelView: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
                 }
-            } else {
-                Spacer(minLength: 0)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
         }
         .animation(.spring(duration: 0.3), value: engine.insights)
