@@ -22,7 +22,7 @@ final class Meeting {
     var summary: String?
     /// AI coaching + follow-ups report (talk ratio, what to improve, commitments).
     var coaching: String?
-    /// User-assigned name for the other party ("Them"), e.g. "Kara". When set, it
+    /// User-assigned name for the other party ("Them"), e.g. "Sam". When set, it
     /// replaces "Them"/"Speaker N" labels in the transcript and reports.
     var themName: String?
     /// The user's own typed notes for this call — live during recording (side
@@ -98,7 +98,7 @@ final class Meeting {
     }
 
     /// Human-facing speaker name: "Me" stays "Me"; everyone else becomes the
-    /// user-assigned `themName` (e.g. "Kara") if set, otherwise the raw label.
+    /// user-assigned `themName` (e.g. "Sam") if set, otherwise the raw label.
     func displayName(forSpeaker label: String?) -> String {
         guard let label, !label.isEmpty else { return themName ?? "Them" }
         if label == "Me" { return "Me" }

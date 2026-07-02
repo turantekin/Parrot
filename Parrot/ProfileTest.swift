@@ -174,9 +174,9 @@ enum ProfileTest {
 
     static func testNearDuplicate() {
         // Real reworded re-flags from the 2026-07-02 test call — must match.
-        check("dedup catches reworded tax question", CallAnalysisEngine.isNearDuplicate(
-            "Morocco tax obligations on UK company—still live Prospect directly asked whether they owe tax or penalties to Morocco on a UK company run from Morocco.",
-            "Do I owe tax to Morocco on UK company earnings? Prospect explicitly asked whether operating a UK Ltd from Morocco creates tax or regulatory obligations to the Moroccan government."))
+        check("dedup catches reworded pricing question", CallAnalysisEngine.isNearDuplicate(
+            "Annual plan pricing still unanswered Prospect asked twice what the annual subscription costs including onboarding fees.",
+            "What does the annual subscription cost? Prospect explicitly asked for the annual plan price including onboarding fees."))
         check("dedup catches reworded docs question", CallAnalysisEngine.isNearDuplicate(
             "What docs do fintech partners actually need? The prospect just asked what documents UK fintechs require to open an account.",
             "What documents do fintech partners require? The prospect asked directly what verification documents the fintech banks need."))

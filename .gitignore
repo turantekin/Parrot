@@ -24,3 +24,16 @@ Packages/
 
 # Subagent-driven execution scratch (ledger, briefs, diffs)
 .superpowers/
+
+# Session attachments / local context (never commit — may contain screenshots with account data)
+.context/
+
+# Recordings / local data — never commit call audio or databases
+*.caf
+*.wav
+*.m4a
+*.mp3
+*.store
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

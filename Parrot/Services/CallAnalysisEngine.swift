@@ -234,7 +234,7 @@ final class CallAnalysisEngine {
             let existingTitles = Set(insights.map { $0.title.lowercased() })
             // Beyond exact titles: drop reworded re-flags of an issue that is
             // still open. A real 11-min call produced TEN variants of the same
-            // tax question ("…unknown", "…still unanswered", "…still live") —
+            // question ("…unknown", "…still unanswered", "…still live") —
             // prompt instructions alone don't stop it, so enforce it here.
             let openInsights = insights.filter { !$0.isHandled }
             let unique = result.insights
@@ -312,8 +312,8 @@ final class CallAnalysisEngine {
     // MARK: - Heuristics
 
     /// Cheap "same issue, different words" check: significant-word overlap,
-    /// normalized by the smaller set. Catches "Morocco tax obligations—still
-    /// live" vs "Do I owe tax to Morocco on UK company earnings?" while
+    /// normalized by the smaller set. Catches "Annual plan pricing—still
+    /// unanswered" vs "What does the annual subscription cost?" while
     /// keeping genuinely distinct topics apart.
     // ponytail: bag-of-words similarity; upgrade path is embedding distance
     // via the KB's embedder if rewording ever gets past this.

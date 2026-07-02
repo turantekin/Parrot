@@ -83,7 +83,7 @@ struct SettingsView: View {
                     ProviderKeyField(
                         label: "Deepgram API key",
                         account: TranscriptionBackend.deepgram.keychainAccount!,
-                        placeholder: "40-character key, e.g. 9eec38f…",
+                        placeholder: "40-character hex key",
                         hint: "Audio streams live to Deepgram (both mic and system tracks — billed per track). New accounts include $200 credit at console.deepgram.com. Applies from the next recording; on-device remains the automatic fallback."
                     )
                 }

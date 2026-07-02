@@ -326,16 +326,16 @@ enum ReportSnapshot {
     static let sampleSummary = """
     # Post-Call Report
 
-    This was a one-on-one session between a parent and a clinician focused on Jeremy's ADHD management — emotion recognition, a 12-minute "regulation corner", and selectively ignoring attention-seeking behaviour. The call was productive; the parent committed to several new strategies before the next session on July 10th.
+    This was a one-on-one session between a parent and a clinician focused on Alex's ADHD management — emotion recognition, a 12-minute "regulation corner", and selectively ignoring attention-seeking behaviour. The call was productive; the parent committed to several new strategies before the next session on July 10th.
 
     Key points:
-    - Jeremy's week was generally positive with mild arguments; morning routine improved despite late-night World Cup watching
+    - Alex's week was generally positive with mild arguments; morning routine improved despite late-night World Cup watching
     - Timeout reframed as a 12-minute "regulation corner" (not punishment)
-    - Parent struggles with emotion-naming; clinician modelled how to validate Jeremy's feelings during disappointment
+    - Parent struggles with emotion-naming; clinician modelled how to validate Alex's feelings during disappointment
     - Selective ignoring introduced for attention-seeking behaviours like monster sounds (10–15 minutes max)
 
     Next steps:
-    - Review handouts 20–23 and create a calm-down menu with Jeremy
+    - Review handouts 20–23 and create a calm-down menu with Alex
     - Practise emotion-naming in calm, positive moments first
     - Confirm online vs in-person for next week before end of workday
     """
@@ -354,6 +354,6 @@ enum ReportSnapshot {
 
     Commitments & follow-ups:
     - Read handouts 20, 21, 22, 23 before the next meeting
-    - Create a calm-down menu and report back on which skills Jeremy likes
+    - Create a calm-down menu and report back on which skills Alex likes
     """
 }

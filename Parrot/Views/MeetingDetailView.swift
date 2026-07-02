@@ -148,7 +148,7 @@ struct MeetingDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle")
                     .foregroundStyle(.secondary)
-                TextField("Name the other speaker (e.g. Kara)", text: $themNameText) {
+                TextField("Name the other speaker (e.g. Sam)", text: $themNameText) {
                     meeting.themName = themNameText.trimmingCharacters(in: .whitespaces).nilIfEmpty
                 }
                 .textFieldStyle(.plain)
@@ -551,7 +551,7 @@ struct TranscriptSegmentRow: View {
     ]
 
     /// Resolved speaker name: "Me" stays "Me"; everyone else shows the user's
-    /// assigned name (e.g. "Kara") if set, otherwise the raw label.
+    /// assigned name (e.g. "Sam") if set, otherwise the raw label.
     private var displayLabel: String? {
         guard let label = segment.speakerLabel else { return nil }
         if label == "Me" { return "Me" }
