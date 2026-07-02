@@ -114,8 +114,89 @@ enum CopilotSnapshot {
         .background(Theme.Colors.panel)
         let rows = render(history, dark: false, to: (path as NSString).deletingPathExtension + "-history.png")
 
-        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path)\n".utf8))
+        let legendURL = render(legend(profile: profile), dark: false,
+                               to: (path as NSString).deletingPathExtension + "-legend.png")
+
+        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path)\n".utf8))
         exit(0)
+    }
+
+    // MARK: - Card-system legend
+
+    /// A one-image guide to the live panel: the four zones plus every card kind
+    /// of the given profile, drawn with the app's real colors and icons.
+    private static func legend(profile: CallProfile?) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Parrot Copilot — what each card means")
+                .font(Theme.Typography.title(20))
+                .foregroundStyle(Theme.Colors.ink)
+
+            Text("PANEL ZONES (top to bottom)")
+                .font(Theme.Typography.cap)
+                .foregroundStyle(Theme.Colors.ink3)
+
+            legendRow(Theme.Colors.accent, "gauge.with.needle",
+                      "Coach card — always on top",
+                      "Live verdict: 0–100 call score, one sentence of what to do right now, mood chips, and how many blockers are open.")
+            legendRow(Theme.Colors.subtle, "rectangle.inset.filled.top",
+                      "Hero card — the big tinted one",
+                      "The newest insight, at full size. Glows briefly when it lands. This is the one to glance at.")
+            legendRow(.orange, "exclamationmark.triangle.fill",
+                      "Orange cards — unresolved",
+                      "Objections and questions you haven't dealt with yet. Click to read all of it; ✓ marks it handled — or it clears itself when the call actually resolves it.")
+            legendRow(Theme.Colors.ink3, "list.bullet",
+                      "EARLIER — the quiet history",
+                      "Everything older, one line each. Click any row to expand it.")
+
+            Divider().overlay(Theme.Colors.line)
+
+            Text("CARD KINDS IN THIS PROFILE (\(profile?.name ?? "Default"))")
+                .font(Theme.Typography.cap)
+                .foregroundStyle(Theme.Colors.ink3)
+
+            ForEach(profile?.kinds ?? [], id: \.id) { kind in
+                legendRow(KindResolver.adaptiveColor(forHex: kind.colorHex),
+                          kind.iconSystemName, kind.label,
+                          legendBlurb(for: kind.key))
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .background(Theme.Colors.canvas)
+    }
+
+    private static func legendRow(_ color: Color, _ icon: String,
+                                  _ title: String, _ blurb: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(color.opacity(0.16))
+                .frame(width: 30, height: 30)
+                .overlay(Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(color))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.ink)
+                Text(blurb)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Plain-language one-liner per sales-profile kind key (falls back to the
+    /// kind's own trigger text for custom kinds).
+    private static func legendBlurb(for key: String) -> String {
+        switch key {
+        case "suggestion": "A line you can literally say, right now. The Copy button puts it on your clipboard."
+        case "objection": "They pushed back (price, timing, competitor) and it isn't settled yet. Stays orange until handled."
+        case "unanswered_question": "They asked you something and the conversation moved on — circle back to it."
+        case "opportunity": "They revealed a pain or goal your offer can solve — how to position it."
+        case "buying_signal": "A sign they're interested — the moment to advance the deal."
+        case "next_step": "A concrete step to propose or confirm (pilot, follow-up call, intro)."
+        case "discovery_gap": "Something important you don't know yet — the card is the question to ask next."
+        default: "Custom card defined in this profile's settings."
+        }
     }
 
     private static func render(_ view: some View, dark: Bool, to path: String) -> URL {

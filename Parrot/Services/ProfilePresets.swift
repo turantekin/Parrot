@@ -13,7 +13,9 @@ enum ProfilePresets {
     /// so existing installs pick up improvements without wiping user-owned fields.
     /// v2: "Discovery gap" relabeled "Ask this next" — users didn't know what the
     /// grey card was for.
-    static let presetVersion = 2
+    /// v3: "Ask this next" recolored grey → warm gold; grey read as boring for a
+    /// card that carries real value (and the parrot is colorful).
+    static let presetVersion = 3
 
     private static func kind(_ key: String, _ label: String, _ hex: String, _ icon: String,
                              _ trigger: String, pinned: Bool = false, priority: Int = 0) -> ProfileKind {
@@ -59,7 +61,7 @@ enum ProfilePresets {
                     kind("opportunity", "Opportunity", "7A5FB0", "sparkles", "The prospect revealed a pain, goal, or need the user's offering could solve — suggest how to position a solution (ground it in the knowledge base when available).", priority: 7),
                     kind("buying_signal", "Buying signal", "3F9168", "arrow.up.right.circle.fill", "The prospect showed interest or intent — flag it so the user can advance the deal."),
                     kind("next_step", "Next step", "2F7E96", "calendar.badge.plus", "A concrete next step or commitment to propose or confirm."),
-                    kind("discovery_gap", "Ask this next", "5F6470", "magnifyingglass", "An important unknown (budget, timeline, decision maker, success criteria) the user hasn't asked about yet — phrase the title as the question to ask."),
+                    kind("discovery_gap", "Ask this next", "C29218", "magnifyingglass", "An important unknown (budget, timeline, decision maker, success criteria) the user hasn't asked about yet — phrase the title as the question to ask."),
                 ],
                 gauges: [gauge("buying_temperature", "Buying temp", "Cold", "Hot", "E8943A"),
                          gauge("my_dominance", "You're talking", "Balanced", "Dominating", "5F6470")]),
