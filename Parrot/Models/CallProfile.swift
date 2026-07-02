@@ -41,6 +41,10 @@ final class CallProfile {
     /// refresh built-ins (persona, kinds, counterpart) when presets improve,
     /// without wiping user-owned fields. 0 = pre-versioning row.
     var presetVersion: Int = 0
+    /// True once the user has edited this profile's AI-behavior fields (persona,
+    /// counterpart, kinds, gauges). The preset refresh skips modified built-ins —
+    /// a presetVersion bump must never silently wipe a user's tuning.
+    var isUserModified: Bool = false
     /// JSON-encoded [ProfileKind] / [SentimentGauge] — config, not queried entities.
     var kindsData: Data
     var gaugesData: Data

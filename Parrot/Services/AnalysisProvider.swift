@@ -433,16 +433,19 @@ enum APIKeyStore {
     private static let service = "com.uygar.parrot"
     private static let account = "claude-api-key"
 
-    static func save(_ key: String) {
+    /// Returns false if the keychain rejected the write — the UI must say so,
+    /// or the user believes the key is saved and every call fails "missing key".
+    @discardableResult
+    static func save(_ key: String) -> Bool {
         delete()
-        guard !key.isEmpty, let data = key.data(using: .utf8) else { return }
+        guard !key.isEmpty, let data = key.data(using: .utf8) else { return false }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
         ]
-        SecItemAdd(query as CFDictionary, nil)
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
     static func load() -> String? {

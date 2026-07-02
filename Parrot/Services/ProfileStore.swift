@@ -35,11 +35,18 @@ final class ProfileStore {
     /// presets. Overwrites the AI-behavior fields (persona, counterpart, kinds, gauges)
     /// so existing installs get prompt/category improvements, while preserving the
     /// user-owned fields (custom rules `tone`, summary, name, icon, toggle, order).
+    /// Profiles the user has tuned (isUserModified) are never overwritten — only
+    /// their version is bumped so they aren't re-checked every launch.
     private func refreshBuiltInsIfStale(_ existing: [CallProfile], context: ModelContext) {
         let presetsByID = Dictionary(uniqueKeysWithValues: ProfilePresets.all().map { ($0.id, $0) })
         var changed = false
         for p in existing where p.isBuiltIn && p.presetVersion < ProfilePresets.presetVersion {
             guard let preset = presetsByID[p.id] else { continue }
+            if p.isUserModified {
+                p.presetVersion = ProfilePresets.presetVersion
+                changed = true
+                continue
+            }
             p.persona = preset.persona
             p.counterpart = preset.counterpart
             p.kinds = preset.kinds

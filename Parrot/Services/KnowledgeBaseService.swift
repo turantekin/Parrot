@@ -225,10 +225,22 @@ final class KnowledgeBaseService {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.storeURL),
-              let store = try? JSONDecoder().decode(Store.self, from: data) else { return }
-        documents = store.documents
-        chunks = store.chunks
+        guard let data = try? Data(contentsOf: Self.storeURL) else { return }
+        do {
+            let store = try JSONDecoder().decode(Store.self, from: data)
+            documents = store.documents
+            chunks = store.chunks
+        } catch {
+            // The index exists but doesn't decode. Starting with an empty KB is
+            // fine; silently OVERWRITING the broken index on the next save is
+            // not — move it aside so the data stays recoverable.
+            let stamp = ISO8601DateFormatter().string(from: .now)
+                .replacingOccurrences(of: ":", with: "-")
+            let backup = Self.storeURL.deletingLastPathComponent()
+                .appendingPathComponent("index-corrupt-\(stamp).json")
+            try? FileManager.default.moveItem(at: Self.storeURL, to: backup)
+            NSLog("Parrot: knowledge base index failed to decode (\(error.localizedDescription)) — moved aside to \(backup.lastPathComponent)")
+        }
     }
 
     private func save() {

@@ -73,6 +73,10 @@ struct ProfilesSettingsView: View {
                     knowledgeBase: recordingManager.knowledgeBase,
                     context: context
                 )
+                // Fresh identity per profile: keeps editor @State from leaking
+                // across selection and stops onChange(of: persona/counterpart)
+                // from false-firing when the selection itself changes.
+                .id(profile.id)
             } else {
                 VStack {
                     Spacer()
@@ -250,6 +254,10 @@ private struct ProfileDetailView: View {
         }
         .formStyle(.grouped)
         .padding(.vertical, 4)
+        // Editing AI-behavior fields marks the profile as user-tuned so the
+        // built-in preset refresh never overwrites it (see ProfileStore).
+        .onChange(of: profile.persona) { _, _ in profile.isUserModified = true }
+        .onChange(of: profile.counterpart) { _, _ in profile.isUserModified = true }
     }
 
     // MARK: - Kind mutation helpers
@@ -259,6 +267,7 @@ private struct ProfileDetailView: View {
         if let i = ks.firstIndex(where: { $0.id == updated.id }) {
             ks[i] = updated
             profile.kinds = ks
+            profile.isUserModified = true
             try? context.save()
         }
     }
@@ -270,6 +279,7 @@ private struct ProfileDetailView: View {
             colorHex: "#888888", iconSystemName: "questionmark.circle",
             triggerDescription: "", isPinned: false, priority: ks.count))
         profile.kinds = ks
+        profile.isUserModified = true
         try? context.save()
     }
 
@@ -280,6 +290,7 @@ private struct ProfileDetailView: View {
         guard ks.count > 1 else { return }
         ks.removeAll { $0.id == kind.id }
         profile.kinds = ks
+        profile.isUserModified = true
         try? context.save()
     }
 
@@ -290,6 +301,7 @@ private struct ProfileDetailView: View {
         if let i = gs.firstIndex(where: { $0.id == updated.id }) {
             gs[i] = updated
             profile.gauges = gs
+            profile.isUserModified = true
             try? context.save()
         }
     }
@@ -300,6 +312,7 @@ private struct ProfileDetailView: View {
             id: UUID(), key: "new_gauge", label: "New Gauge",
             lowLabel: "Low", highLabel: "High", colorHex: "#888888"))
         profile.gauges = gs
+        profile.isUserModified = true
         try? context.save()
     }
 
@@ -307,6 +320,7 @@ private struct ProfileDetailView: View {
         var gs = profile.gauges
         gs.removeAll { $0.id == gauge.id }
         profile.gauges = gs
+        profile.isUserModified = true
         try? context.save()
     }
 }

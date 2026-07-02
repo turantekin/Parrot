@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @State private var apiKey = APIKeyStore.load() ?? ""
     @State private var keySaved = false
+    @State private var keySaveFailed = false
     @State private var showFileImporter = false
 
     var body: some View {
@@ -185,18 +186,23 @@ struct SettingsView: View {
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: apiKey) {
                         keySaved = false
+                        keySaveFailed = false
                     }
 
                 HStack {
                     Button("Save Key") {
-                        APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-                        keySaved = true
+                        keySaveFailed = !APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+                        keySaved = !keySaveFailed
                     }
                     .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     if keySaved {
                         Label("Saved", systemImage: "checkmark.circle")
                             .foregroundStyle(.green)
+                            .font(.caption)
+                    } else if keySaveFailed {
+                        Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
                             .font(.caption)
                     }
                 }

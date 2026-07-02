@@ -35,7 +35,10 @@ struct KBDocument: Codable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        note = try c.decode(String.self, forKey: .note)
+        // Fields added after 1.0 decode leniently (decodeIfPresent + default):
+        // a strict decode of a missing key fails the WHOLE store load, and the
+        // next save would then overwrite the store with empty — total KB loss.
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
         chunkCount = try c.decode(Int.self, forKey: .chunkCount)
         addedAt = try c.decode(Date.self, forKey: .addedAt)
         profileIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .profileIDs) ?? []
