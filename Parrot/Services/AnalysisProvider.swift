@@ -44,6 +44,8 @@ struct AnalysisResult {
     let read: String?
     /// One-sentence live-coaching verdict ("Going well — now ask who signs off.").
     let coach: String?
+    /// Titles of already-shown insights the conversation has since addressed.
+    let resolved: [String]
 }
 
 /// Backend that turns a transcript window into structured insights.
@@ -120,6 +122,11 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         response, and never re-flag one already shown — pile-ups bury the user. \
         Keep titles under 8 words and details under 2 sentences. Same language as the call.
 
+        Also return "resolved": the EXACT titles of any already-shown items that the \
+        conversation has since genuinely dealt with (question answered, concern addressed) \
+        — the user hates stale alerts for things they already handled. Only when truly \
+        resolved, not merely mentioned again. Usually empty.
+
         Also return a "sentiment" object reading the room RIGHT NOW:
         - "coach": ONE short, direct live-coaching sentence — how it's going plus the single \
         most useful thing to do next (e.g. "Going well — now ask who signs off."). Blunt, \
@@ -167,7 +174,10 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             "type": "object", "properties": sentProps,
             "required": ["coach", "score", "read"], "additionalProperties": false,
         ]
-        let required = ["insights", "sentiment"]
+        // Titles from the shown list that the conversation has since addressed —
+        // lets the engine auto-mark stale pinned alerts as handled.
+        properties["resolved"] = ["type": "array", "items": ["type": "string"]]
+        let required = ["insights", "sentiment", "resolved"]
         return ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
 
@@ -240,7 +250,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let sourceValidated = Self.validatingSources(parsed.insights, knownDocuments: request.knownDocumentNames)
         let kindValidated = Self.validatingKinds(sourceValidated, allowed: Set(request.kinds.map(\.key)))
         return AnalysisResult(insights: kindValidated, sentiment: parsed.sentiment,
-                              read: parsed.read, coach: parsed.coach)
+                              read: parsed.read, coach: parsed.coach, resolved: parsed.resolved)
     }
 
     // MARK: - Post-Call Summary
@@ -256,6 +266,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         to be.
 
         Structure: a 2-3 sentence overview of what the call was about and how it ended, \
+        then "Pain points:" — bullets on what \(counterpart) is struggling with, what \
+        they're actually trying to achieve, and why (only what the call revealed; write \
+        "- None surfaced" if nothing did), \
         then "Key points:" as short bullets, then "Next steps:" as bullets if any \
         commitments were made. Use plain text with simple "-" bullets, no markdown \
         headers. Write in the same language as the conversation.
@@ -415,7 +428,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         }
     }
 
-    private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?, coach: String?) {
+    private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?, coach: String?, resolved: [String]) {
         let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
         // Truncated structured output is unparseable half-JSON; silently treating
         // it as "no insights" made whole windows vanish. Throw so the engine
@@ -447,7 +460,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                 else if let d = v as? Double { sentiment[k] = min(100, max(0, Int(d))) }
             }
         }
-        return (drafts, sentiment, read, coach)
+        let resolved = (obj["resolved"] as? [String]) ?? []
+        return (drafts, sentiment, read, coach, resolved)
     }
 
     private static func errorMessage(from data: Data) -> String? {

@@ -329,6 +329,9 @@ struct PinnedBlockerRow: View {
     let onHandled: () -> Void
     let onJump: () -> Void
 
+    /// Details start clamped to two lines; a click on the card shows the rest.
+    @State private var expanded = false
+
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -338,14 +341,24 @@ struct PinnedBlockerRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(insight.title)
                     .font(.system(size: 15, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
                     TimestampButton(insight: insight, action: onJump)
 
                     Text(insight.detail)
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(expanded ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // ponytail: length heuristic for "is it truncated" — measuring
+                // real truncation in SwiftUI needs a two-pass text layout.
+                if !expanded && insight.detail.count > 120 {
+                    Text("show more")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.orange)
                 }
             }
 
@@ -365,6 +378,10 @@ struct PinnedBlockerRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.orange.opacity(0.35))
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.15)) { expanded.toggle() }
+        }
     }
 }
 

@@ -222,6 +222,15 @@ final class CallAnalysisEngine {
             sentiment = merged
             sentimentRead = result.read
             if let coach = result.coach { coachLine = coach }
+            // The model says these already-shown items were since dealt with in
+            // the conversation — clear them so stale alerts don't pile up (and
+            // so the post-call report shows them Handled, not Unresolved).
+            for title in result.resolved {
+                let lowered = title.lowercased()
+                if let idx = insights.firstIndex(where: { $0.title.lowercased() == lowered && !$0.isHandled }) {
+                    insights[idx].isHandled = true
+                }
+            }
             let existingTitles = Set(insights.map { $0.title.lowercased() })
             let unique = result.insights
                 .filter { !existingTitles.contains($0.title.lowercased()) }

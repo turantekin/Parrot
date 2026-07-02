@@ -101,6 +101,7 @@ enum CopilotSnapshot {
             KindResolver.style(forKey: insight.kindKey, profile: profile, snapshot: [])
         }
         let history = VStack(spacing: 6) {
+            PinnedBlockerRow(insight: insights[4], onHandled: {}, onJump: {})
             InsightCard(insight: insights[1], kindStyle: kindStyle(insights[1]),
                         isCollapsed: true, onToggleCollapse: {}, onJump: {}, onDismiss: {})
             InsightCard(insight: insights[2], kindStyle: kindStyle(insights[2]),

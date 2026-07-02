@@ -192,6 +192,7 @@ struct ReportProse: View {
     private static func icon(for title: String) -> String {
         let t = title.lowercased()
         switch true {
+        case t.contains("pain"), t.contains("struggl"): return "exclamationmark.bubble"
         case t.contains("key point"), t.contains("highlight"): return "list.bullet"
         case t.contains("next step"), t.contains("action"): return "checklist"
         case t.contains("commit"), t.contains("follow"): return "checkmark.seal"
