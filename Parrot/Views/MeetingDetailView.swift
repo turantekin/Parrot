@@ -18,6 +18,10 @@ enum ReportTab: String, CaseIterable, Identifiable {
 
 struct MeetingDetailView: View {
     let meeting: Meeting
+    /// Parent clears the selection and performs the actual delete — this view
+    /// must be gone before the model object is.
+    var onDelete: (() -> Void)? = nil
+    @State private var confirmingDelete = false
     @State private var editingTitle = false
     @State private var titleText = ""
     @State private var audioPlayer: AVAudioPlayer?      // system audio ("Them")
@@ -87,11 +91,16 @@ struct MeetingDetailView: View {
                 }
 
                 Button(role: .destructive) {
-                    // Delete handled by parent
+                    confirmingDelete = true
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+        .confirmationDialog("Delete this meeting?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { onDelete?() }
+        } message: {
+            Text("The recording, transcript, and insights will be permanently removed.")
         }
     }
 

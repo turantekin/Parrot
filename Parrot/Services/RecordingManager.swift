@@ -183,6 +183,20 @@ final class RecordingManager {
         recordingStartTime = nil
     }
 
+    // MARK: - Deletion
+
+    /// Deletes a meeting and its audio files. The only removal path in the app —
+    /// without it storage grows forever. Refuses the active recording.
+    func delete(_ meeting: Meeting) {
+        guard !(isRecording && meeting.id == currentMeeting?.id) else { return }
+        for path in [meeting.systemAudioPath.nilIfEmpty, meeting.micAudioPath?.nilIfEmpty].compactMap({ $0 }) {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+        if currentMeeting?.id == meeting.id { currentMeeting = nil }
+        modelContext?.delete(meeting)
+        try? modelContext?.save()
+    }
+
     // MARK: - Segment Storage
 
     private func addSegment(_ result: TranscriptionEngine.TranscriptionResult) {

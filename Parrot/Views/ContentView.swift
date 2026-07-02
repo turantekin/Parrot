@@ -29,8 +29,14 @@ struct ContentView: View {
                 // .id forces a fresh view identity per meeting: @State (title/name
                 // drafts, audio players, tab) must not leak from one meeting to the
                 // next, and onAppear/onDisappear must re-fire to stop playback.
-                MeetingDetailView(meeting: meeting)
-                    .id(meeting.id)
+                MeetingDetailView(meeting: meeting, onDelete: {
+                    // Clear the selection first so the detail view is gone
+                    // before its model object is deleted.
+                    selectedMeeting = nil
+                    showDashboard = true
+                    recordingManager.delete(meeting)
+                })
+                .id(meeting.id)
             } else {
                 EmptyStateView()
             }

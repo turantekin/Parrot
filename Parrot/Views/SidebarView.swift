@@ -9,6 +9,7 @@ struct SidebarView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
     @State private var showSettings = false
+    @State private var deleteTarget: Meeting?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,6 +67,13 @@ struct SidebarView: View {
                                         selectedMeeting = meeting
                                         showDashboard = false
                                     }
+                                    .contextMenu {
+                                        Button("Delete Meeting", role: .destructive) {
+                                            deleteTarget = meeting
+                                        }
+                                        .disabled(recordingManager.isRecording
+                                            && recordingManager.currentMeeting?.id == meeting.id)
+                                    }
                             }
                         }
                     }
@@ -85,6 +93,25 @@ struct SidebarView: View {
             .padding(.bottom, 8)
         }
         .background(Theme.Colors.panel)
+        .confirmationDialog(
+            "Delete \"\(deleteTarget?.title ?? "meeting")\"?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            )
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let meeting = deleteTarget else { return }
+                if selectedMeeting?.id == meeting.id {
+                    selectedMeeting = nil
+                    showDashboard = true
+                }
+                recordingManager.delete(meeting)
+                deleteTarget = nil
+            }
+        } message: {
+            Text("The recording, transcript, and insights will be permanently removed.")
+        }
         .sheet(isPresented: $showSettings) {
             VStack(spacing: 0) {
                 HStack {
