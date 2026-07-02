@@ -156,7 +156,13 @@ final class TranscriptionEngine {
             // call; these running totals keep segment timestamps absolute regardless.
             var consumedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
 
-            while !Task.isCancelled && self.isTranscribing {
+            while !Task.isCancelled {
+                // isTranscribing == false flips the loop into drain mode: keep
+                // consuming the backlog (any chunk size, down to the final <2 s
+                // tail) and exit once the buffers are empty. Capture must already
+                // be stopped by then or the buffers keep growing — that ordering
+                // is RecordingManager.stopRecording's contract.
+                let draining = !self.isTranscribing
                 var didWork = false
 
                 for source in AudioSource.allCases {
@@ -165,7 +171,7 @@ final class TranscriptionEngine {
                     // call, and avoiding any index race with a reset.
                     let chunk: [Float] = self.bufferLock.withLock {
                         guard let buffered = self.audioBuffers[source],
-                              buffered.count >= chunkSize else { return [] }
+                              buffered.count >= (draining ? 1 : chunkSize) else { return [] }
                         let take = min(buffered.count, maxChunkSamples)
                         self.audioBuffers[source] = Array(buffered[take...])
                         return Array(buffered[..<take])
@@ -230,16 +236,21 @@ final class TranscriptionEngine {
                 // progressively behind — the regression that left the back half of a
                 // call untranscribed.
                 if !didWork {
+                    if draining { break }  // buffers empty → fully drained, exit
                     try? await Task.sleep(for: .milliseconds(250))
                 }
             }
         }
     }
 
-    /// Stop transcription
-    func stopTranscribing() {
-        isTranscribing = false
-        transcriptionTask?.cancel()
+    /// Stop transcription, draining the buffered backlog first so the final words
+    /// of the call (previously always dropped — the loop needed ≥2 s buffered)
+    /// make it into the transcript. Await this before assembling the transcript.
+    // ponytail: drain is uncapped — a hung whisper pass hangs stop; upgrade path
+    // is a wall-clock cap + surfaced timeout.
+    func stopTranscribing() async {
+        isTranscribing = false          // flips the loop into drain mode
+        await transcriptionTask?.value  // deliberately not cancel(): let it finish
         transcriptionTask = nil
 
         bufferLock.withLock {

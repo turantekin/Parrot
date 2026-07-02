@@ -27,6 +27,9 @@ struct AnalysisRequest {
     let knownDocumentNames: [String]
     /// Profile persona/framing paragraph.
     let persona: String
+    /// Human-facing noun for the other party (e.g. "the prospect"). Drives the
+    /// naming the copilot uses in cards instead of the internal "Them" tag.
+    let counterpart: String
     /// Reshapable insight kinds — drive the prompt's kind list and the schema enum.
     let kinds: [ProfileKind]
     /// Sentiment gauges to read each pass.
@@ -45,10 +48,12 @@ struct AnalysisResult {
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult
-    func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String
+    func summarize(transcript: String, insightTitles: [String], instructions: String,
+                   counterpart: String) async throws -> String
     /// Post-call coaching + follow-ups: talk balance, what went well / to improve,
     /// objections handled vs missed, and commitments with any timing.
-    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String) async throws -> String
+    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
+                        counterpart: String) async throws -> String
 }
 
 enum AnalysisError: LocalizedError {
@@ -80,11 +85,14 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             .joined(separator: "\n")
     }
 
-    static func systemPrompt(persona: String, kinds: [ProfileKind], gauges: [SentimentGauge]) -> String {
+    static func systemPrompt(persona: String, kinds: [ProfileKind], gauges: [SentimentGauge],
+                             counterpart: String = "the other person") -> String {
         var p = """
-        You are a live call copilot. You receive a rolling transcript of an ongoing call. \
-        Transcription is automatic, so expect minor errors and chopped sentences. Each line \
-        is prefixed with the speaker: "Me" is the user you assist; "Them" is everyone else.
+        You receive a rolling transcript of an ongoing call. Transcription is automatic, so \
+        expect minor errors and chopped sentences. Each line is tagged with the speaker: "Me" \
+        is the user you assist; "Them" is \(counterpart). Those tags are internal — in your \
+        output, address the user as "you" and call the other party "\(counterpart)". NEVER write \
+        the literal words "Me" or "Them" in any title or detail.
 
         \(persona)
 
@@ -160,7 +168,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         var sections: [String] = []
 
         if !request.instructions.isEmpty {
-            sections.append("Tone/style from the user:\n\(request.instructions)")
+            sections.append("Standing rules from the user — follow these strictly, they override "
+                + "the defaults above:\n\(request.instructions)")
         }
 
         if !request.callBrief.isEmpty {
@@ -191,7 +200,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
         let userContent = sections.joined(separator: "\n\n---\n\n")
 
-        let sys = Self.systemPrompt(persona: request.persona, kinds: request.kinds, gauges: request.gauges)
+        let sys = Self.systemPrompt(persona: request.persona, kinds: request.kinds,
+                                    gauges: request.gauges, counterpart: request.counterpart)
         let schemaObj = Self.schema(kinds: request.kinds, gauges: request.gauges)
 
         let body: [String: Any] = [
@@ -211,17 +221,23 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Post-Call Summary
 
-    private static let summarySystemPrompt = """
-    You write concise post-call reports from meeting transcripts. Transcription is \
-    automatic, so expect minor errors and missing punctuation.
+    private static func summarySystemPrompt(counterpart: String) -> String {
+        """
+        You write concise post-call reports from meeting transcripts. Transcription is \
+        automatic, so expect minor errors and missing punctuation. Transcript lines tagged \
+        "Me" are the user; lines tagged "Them" are \(counterpart). In your report, refer to \
+        the user as "you" and the other party as "\(counterpart)" (or by name if one is clear) \
+        — never write the literal words "Me" or "Them".
 
-    Structure: a 2-3 sentence overview of what the call was about and how it ended, \
-    then "Key points:" as short bullets, then "Next steps:" as bullets if any \
-    commitments were made. Use plain text with simple "-" bullets, no markdown \
-    headers. Write in the same language as the conversation.
-    """
+        Structure: a 2-3 sentence overview of what the call was about and how it ended, \
+        then "Key points:" as short bullets, then "Next steps:" as bullets if any \
+        commitments were made. Use plain text with simple "-" bullets, no markdown \
+        headers. Write in the same language as the conversation.
+        """
+    }
 
-    func summarize(transcript: String, insightTitles: [String], instructions: String) async throws -> String {
+    func summarize(transcript: String, insightTitles: [String], instructions: String,
+                   counterpart: String = "the other person") async throws -> String {
         guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
             throw AnalysisError.missingAPIKey
         }
@@ -239,7 +255,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let body: [String: Any] = [
             "model": Self.model,
             "max_tokens": 1500,
-            "system": Self.summarySystemPrompt,
+            "system": Self.summarySystemPrompt(counterpart: counterpart),
             "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
         ]
 
@@ -253,26 +269,31 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Post-Call Coaching & Follow-ups
 
-    private static let coachingSystemPrompt = """
-    You are a sales/meeting coach reviewing a call transcript. "Me" is the person \
-    you coach; "Them" is everyone else. Transcription is automatic, so expect minor \
-    errors. Be specific, direct, and useful — not generic praise. Write plain text \
-    with simple "-" bullets, no markdown headers. Use the same language as the call.
+    private static func coachingSystemPrompt(counterpart: String) -> String {
+        """
+        You are a sales/meeting coach reviewing a call transcript. Transcript lines tagged \
+        "Me" are the person you coach; lines tagged "Them" are \(counterpart). Address the \
+        person you coach as "you" and the other party as "\(counterpart)" — never write the \
+        literal words "Me" or "Them". Transcription is automatic, so expect minor errors. Be \
+        specific, direct, and useful — not generic praise. Write plain text with simple "-" \
+        bullets, no markdown headers. Use the same language as the call.
 
-    Output exactly these sections, in order:
-    Call snapshot: one line — overall how it went, plus the talk balance you're told.
-    What went well: 1-3 concrete bullets quoting or referencing real moments.
-    What to improve: 1-3 concrete, actionable bullets (e.g. "Them asked about pricing \
-    twice and Me deflected both times — answer it directly next time").
-    Objections & questions: list any objection or direct question Them raised and \
-    whether Me actually addressed it (Handled / Missed).
-    Commitments & follow-ups: every concrete next step either side committed to, with \
-    any date/time mentioned. If none, write "- None".
+        Output exactly these sections, in order:
+        Call snapshot: one line — overall how it went, plus the talk balance you're told.
+        What went well: 1-3 concrete bullets quoting or referencing real moments.
+        What to improve: 1-3 concrete, actionable bullets (e.g. "\(counterpart) asked about \
+        pricing twice and you deflected both times — answer it directly next time").
+        Objections & questions: list any objection or direct question \(counterpart) raised \
+        and whether you actually addressed it (Handled / Missed).
+        Commitments & follow-ups: every concrete next step either side committed to, with \
+        any date/time mentioned. If none, write "- None".
 
-    Keep the whole thing tight — a busy person should read it in 30 seconds.
-    """
+        Keep the whole thing tight — a busy person should read it in 30 seconds.
+        """
+    }
 
-    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String) async throws -> String {
+    func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
+                        counterpart: String = "the other person") async throws -> String {
         guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
             throw AnalysisError.missingAPIKey
         }
@@ -281,14 +302,14 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         if !instructions.isEmpty {
             sections.append("The user's standing goals/instructions:\n\(instructions)")
         }
-        sections.append("Talk balance: Me spoke roughly \(talkPercentMe)% of the words, "
-            + "Them \(100 - talkPercentMe)%.")
+        sections.append("Talk balance: you spoke roughly \(talkPercentMe)% of the words, "
+            + "\(counterpart) \(100 - talkPercentMe)%.")
         sections.append("Full call transcript:\n\(transcript)")
 
         let body: [String: Any] = [
             "model": Self.model,
             "max_tokens": 1200,
-            "system": Self.coachingSystemPrompt,
+            "system": Self.coachingSystemPrompt(counterpart: counterpart),
             "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
         ]
 

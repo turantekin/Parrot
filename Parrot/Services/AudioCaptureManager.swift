@@ -16,6 +16,12 @@ final class AudioCaptureManager: NSObject {
     // queue, off the audio render thread.
     private var systemAudioFile: AVAudioFile?
     private var micAudioFile: AVAudioFile?
+    /// Set true before stopCapture's sync barriers. A straggler write block that
+    /// was enqueued after the barriers must not lazily recreate an AVAudioFile on
+    /// the finished URL — AVAudioFile(forWriting:) truncates, destroying the
+    /// recording, and the stale file object would hijack the NEXT recording's
+    /// audio. Plain Bool across threads, same accepted pattern as `isCapturing`.
+    private var filesClosed = true
     private let systemWriteQueue = DispatchQueue(label: "com.uygar.parrot.audio.system")
     private let micWriteQueue = DispatchQueue(label: "com.uygar.parrot.audio.mic")
     /// Acoustic echo canceller, created per recording when enabled. Removes the
@@ -83,6 +89,8 @@ final class AudioCaptureManager: NSObject {
         let aecEnabled = UserDefaults.standard.object(forKey: "echoCancellationEnabled") as? Bool ?? true
         echoCanceller = aecEnabled ? EchoCanceller() : nil
 
+        filesClosed = false  // fresh URLs above; queues are idle, so no race
+
         try await startSystemAudioCapture()
 
         // The microphone is optional. System audio ("Them") is the core capture;
@@ -125,7 +133,10 @@ final class AudioCaptureManager: NSObject {
 
         // Flush queued writes, then close the files. AVAudioFile finalizes the
         // .caf header when it deallocates; the sync barrier guarantees every
-        // pending write has landed first.
+        // pending write has landed first. filesClosed goes up BEFORE the
+        // barriers so any write block enqueued after them no-ops instead of
+        // recreating (= truncating) the finished file.
+        filesClosed = true
         systemWriteQueue.sync { systemAudioFile = nil }
         micWriteQueue.sync { micAudioFile = nil }
 
@@ -266,7 +277,7 @@ final class AudioCaptureManager: NSObject {
         guard let url else { return }
 
         queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, !self.filesClosed else { return }
             do {
                 let file: AVAudioFile
                 if stream == .system {

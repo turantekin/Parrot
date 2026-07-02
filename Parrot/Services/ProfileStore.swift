@@ -12,6 +12,7 @@ final class ProfileStore {
     func seedAndMigrateIfNeeded(context: ModelContext, knowledgeBase: KnowledgeBaseService) {
         let existing = (try? context.fetch(FetchDescriptor<CallProfile>())) ?? []
         guard existing.isEmpty else {
+            refreshBuiltInsIfStale(existing, context: context)
             setActiveFromLastUsed(existing)
             return
         }
@@ -28,6 +29,25 @@ final class ProfileStore {
         // Tag all existing KB docs into Default so today's knowledge keeps working.
         knowledgeBase.tagAllDocuments(into: ProfilePresets.defaultProfileID)
         setActiveFromLastUsed(presets)
+    }
+
+    /// Refresh built-in profiles whose stored preset version is older than the current
+    /// presets. Overwrites the AI-behavior fields (persona, counterpart, kinds, gauges)
+    /// so existing installs get prompt/category improvements, while preserving the
+    /// user-owned fields (custom rules `tone`, summary, name, icon, toggle, order).
+    private func refreshBuiltInsIfStale(_ existing: [CallProfile], context: ModelContext) {
+        let presetsByID = Dictionary(uniqueKeysWithValues: ProfilePresets.all().map { ($0.id, $0) })
+        var changed = false
+        for p in existing where p.isBuiltIn && p.presetVersion < ProfilePresets.presetVersion {
+            guard let preset = presetsByID[p.id] else { continue }
+            p.persona = preset.persona
+            p.counterpart = preset.counterpart
+            p.kinds = preset.kinds
+            p.gauges = preset.gauges
+            p.presetVersion = ProfilePresets.presetVersion
+            changed = true
+        }
+        if changed { try? context.save() }
     }
 
     func profiles(in context: ModelContext) -> [CallProfile] {
@@ -58,6 +78,7 @@ final class ProfileStore {
             name: profile.name + " copy", iconSystemName: profile.iconSystemName,
             summary: profile.summary, isBuiltIn: false, sortOrder: maxOrder + 1,
             persona: profile.persona, tone: profile.tone,
+            counterpart: profile.counterpart,
             allowGeneralKnowledge: profile.allowGeneralKnowledge,
             kinds: profile.kinds, gauges: profile.gauges)
         context.insert(copy)

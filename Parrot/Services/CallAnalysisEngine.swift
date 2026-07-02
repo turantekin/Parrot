@@ -180,6 +180,7 @@ final class CallAnalysisEngine {
             allowGeneralKnowledge: profile?.allowGeneralKnowledge ?? true,
             knownDocumentNames: profile.map { knowledgeBase?.documentNames(for: $0.id) ?? [] } ?? (knowledgeBase?.documents.map(\.name) ?? []),
             persona: profile?.persona ?? "",
+            counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
             gauges: profile?.gauges ?? []
         )

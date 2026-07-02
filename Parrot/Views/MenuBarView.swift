@@ -21,9 +21,10 @@ struct MenuBarView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button("Stop Recording") {
+                Button(recordingManager.isStopping ? "Finalizing…" : "Stop Recording") {
                     Task { await recordingManager.stopRecording() }
                 }
+                .disabled(recordingManager.isStopping)
                 .keyboardShortcut("s")
             } else {
                 // Idle state

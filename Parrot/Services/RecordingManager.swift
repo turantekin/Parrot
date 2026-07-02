@@ -24,6 +24,12 @@ final class RecordingManager {
     /// before isRecording is set — which would start a duplicate transcription
     /// loop and double every segment.
     private var isStarting = false
+    /// Mirror of isStarting for the stop path: stop now drains the transcription
+    /// backlog (seconds, not instant), so without this a double-stop would persist
+    /// insights twice and run postProcess twice, and a start-during-stop would
+    /// cancel the draining loop and share buffers with the old session. Readable
+    /// so the live view can show a "Finalizing…" state.
+    private(set) var isStopping = false
     private var timer: Timer?
     private var modelContext: ModelContext?
 
@@ -64,7 +70,7 @@ final class RecordingManager {
         self.modelContext = modelContext
         // Reject re-entry up front (before any await) so a double-trigger can't
         // start two recordings / two transcription loops.
-        guard !isRecording, !isStarting else { return }
+        guard !isRecording, !isStarting, !isStopping else { return }
         guard transcriptionEngine.isReady else {
             throw RecordingError.modelNotReady
         }
@@ -123,17 +129,26 @@ final class RecordingManager {
     }
 
     func stopRecording() async {
-        guard isRecording else { return }
+        guard isRecording, !isStopping else { return }
+        isStopping = true
+        defer { isStopping = false }
 
         timer?.invalidate()
         timer = nil
 
-        // Stop transcription and the copilot first
-        transcriptionEngine.stopTranscribing()
+        // Stop the copilot (its ingest no-ops once inactive), then capture — so
+        // the transcription buffers stop growing and the drain below terminates.
+        // Capture stops first also so both .caf files are finalized before the
+        // diarization task can read them.
         callAnalysisEngine.stop()
-
-        // Stop audio capture
         await audioCaptureManager.stopCapture()
+
+        // Drain the transcription backlog so the call's final words land before
+        // the transcript is assembled for the summary/coaching reports.
+        await transcriptionEngine.stopTranscribing()
+        // onSegment persists segments via Task { @MainActor } hops; yield once so
+        // the last enqueued addSegment jobs run before we read segments back.
+        await Task.yield()
 
         // Update meeting
         if let meeting = currentMeeting {
@@ -204,12 +219,14 @@ final class RecordingManager {
             .joined(separator: "\n")
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
         let instructions = meeting.profile?.tone ?? (UserDefaults.standard.string(forKey: "copilotInstructions") ?? "")
+        let counterpart = meeting.profile?.counterpart ?? "the other person"
 
         do {
             let summary = try await callAnalysisEngine.provider.summarize(
                 transcript: transcript,
                 insightTitles: insightTitles,
-                instructions: instructions
+                instructions: instructions,
+                counterpart: counterpart
             )
             meeting.summary = summary
             try? modelContext?.save()
@@ -227,7 +244,8 @@ final class RecordingManager {
             let coaching = try await callAnalysisEngine.provider.coachingReport(
                 transcript: transcript,
                 talkPercentMe: talkPercentMe,
-                instructions: instructions
+                instructions: instructions,
+                counterpart: counterpart
             )
             meeting.coaching = coaching
             try? modelContext?.save()
@@ -265,8 +283,11 @@ final class RecordingManager {
             meeting.status = .done
             try? modelContext?.save()
         } catch {
-            meeting.status = .failed
-            meeting.errorMessage = error.localizedDescription
+            // Diarization is a refinement pass; the audio and transcript are
+            // already saved. Keep the generic "Them" labels rather than showing
+            // a perfectly good meeting as failed.
+            NSLog("Parrot: diarization failed — \(error.localizedDescription)")
+            meeting.status = .done
             try? modelContext?.save()
         }
     }

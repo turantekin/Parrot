@@ -142,6 +142,16 @@ private struct ProfileDetailView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 240)
                 }
+                LabeledContent("Call the other party") {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        TextField("e.g. the prospect", text: $profile.counterpart)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 240)
+                        Text("What the copilot calls them in cards & notes.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             // MARK: Persona & Tone section
@@ -157,14 +167,17 @@ private struct ProfileDetailView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Coaching Instructions / Tone")
+                    Text("Custom rules")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     TextEditor(text: $profile.tone)
                         .font(.callout)
-                        .frame(height: 60)
+                        .frame(height: 80)
                         .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
-                    Text("Standing guidance for calls using this profile — tone, style, behavior.")
+                    Text("Standing house rules the copilot follows on every call with this profile — one per line. "
+                        + "e.g. \"Alert me if I leave a question unanswered.\" · "
+                        + "\"If they mention a pain point, suggest how we can solve it.\" · "
+                        + "\"Always confirm budget before discussing timeline.\"")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

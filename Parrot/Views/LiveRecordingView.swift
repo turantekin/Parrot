@@ -84,17 +84,20 @@ struct LiveRecordingView: View {
                 .padding(.trailing, 12)
             }
 
-            // Stop button
+            // Stop button. Stop drains the transcription backlog (can take a few
+            // seconds on a long call), so show that instead of looking hung.
             Button {
                 Task {
                     await recordingManager.stopRecording()
                 }
             } label: {
-                Label("Stop", systemImage: "stop.circle.fill")
+                Label(recordingManager.isStopping ? "Finalizing…" : "Stop",
+                      systemImage: "stop.circle.fill")
                     .font(.headline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(recordingManager.isStopping ? Color.secondary : Color.red)
             }
             .buttonStyle(.plain)
+            .disabled(recordingManager.isStopping)
         }
         .padding()
     }

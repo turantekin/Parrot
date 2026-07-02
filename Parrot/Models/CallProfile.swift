@@ -32,7 +32,15 @@ final class CallProfile {
     var sortOrder: Int
     var persona: String
     var tone: String
+    /// What the AI calls the other party in its output (e.g. "the prospect",
+    /// "the customer"). The transcript still tags speakers "Me"/"Them" internally;
+    /// this is purely the human-facing noun the copilot uses. Default for old rows.
+    var counterpart: String = "the other person"
     var allowGeneralKnowledge: Bool
+    /// Version of the built-in preset this profile was seeded from. Lets the app
+    /// refresh built-ins (persona, kinds, counterpart) when presets improve,
+    /// without wiping user-owned fields. 0 = pre-versioning row.
+    var presetVersion: Int = 0
     /// JSON-encoded [ProfileKind] / [SentimentGauge] — config, not queried entities.
     var kindsData: Data
     var gaugesData: Data
@@ -43,7 +51,9 @@ final class CallProfile {
 
     init(id: UUID = UUID(), name: String, iconSystemName: String, summary: String,
          isBuiltIn: Bool, sortOrder: Int, persona: String, tone: String,
-         allowGeneralKnowledge: Bool, kinds: [ProfileKind], gauges: [SentimentGauge]) {
+         counterpart: String = "the other person",
+         allowGeneralKnowledge: Bool, presetVersion: Int = 0,
+         kinds: [ProfileKind], gauges: [SentimentGauge]) {
         self.id = id
         self.name = name
         self.iconSystemName = iconSystemName
@@ -52,7 +62,9 @@ final class CallProfile {
         self.sortOrder = sortOrder
         self.persona = persona
         self.tone = tone
+        self.counterpart = counterpart
         self.allowGeneralKnowledge = allowGeneralKnowledge
+        self.presetVersion = presetVersion
         self.kindsData = (try? JSONEncoder().encode(kinds)) ?? Data()
         self.gaugesData = (try? JSONEncoder().encode(gauges)) ?? Data()
     }
