@@ -26,6 +26,7 @@ enum ProfileTest {
         testLenientKBDecode()
         testStableHash()
         testNearDuplicate()
+        testHallucinationFilter()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -182,6 +183,18 @@ enum ProfileTest {
             "What are the actual requirements for UK bank account? Prospect asked what's needed to open a UK business bank account as a Moroccan resident.",
             "France customer base de-risks Stripe acceptance Prospect has customers in France which helps with processor acceptance."))
         check("dedup empty strings safe", !CallAnalysisEngine.isNearDuplicate("", "anything"))
+    }
+
+    static func testHallucinationFilter() {
+        // Classic silence hallucinations on a quiet chunk — dropped.
+        check("halluc: quiet 'Thank you.' dropped", TranscriptionEngine.isLikelyHallucination("Thank you.", energy: 0.002))
+        check("halluc: quiet 'you' dropped", TranscriptionEngine.isLikelyHallucination("you", energy: 0.001))
+        check("halluc: quiet 'Okay.' dropped", TranscriptionEngine.isLikelyHallucination("Okay.", energy: 0.003))
+        check("halluc: bare '.' dropped at any volume", TranscriptionEngine.isLikelyHallucination(".", energy: 0.05))
+        // Real speech survives.
+        check("halluc: real sentence kept", !TranscriptionEngine.isLikelyHallucination("Can you hear me?", energy: 0.002))
+        check("halluc: loud 'Okay.' kept", !TranscriptionEngine.isLikelyHallucination("Okay.", energy: 0.02))
+        check("halluc: loud 'Thank you.' kept", !TranscriptionEngine.isLikelyHallucination("Thank you.", energy: 0.03))
     }
 
     static func testStableHash() {

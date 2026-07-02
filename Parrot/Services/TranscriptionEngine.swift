@@ -186,9 +186,10 @@ final class TranscriptionEngine {
                     let endTime = Double(endSample) / 16000.0
 
                     // Skip near-silent chunks — saves Whisper passes and avoids
-                    // hallucinated text on silence.
+                    // hallucinated text on silence. (0.001 let too much room
+                    // noise through; hallucination filter below catches the rest.)
                     let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
-                    guard energy > 0.001 else { continue }
+                    guard energy > 0.002 else { continue }
 
                     do {
                         guard let whisperKit = self.whisperKit else { continue }
@@ -210,6 +211,10 @@ final class TranscriptionEngine {
                         for transcription in result {
                             let text = Self.cleaned(transcription.text)
                             guard !text.isEmpty else { continue }
+                            // Silence hallucinations ("you", "Thank you.",
+                            // "Okay.") flooded real transcripts — drop them
+                            // when the chunk was near-silent.
+                            guard !Self.isLikelyHallucination(text, energy: energy) else { continue }
 
                             let avgLogProb = transcription.segments.map(\.avgLogprob).reduce(0, +)
                                 / Float(max(transcription.segments.count, 1))
@@ -258,6 +263,31 @@ final class TranscriptionEngine {
         }
 
         currentText = ""
+    }
+
+    /// The classic Whisper silence hallucinations — phrases the model invents
+    /// verbatim on near-silent chunks (YouTube-outro residue in its training
+    /// data). Matched against normalized text, only for low-energy chunks.
+    static let hallucinationPhrases: Set<String> = [
+        "you", "okay", "ok", "thank you", "thanks", "bye", "bye-bye",
+        "thank you for watching", "thanks for watching", "hmm", "mm-hmm",
+        "uh", "um", "the end", "subtitles by", "1", "2",
+    ]
+
+    /// True when a decoded chunk is almost certainly invented: punctuation-only
+    /// text, or a known silence-hallucination phrase produced from a chunk that
+    /// carried no confident speech energy. A real "Okay." at speaking volume
+    /// (energy well above the floor) is never dropped.
+    static func isLikelyHallucination(_ text: String, energy: Float) -> Bool {
+        let normalized = text.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,!?…-—"))
+            .trimmingCharacters(in: .whitespaces)
+        if normalized.isEmpty { return true }  // "." and friends, at any volume
+        // ponytail: 0.006 mean-abs ≈ room noise ceiling; speech runs 0.01+.
+        // Tune here if quiet-talker reports come in.
+        guard energy < 0.006 else { return false }
+        return hallucinationPhrases.contains(normalized)
     }
 
     /// Strips any Whisper special/timestamp tokens (e.g. "<|startoftranscript|>",
