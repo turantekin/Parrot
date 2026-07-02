@@ -330,7 +330,15 @@ struct PinnedBlockerRow: View {
     let onJump: () -> Void
 
     /// Details start clamped to two lines; a click on the card shows the rest.
-    @State private var expanded = false
+    @State private var expanded: Bool
+
+    init(insight: Insight, startExpanded: Bool = false,
+         onHandled: @escaping () -> Void, onJump: @escaping () -> Void) {
+        self.insight = insight
+        self.onHandled = onHandled
+        self.onJump = onJump
+        _expanded = State(initialValue: startExpanded)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -353,10 +361,15 @@ struct PinnedBlockerRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if expanded, let reply = insight.reply {
+                    SuggestedReplyBox(reply: reply)
+                        .padding(.top, 2)
+                }
+
                 // ponytail: length heuristic for "is it truncated" — measuring
                 // real truncation in SwiftUI needs a two-pass text layout.
-                if !expanded && insight.detail.count > 120 {
-                    Text("show more")
+                if !expanded && (insight.reply != nil || insight.detail.count > 120) {
+                    Text(insight.reply != nil ? "show answer" : "show more")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.orange)
                 }
@@ -443,6 +456,10 @@ struct HeroInsightCard: View {
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let reply = insight.reply {
+                SuggestedReplyBox(reply: reply)
+            }
 
             HStack(spacing: 8) {
                 if isSayable {
@@ -602,6 +619,10 @@ struct InsightCard: View {
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
 
+            if let reply = insight.reply {
+                SuggestedReplyBox(reply: reply)
+            }
+
             if let source = insight.source {
                 Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
                     .font(.caption2)
@@ -630,6 +651,50 @@ struct InsightCard: View {
         .onTapGesture(count: 2) {
             onToggleCollapse()
         }
+    }
+}
+
+/// The copilot's suggested line to address an unresolved item — green "here's
+/// what to say" block with a copy button. KB-grounded when documents cover it.
+struct SuggestedReplyBox: View {
+    let reply: String
+
+    @State private var copied = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "quote.opening")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.Colors.action)
+                .padding(.top, 3)
+
+            Text(reply)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Theme.Colors.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 4)
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(reply, forType: .string)
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    copied = false
+                }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Colors.action)
+            }
+            .buttonStyle(.plain)
+            .help("Copy this line")
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.action.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

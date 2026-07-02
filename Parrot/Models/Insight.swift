@@ -11,6 +11,9 @@ struct Insight: Identifiable, Equatable {
     let detail: String
     let callTime: TimeInterval
     let source: String?
+    /// For unresolved flags: one short line the user could say to address it
+    /// (KB-grounded when the documents cover it, else general knowledge).
+    var reply: String? = nil
     let createdAt = Date()
     var isHandled = false
 
@@ -32,6 +35,8 @@ final class CallInsight {
     var detail: String
     var callTime: TimeInterval
     var source: String?
+    /// Suggested line to address an unresolved flag (defaulted → old rows migrate).
+    var reply: String? = nil
     var isHandled: Bool
 
     init(from insight: Insight) {
@@ -41,6 +46,7 @@ final class CallInsight {
         self.detail = insight.detail
         self.callTime = insight.callTime
         self.source = insight.source
+        self.reply = insight.reply
         self.isHandled = insight.isHandled
     }
 

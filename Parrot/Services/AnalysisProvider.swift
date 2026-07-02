@@ -8,6 +8,10 @@ struct InsightDraft {
     let detail: String
     /// Document name the answer is grounded in, or "general knowledge".
     let source: String?
+    /// For unresolved flags (objection, unanswered question): one short line the
+    /// user could say to address it. KB-grounded when possible, else general
+    /// knowledge when allowed.
+    var reply: String? = nil
 }
 
 /// Everything a provider needs for one analysis pass.
@@ -116,6 +120,12 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         it to exactly the name of a provided document, or the literal "general knowledge" (only \
         when allowed), otherwise OMIT it. Never describe the conversation in it.
 
+        For any insight that flags an unresolved item (a concern, an unanswered question, \
+        an obstacle), ALSO set "reply": one short, concrete line the user could say right now \
+        to address it — grounded in the reference material when it covers the topic, otherwise \
+        from general knowledge when allowed. Keep it to a single sentence. Omit "reply" for \
+        kinds that don't call for one.
+
         Rules: never repeat an insight whose title already exists. Return at most the 2 most \
         valuable NEW insights per response — prefer fewer; an empty list is common and fine. \
         Flag at most ONE unresolved item (unanswered question, concern, obstacle) per \
@@ -154,6 +164,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                 "title": ["type": "string"],
                 "detail": ["type": "string"],
                 "source": ["type": "string", "description": "Exact KB document name, or 'general knowledge'. Omit otherwise."],
+                "reply": ["type": "string", "description": "For unresolved flags only: one short line the user could say to address it."],
             ],
             "required": ["kind", "title", "detail"],
             "additionalProperties": false,
@@ -424,7 +435,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             if normalized == "general knowledge" || valid.contains(normalized) {
                 return draft
             }
-            return InsightDraft(kindKey: draft.kindKey, title: draft.title, detail: draft.detail, source: nil)
+            return InsightDraft(kindKey: draft.kindKey, title: draft.title, detail: draft.detail,
+                                source: nil, reply: draft.reply)
         }
     }
 
@@ -447,7 +459,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         let drafts = items.compactMap { item -> InsightDraft? in
             guard let kind = item["kind"] as? String, let title = item["title"] as? String,
                   let detail = item["detail"] as? String else { return nil }
-            return InsightDraft(kindKey: kind, title: title, detail: detail, source: (item["source"] as? String)?.nilIfEmpty)
+            return InsightDraft(kindKey: kind, title: title, detail: detail,
+                                source: (item["source"] as? String)?.nilIfEmpty,
+                                reply: (item["reply"] as? String)?.nilIfEmpty)
         }
         var sentiment: [String: Int] = [:]
         var read: String? = nil

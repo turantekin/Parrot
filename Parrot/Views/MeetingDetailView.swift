@@ -545,6 +545,13 @@ struct StoredInsightRow: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
 
+                if let reply = insight.reply {
+                    (Text("Try: ").bold() + Text("“\(reply)”"))
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.action)
+                        .textSelection(.enabled)
+                }
+
                 if let source = insight.source {
                     Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
                         .font(.caption2)

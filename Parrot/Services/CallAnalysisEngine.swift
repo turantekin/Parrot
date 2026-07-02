@@ -234,7 +234,7 @@ final class CallAnalysisEngine {
             let existingTitles = Set(insights.map { $0.title.lowercased() })
             let unique = result.insights
                 .filter { !existingTitles.contains($0.title.lowercased()) }
-                .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source) }
+                .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
         } catch let error as AnalysisError {
