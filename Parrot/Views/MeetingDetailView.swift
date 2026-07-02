@@ -6,12 +6,14 @@ enum ReportTab: String, CaseIterable, Identifiable {
     case report = "Report"
     case transcript = "Transcript"
     case insights = "Insights"
+    case notes = "Notes"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .report: "doc.text"
         case .transcript: "text.bubble"
         case .insights: "sparkles"
+        case .notes: "square.and.pencil"
         }
     }
 }
@@ -67,6 +69,7 @@ struct MeetingDetailView: View {
                 case .report: reportTab
                 case .transcript: transcriptTab
                 case .insights: insightsTab
+                case .notes: notesTab
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -297,6 +300,29 @@ struct MeetingDetailView: View {
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - Notes tab
+
+    private var notesTab: some View {
+        @Bindable var meeting = meeting
+        return ZStack(alignment: .topLeading) {
+            TextEditor(text: $meeting.notes)
+                .font(Theme.Typography.body)
+                .scrollContentBackground(.hidden)
+                .padding(20)
+
+            if meeting.notes.isEmpty {
+                Text("Notes for this call — type anything worth keeping.")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink3)
+                    .padding(.top, 28)
+                    .padding(.leading, 26)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func emptyTabState(_ message: String) -> some View {

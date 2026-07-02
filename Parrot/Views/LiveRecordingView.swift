@@ -1,6 +1,15 @@
 import SwiftUI
 import SwiftData
 
+/// Which pane the live side panel shows.
+enum LiveSideTab: String {
+    case transcript
+    case notes
+}
+
+/// Live screen v2 — the copilot is the center stage (it's what the user follows
+/// mid-call); the transcript lives on the right as a collapsible chat-bubble
+/// panel that also hosts per-call Notes.
 struct LiveRecordingView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @State private var autoScroll = true
@@ -12,6 +21,10 @@ struct LiveRecordingView: View {
     /// times a second.
     @State private var displayedSegments: [TranscriptSegment] = []
     @AppStorage("copilotEnabled") private var copilotEnabled = false
+    @AppStorage("liveSideTab") private var sideTabRaw = LiveSideTab.transcript.rawValue
+    @AppStorage("liveSideCollapsed") private var sideCollapsed = false
+
+    private var sideTab: LiveSideTab { LiveSideTab(rawValue: sideTabRaw) ?? .transcript }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,13 +42,21 @@ struct LiveRecordingView: View {
 
             Divider()
 
-            // Live transcript + copilot — drag the divider to resize either side.
+            // Copilot center stage + collapsible side panel. Drag the divider to
+            // resize; without the copilot the side panel takes the whole stage.
             HSplitView {
-                transcriptArea
-                    .frame(minWidth: 380, maxWidth: .infinity)
-
                 if copilotEnabled && showCopilot {
                     CopilotPanelView(transcriptJumpTarget: $copilotJumpTarget)
+
+                    if sideCollapsed {
+                        collapsedRail
+                    } else {
+                        sidePanelBody
+                            .frame(minWidth: 300, idealWidth: 380, maxWidth: 560)
+                    }
+                } else {
+                    sidePanelBody
+                        .frame(minWidth: 380, maxWidth: .infinity)
                 }
             }
         }
@@ -147,25 +168,125 @@ struct LiveRecordingView: View {
         .padding(.vertical, 5)
     }
 
-    // MARK: - Transcript Area
+    // MARK: - Side panel (Transcript | Notes)
+
+    private var sidePanelBody: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Picker("", selection: Binding(
+                    get: { sideTab },
+                    set: { sideTabRaw = $0.rawValue }
+                )) {
+                    Text("Transcript").tag(LiveSideTab.transcript)
+                    Text("Notes").tag(LiveSideTab.notes)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = true }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse this panel")
+            }
+            .padding(10)
+
+            Divider()
+
+            switch sideTab {
+            case .transcript: transcriptArea
+            case .notes: notesArea
+            }
+        }
+        .background(Theme.Colors.panel)
+    }
+
+    /// Slim rail shown when the side panel is collapsed — one click reopens
+    /// straight to the wanted tab.
+    private var collapsedRail: some View {
+        VStack(spacing: 16) {
+            Button {
+                sideTabRaw = LiveSideTab.transcript.rawValue
+                withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = false }
+            } label: {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show transcript")
+
+            Button {
+                sideTabRaw = LiveSideTab.notes.rawValue
+                withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = false }
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show notes")
+
+            Spacer()
+        }
+        .padding(.top, 14)
+        .frame(width: 44)
+        .frame(maxHeight: .infinity)
+        .background(Theme.Colors.panel)
+    }
+
+    // MARK: - Notes (live)
+
+    @ViewBuilder
+    private var notesArea: some View {
+        if let meeting = recordingManager.currentMeeting {
+            @Bindable var meeting = meeting
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $meeting.notes)
+                    .font(Theme.Typography.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
+
+                if meeting.notes.isEmpty {
+                    Text("Type notes — saved with this call.")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.ink3)
+                        .padding(.top, 18)
+                        .padding(.leading, 15)
+                        .allowsHitTesting(false)
+                }
+            }
+        } else {
+            Spacer()
+        }
+    }
+
+    // MARK: - Transcript (chat bubbles)
 
     private var transcriptArea: some View {
         GeometryReader { viewport in
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(displayedSegments) { segment in
-                            LiveSegmentRow(segment: segment)
-                                .id(segment.id)
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(displayedSegments.enumerated()), id: \.element.id) { index, segment in
+                            ChatBubbleRow(
+                                segment: segment,
+                                isFirstOfGroup: index == 0
+                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel
+                            )
+                            .id(segment.id)
                         }
 
+                        // The Granola-style "typing" bubble: interim transcription
+                        // streams in with pulsing dots until the segment commits.
                         if !recordingManager.transcriptionEngine.currentText.isEmpty {
-                            Text(recordingManager.transcriptionEngine.currentText)
-                                .font(Theme.Typography.body)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal)
+                            TypingBubble(text: recordingManager.transcriptionEngine.currentText)
                                 .id("currentText")
+                                .padding(.top, 8)
                         }
 
                         if recordingManager.currentMeeting?.segments.isEmpty == true
@@ -195,7 +316,7 @@ struct LiveRecordingView: View {
                                 }
                             )
                     }
-                    .padding()
+                    .padding(12)
                 }
                 // Native chat-style behavior: content stays pinned to the live
                 // edge while the user is at the bottom, and holds position when
@@ -248,6 +369,9 @@ struct LiveRecordingView: View {
             .onChange(of: copilotJumpTarget) { _, target in
                 guard let target,
                       let meeting = recordingManager.currentMeeting else { return }
+                // Jumping to the transcript implies wanting to SEE it.
+                sideTabRaw = LiveSideTab.transcript.rawValue
+                sideCollapsed = false
                 // Nearest segment at or before the insight's moment.
                 let segment = meeting.sortedSegments.last { $0.startTime <= target }
                     ?? meeting.sortedSegments.first
@@ -273,31 +397,86 @@ private struct BottomDistancePreferenceKey: PreferenceKey {
     }
 }
 
-// MARK: - Live Segment Row
+// MARK: - Chat Bubble Row
 
-struct LiveSegmentRow: View {
+/// One transcript segment as an iMessage-style bubble: Them on the left in
+/// chip gray, Me on the right in the accent tint. Consecutive same-speaker
+/// bubbles group; the label + timestamp show only on the first of a group.
+struct ChatBubbleRow: View {
     let segment: TranscriptSegment
+    let isFirstOfGroup: Bool
+
+    private var isMe: Bool { segment.speakerLabel == "Me" }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(segment.formattedTimestamp)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(width: 40, alignment: .trailing)
-
-            if let speaker = segment.speakerLabel {
-                Text(speaker)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(speaker == "Me" ? Color.blue : .secondary)
-                    .frame(width: 40, alignment: .leading)
+        VStack(alignment: isMe ? .trailing : .leading, spacing: 3) {
+            if isFirstOfGroup {
+                HStack(spacing: 6) {
+                    Text(segment.speakerLabel ?? "Speaker")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
+                    Text(segment.formattedTimestamp)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.Colors.ink3)
+                }
+                .padding(.top, 8)
+                .padding(isMe ? .trailing : .leading, 6)
             }
 
             Text(segment.text)
                 .font(Theme.Typography.body)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(
+                    isMe ? Theme.Colors.accent.opacity(0.15) : Theme.Colors.chip,
+                    in: RoundedRectangle(cornerRadius: 14)
+                )
         }
+        .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+// MARK: - Typing Bubble
+
+/// The in-progress transcription: interim text in a soft bubble with three
+/// pulsing dots — speech is landing right now.
+struct TypingBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 7) {
+            Text(text)
+                .font(Theme.Typography.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TypingDots()
+                .padding(.bottom, 4)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Theme.Colors.chip.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Three dots pulsing in a staggered wave.
+struct TypingDots: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Theme.Colors.ink3)
+                        .frame(width: 5, height: 5)
+                        .opacity(0.3 + 0.7 * (sin(t * 4.2 - Double(i) * 0.9) + 1) / 2)
+                }
+            }
+        }
     }
 }
 

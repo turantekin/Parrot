@@ -25,6 +25,9 @@ final class Meeting {
     /// User-assigned name for the other party ("Them"), e.g. "Kara". When set, it
     /// replaces "Them"/"Speaker N" labels in the transcript and reports.
     var themName: String?
+    /// The user's own typed notes for this call — live during recording (side
+    /// panel) and editable afterwards (Notes tab). Defaulted → old rows migrate.
+    var notes: String = ""
 
     /// Profile recorded under (nil for pre-Phase-C meetings).
     var profile: CallProfile?

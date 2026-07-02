@@ -14,6 +14,16 @@ enum ExportService {
 
         """
 
+        if !meeting.notes.isEmpty {
+            output += """
+
+            === My Notes ===
+
+            \(meeting.notes)
+
+            """
+        }
+
         if let summary = meeting.summary {
             output += """
 

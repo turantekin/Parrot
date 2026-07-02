@@ -32,9 +32,13 @@ struct CopilotPanelView: View {
 
             Divider()
 
+            // Center stage now — panel fills the window, but cards keep
+            // readable line lengths (leading-aligned, never floating).
             content
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(minWidth: 320, idealWidth: 420, maxWidth: 640)
+        .frame(minWidth: 320, idealWidth: 480, maxWidth: .infinity)
         .background(Theme.Colors.panel)
     }
 

@@ -118,7 +118,35 @@ enum CopilotSnapshot {
         let legendURL = render(legend(profile: profile), dark: false,
                                to: (path as NSString).deletingPathExtension + "-legend.png")
 
-        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path)\n".utf8))
+        // Chat-bubble transcript strip: two speaker groups + the typing bubble.
+        let seg: (TimeInterval, String, String) -> TranscriptSegment = { start, speaker, text in
+            TranscriptSegment(startTime: start, endTime: start + 4, text: text,
+                              speakerLabel: speaker, confidence: nil)
+        }
+        let bubbleSegments = [
+            seg(120, "Them", "So how would the migration from our current tool actually work?"),
+            seg(124, "Them", "We have about two years of call history in there."),
+            seg(129, "Me", "Great question — we handle the full export and import for you."),
+            seg(134, "Me", "Usually it's done within a week, including the archive."),
+        ]
+        let bubbles = VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(bubbleSegments.enumerated()), id: \.offset) { index, segment in
+                ChatBubbleRow(
+                    segment: segment,
+                    isFirstOfGroup: index == 0
+                        || bubbleSegments[index - 1].speakerLabel != segment.speakerLabel
+                )
+            }
+            TypingBubble(text: "That sounds reasonable, and what about")
+                .padding(.top, 8)
+        }
+        .padding(12)
+        .frame(width: 380)
+        .background(Theme.Colors.panel)
+        let bubblesURL = render(bubbles, dark: false,
+                                to: (path as NSString).deletingPathExtension + "-bubbles.png")
+
+        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path) + \(bubblesURL.path)\n".utf8))
         exit(0)
     }
 
