@@ -275,6 +275,9 @@ private struct ProfileDetailView: View {
 
     private func removeKind(_ kind: ProfileKind, from profile: CallProfile) {
         var ks = profile.kinds
+        // Never allow zero kinds: the analysis schema's kind enum can't be empty
+        // (the API rejects it), so a kind-less profile would 400 on every call.
+        guard ks.count > 1 else { return }
         ks.removeAll { $0.id == kind.id }
         profile.kinds = ks
         try? context.save()

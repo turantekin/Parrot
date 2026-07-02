@@ -149,12 +149,30 @@ final class CallAnalysisEngine {
     }
 
     private func runAnalysis() async {
-        guard isActive else {
+        // A cancelled run must touch nothing: stop() may already have been
+        // followed by a new start(), so isActive alone can't distinguish "this
+        // session" from "the next one" — inserting stale insights or nil-ing the
+        // new session's task handle would corrupt the new call.
+        guard isActive, !Task.isCancelled else {
+            if !Task.isCancelled { analysisTask = nil }
+            return
+        }
+
+        let profile = activeProfile
+        // An empty kind list can't produce a valid schema ("enum": [] is a 400
+        // on every call) — surface it once instead of erroring forever.
+        guard !(profile?.kinds ?? []).isEmpty else {
+            status = .error("This profile has no insight kinds — add one in Settings → Profiles.")
             analysisTask = nil
             return
         }
 
         status = .analyzing
+        // Remember the window bounds so a failed call can re-arm them — otherwise
+        // a transient error permanently skips this speech (no retry ever fires
+        // until new speech arrives).
+        let previousAnalyzedCount = lastAnalyzedCount
+        let previousPendingSince = oldestPendingSince
         lastAnalyzedCount = segments.count
         oldestPendingSince = nil
 
@@ -168,7 +186,6 @@ final class CallAnalysisEngine {
 
         // Retrieve knowledge base material matching the most recent speech.
         let query = segments.suffix(8).map(\.text).joined(separator: " ")
-        let profile = activeProfile
         let references = await knowledgeBase?.search(query: query, profileID: profile?.id) ?? []
 
         let request = AnalysisRequest(
@@ -187,8 +204,8 @@ final class CallAnalysisEngine {
 
         do {
             let result = try await provider.analyze(request)
-            guard isActive else {
-                analysisTask = nil
+            guard isActive, !Task.isCancelled else {
+                if !Task.isCancelled { analysisTask = nil }
                 return
             }
             // Merge model sentiment; overlay the computed talk-balance gauge if present.
@@ -205,17 +222,26 @@ final class CallAnalysisEngine {
             insights.insert(contentsOf: unique, at: 0)
             status = .listening
         } catch let error as AnalysisError {
-            if case .missingAPIKey = error {
-                status = .needsAPIKey
-            } else if isActive {
-                status = .error(error.localizedDescription)
+            if isActive, !Task.isCancelled {
+                lastAnalyzedCount = previousAnalyzedCount
+                oldestPendingSince = previousPendingSince
+                if case .missingAPIKey = error {
+                    status = .needsAPIKey
+                } else {
+                    status = .error(error.localizedDescription)
+                }
             }
         } catch {
-            if isActive {
+            if isActive, !Task.isCancelled {
+                lastAnalyzedCount = previousAnalyzedCount
+                oldestPendingSince = previousPendingSince
                 status = .error(error.localizedDescription)
             }
         }
 
+        // A cancelled task must not release the (possibly new) session's slot
+        // or fire its rerun.
+        guard !Task.isCancelled else { return }
         lastAnalysisEnd = .now
         analysisTask = nil
 

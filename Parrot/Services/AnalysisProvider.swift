@@ -332,15 +332,24 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // ponytail: single retry with fixed backoff on transient failures; add
+        // jitter / Retry-After parsing if rate limits persist.
+        for attempt in 0..<2 {
+            let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let http = response as? HTTPURLResponse else {
-            throw AnalysisError.badResponse("No HTTP response")
+            guard let http = response as? HTTPURLResponse else {
+                throw AnalysisError.badResponse("No HTTP response")
+            }
+            if attempt == 0, http.statusCode == 429 || http.statusCode >= 500 {
+                try await Task.sleep(for: .seconds(2))  // throws on cancel — aborts the retry
+                continue
+            }
+            guard http.statusCode == 200 else {
+                throw AnalysisError.badResponse(Self.errorMessage(from: data) ?? "HTTP \(http.statusCode)")
+            }
+            return data
         }
-        guard http.statusCode == 200 else {
-            throw AnalysisError.badResponse(Self.errorMessage(from: data) ?? "HTTP \(http.statusCode)")
-        }
-        return data
+        throw AnalysisError.badResponse("Unreachable")  // loop always returns or throws
     }
 
     // MARK: - Response Parsing
@@ -351,6 +360,12 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             let text: String?
         }
         let content: [ContentBlock]
+        let stopReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case content
+            case stopReason = "stop_reason"
+        }
     }
 
     /// The model occasionally invents a "source" that describes the conversation
@@ -374,11 +389,19 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     private static func parseResult(from data: Data) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?) {
         let response = try JSONDecoder().decode(MessagesResponse.self, from: data)
+        // Truncated structured output is unparseable half-JSON; silently treating
+        // it as "no insights" made whole windows vanish. Throw so the engine
+        // re-arms the window and retries.
+        guard response.stopReason != "max_tokens" else {
+            throw AnalysisError.badResponse("Response truncated (hit max_tokens)")
+        }
         guard let text = response.content.first(where: { $0.type == "text" })?.text,
               let jsonData = text.data(using: .utf8) else {
             throw AnalysisError.badResponse("Empty model response")
         }
-        let obj = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] ?? [:]
+        guard let obj = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] else {
+            throw AnalysisError.badResponse("Model returned malformed JSON")
+        }
         let items = (obj["insights"] as? [[String: Any]]) ?? []
         let drafts = items.compactMap { item -> InsightDraft? in
             guard let kind = item["kind"] as? String, let title = item["title"] as? String,
