@@ -162,7 +162,7 @@ struct LiveRecordingView: View {
 
                         if !recordingManager.transcriptionEngine.currentText.isEmpty {
                             Text(recordingManager.transcriptionEngine.currentText)
-                                .font(.body)
+                                .font(Theme.Typography.body)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal)
                                 .id("currentText")
@@ -171,7 +171,7 @@ struct LiveRecordingView: View {
                         if recordingManager.currentMeeting?.segments.isEmpty == true
                             && recordingManager.transcriptionEngine.currentText.isEmpty {
                             Text("Parrot is listening...")
-                                .font(.body)
+                                .font(Theme.Typography.body)
                                 .foregroundStyle(.tertiary)
                                 .italic()
                                 .padding(.horizontal)
@@ -294,7 +294,7 @@ struct LiveSegmentRow: View {
             }
 
             Text(segment.text)
-                .font(.body)
+                .font(Theme.Typography.body)
                 .textSelection(.enabled)
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))

@@ -483,7 +483,7 @@ struct TranscriptSegmentRow: View {
 
             // Text
             Text(segment.text)
-                .font(.body)
+                .font(Theme.Typography.body)
                 .textSelection(.enabled)
         }
         .padding(.vertical, 4)

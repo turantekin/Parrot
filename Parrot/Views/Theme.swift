@@ -49,13 +49,15 @@ enum Theme {
         static func title(_ size: CGFloat = 27) -> Font {
             .system(size: size, weight: .semibold, design: .serif)
         }
+        // Scale matched to the card-guide legend (user-approved look, 2026-07-02):
+        // bold ~15pt titles over relaxed ~14pt gray body.
         /// Slate section label ("Key points", "Next steps").
-        static let sectionLabel = Font.system(size: 13.5, weight: .semibold)
+        static let sectionLabel = Font.system(size: 14, weight: .semibold)
         /// Lede / overview paragraph.
-        static let lede = Font.system(size: 16)
-        static let body = Font.system(size: 14.5)
-        static let secondary = Font.system(size: 13)
-        static let caption = Font.system(size: 12)
+        static let lede = Font.system(size: 16.5)
+        static let body = Font.system(size: 15)
+        static let secondary = Font.system(size: 14)
+        static let caption = Font.system(size: 12.5)
         /// Tiny uppercase panel label ("ASK PARROT").
         static let cap = Font.system(size: 11, weight: .semibold)
 
@@ -64,9 +66,11 @@ enum Theme {
         /// Hero card payload (the line the user can say).
         static let heroDetail = Font.system(size: 17.5)
         /// Hero card title.
-        static let heroTitle = Font.system(size: 15.5, weight: .semibold)
+        static let heroTitle = Font.system(size: 16, weight: .semibold)
+        /// Card title (history rows, expanded cards, pinned cards).
+        static let cardTitle = Font.system(size: 15, weight: .semibold)
         /// Compact history row title.
-        static let rowTitle = Font.system(size: 14)
+        static let rowTitle = Font.system(size: 15)
     }
 
     // MARK: - Metrics

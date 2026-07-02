@@ -348,14 +348,14 @@ struct PinnedBlockerRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(insight.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(Theme.Typography.cardTitle)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(alignment: .top, spacing: 6) {
                     TimestampButton(insight: insight, action: onJump)
 
                     Text(insight.detail)
-                        .font(.system(size: 13))
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(.secondary)
                         .lineLimit(expanded ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -612,11 +612,11 @@ struct InsightCard: View {
             .foregroundStyle(kindStyle.color)
 
             Text(insight.title)
-                .font(.callout.weight(.semibold))
+                .font(Theme.Typography.cardTitle)
                 .foregroundStyle(Theme.Colors.ink)
 
             Text(insight.detail)
-                .font(.callout)
+                .font(Theme.Typography.secondary)
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
 
@@ -670,7 +670,7 @@ struct SuggestedReplyBox: View {
                 .padding(.top, 3)
 
             Text(reply)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)

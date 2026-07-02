@@ -63,8 +63,10 @@ struct ContentView: View {
                 .padding(.bottom, 10)
 
             // Full bleed — no width cap, no centering. A wider window means a
-            // wider editor, period.
+            // wider editor, period. Base font raised to the legend scale;
+            // controls without an explicit font inherit it.
             SettingsView(isEmbedded: true)
+                .font(Theme.Typography.body)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
