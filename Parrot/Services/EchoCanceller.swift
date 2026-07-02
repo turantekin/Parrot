@@ -78,6 +78,10 @@ final class EchoCanceller {
 
         // Pair each mic frame with a reference frame under the lock, then run the
         // (heavier) DSP outside it so pushReference isn't blocked.
+        // ponytail: FIFO pairing has no time alignment — mic/system clock drift
+        // walks it past the filter tail on long calls and cancellation decays to
+        // a no-op. Upgrade path: align via CMSampleBuffer PTS + mic AVAudioTime
+        // with periodic re-anchoring.
         var pairs: [([Int16], [Int16])] = []
         lock.lock()
         micAccum.append(contentsOf: micInts)

@@ -27,12 +27,15 @@ final class DiarizationEngine {
             progress = 1.0
         }
 
-        // Load audio file as float array
-        let audioData = try await loadAudio(from: audioURL)
-        progress = 0.3
+        // Stream per-window energies off disk — the segmentation only needs one
+        // RMS per 250 ms, so loading a 2-hour recording (~460 MB of floats) into
+        // a single buffer was pure memory waste.
+        let energies = try windowEnergies(from: audioURL)
+        progress = 0.5
 
         // Perform basic energy-based speaker segmentation
-        let segments = performEnergyBasedDiarization(audioData: audioData, sampleRate: 16000)
+        let segments = performEnergyBasedDiarization(windowEnergies: energies,
+                                                     windowDuration: Self.windowDuration)
         progress = 0.9
 
         return segments
@@ -40,28 +43,46 @@ final class DiarizationEngine {
 
     // MARK: - Audio Loading
 
-    private func loadAudio(from url: URL) async throws -> [Float] {
+    /// 250 ms analysis windows.
+    private static let windowDuration = 0.25
+
+    /// RMS energy per window, computed block-by-block. Reads in the file's own
+    /// processing format (a rate-mismatched fixed-format buffer made read throw
+    /// on non-16 kHz files, which used to fail the whole meeting).
+    private func windowEnergies(from url: URL) throws -> [Float] {
         let file = try AVAudioFile(forReading: url)
-        let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 16000,
-            channels: 1,
-            interleaved: false
-        )!
+        let format = file.processingFormat
+        let windowSize = max(1, Int(format.sampleRate * Self.windowDuration))
+        let blockFrames: AVAudioFrameCount = 1 << 18  // a few seconds per read
 
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(file.length)
-        ) else {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: blockFrames) else {
             throw DiarizationError.audioLoadFailed
         }
 
-        try file.read(into: buffer)
-        guard let channelData = buffer.floatChannelData?[0] else {
-            throw DiarizationError.audioLoadFailed
-        }
+        var energies: [Float] = []
+        var sumSquares: Float = 0
+        var samplesInWindow = 0
 
-        return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+        while file.framePosition < file.length {
+            try file.read(into: buffer, frameCount: blockFrames)
+            guard buffer.frameLength > 0 else { break }
+            guard let ch = buffer.floatChannelData?[0] else {
+                throw DiarizationError.audioLoadFailed
+            }
+            for i in 0..<Int(buffer.frameLength) {
+                sumSquares += ch[i] * ch[i]
+                samplesInWindow += 1
+                if samplesInWindow == windowSize {
+                    energies.append(sqrt(sumSquares / Float(windowSize)))
+                    sumSquares = 0
+                    samplesInWindow = 0
+                }
+            }
+        }
+        if samplesInWindow > 0 {
+            energies.append(sqrt(sumSquares / Float(samplesInWindow)))
+        }
+        return energies
     }
 
     // MARK: - Basic Energy-Based Diarization
@@ -69,10 +90,9 @@ final class DiarizationEngine {
     /// Simple diarization that segments audio by silence gaps and assigns
     /// alternating speaker labels. This is a placeholder until SpeakerKit is integrated.
     private func performEnergyBasedDiarization(
-        audioData: [Float],
-        sampleRate: Int
+        windowEnergies: [Float],
+        windowDuration: Double
     ) -> [SpeakerSegmentResult] {
-        let windowSize = sampleRate / 4 // 250ms windows
         let silenceThreshold: Float = 0.01
         let minSegmentDuration: Double = 1.0 // minimum 1 second per segment
         let minSilenceGap: Double = 0.8 // 800ms silence = speaker change
@@ -83,13 +103,8 @@ final class DiarizationEngine {
         var lastActiveTime: Double = 0
         var isActive = false
 
-        for windowStart in stride(from: 0, to: audioData.count, by: windowSize) {
-            let windowEnd = min(windowStart + windowSize, audioData.count)
-            let window = audioData[windowStart..<windowEnd]
-
-            // Calculate RMS energy
-            let rms = sqrt(window.reduce(0) { $0 + $1 * $1 } / Float(window.count))
-            let currentTime = Double(windowStart) / Double(sampleRate)
+        for (index, rms) in windowEnergies.enumerated() {
+            let currentTime = Double(index) * windowDuration
 
             if rms > silenceThreshold {
                 if !isActive {

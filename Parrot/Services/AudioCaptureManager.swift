@@ -55,6 +55,11 @@ final class AudioCaptureManager: NSObject {
     /// that is not a dead mic — so once we've heard signal we never warn.
     private(set) var micEverHadSignal = false
 
+    /// True when echo cancellation is enabled but the system-audio reference never
+    /// arrives in the expected format — the AEC is then a silent no-op and the
+    /// far end's voice can transcribe as "Me". Shown in the live device bar.
+    private(set) var echoCancellerStarved = false
+
     /// True only when the mic has been on for a while but has never produced any
     /// signal — a genuinely dead, muted, or misrouted mic. We key off "never heard"
     /// rather than recent silence, because in a call the user is routinely silent for
@@ -107,6 +112,7 @@ final class AudioCaptureManager: NSObject {
 
         lastMicSignalAt = Date()  // capture start; the "dead mic" warning waits on this
         micEverHadSignal = false
+        echoCancellerStarved = false
         isCapturing = true
     }
 
@@ -232,7 +238,16 @@ final class AudioCaptureManager: NSObject {
             }
 
             var error: NSError?
+            var consumed = false
             converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+                // Contract: the converter may call this more than once per
+                // convert() during rate conversion — handing it the same buffer
+                // again duplicates ~20 ms of mic audio (stutter in "Me").
+                if consumed {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                consumed = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -347,14 +362,20 @@ final class AudioCaptureManager: NSObject {
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID) == noErr,
               deviceID != 0 else { return "Unknown" }
 
-        var name = "" as CFString
-        var nameSize = UInt32(MemoryLayout<CFString>.size)
+        // The property is a CFString reference; fetch it through an Unmanaged
+        // slot rather than &CFString (which the compiler rightly flags — taking
+        // a raw pointer to an object reference is UB territory).
+        var nameRef: Unmanaged<CFString>?
+        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         var nameAddr = AudioObjectPropertyAddress(
             mSelector: kAudioObjectPropertyName,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        guard AudioObjectGetPropertyData(deviceID, &nameAddr, 0, nil, &nameSize, &name) == noErr else {
+        let status = withUnsafeMutablePointer(to: &nameRef) { ptr in
+            AudioObjectGetPropertyData(deviceID, &nameAddr, 0, nil, &nameSize, ptr)
+        }
+        guard status == noErr, let name = nameRef?.takeRetainedValue() else {
             return "Unknown"
         }
         return name as String
@@ -408,6 +429,11 @@ extension AudioCaptureManager: SCStreamOutput {
         // can subtract this from the mic. Only when it's the expected 16 kHz mono.
         if pcmBuffer.format.sampleRate == sampleRate, pcmBuffer.format.channelCount == channels {
             echoCanceller?.pushReference(Self.floats(from: pcmBuffer))
+        } else if echoCanceller != nil, !echoCancellerStarved {
+            // Without a reference the AEC is silently a no-op and speaker bleed
+            // transcribes as "Me" — surface it once instead of hiding it.
+            NSLog("Parrot: echo canceller starved — system audio is \(pcmBuffer.format.sampleRate) Hz ×\(pcmBuffer.format.channelCount)ch, expected \(sampleRate) Hz mono")
+            DispatchQueue.main.async { self.echoCancellerStarved = true }
         }
 
         // Update audio level

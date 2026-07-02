@@ -127,6 +127,13 @@ struct LiveRecordingView: View {
                 .help("Open Microphone privacy settings and enable Parrot")
             }
 
+            if cap.echoCancellerStarved {
+                Label("echo cancel inactive", systemImage: "waveform.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .help("System audio isn't in the expected format, so speaker bleed may transcribe as \"Me\". Headphones avoid this entirely.")
+            }
+
             Spacer()
 
             Image(systemName: "speaker.wave.2.fill")
