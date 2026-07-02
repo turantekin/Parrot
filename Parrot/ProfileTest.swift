@@ -96,8 +96,17 @@ enum ProfileTest {
         let ctx = ModelContext(container)
         let kb = KnowledgeBaseService(persistent: false)
         let store = ProfileStore()
+        // Save/restore the real value — the old removeObject-based cleanup
+        // DELETED the user's actual copilot instructions after every test run.
+        let previous = UserDefaults.standard.string(forKey: "copilotInstructions")
         UserDefaults.standard.set("be concise", forKey: "copilotInstructions")
-        defer { UserDefaults.standard.removeObject(forKey: "copilotInstructions") }
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: "copilotInstructions")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "copilotInstructions")
+            }
+        }
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
         let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
         check("seeded six profiles", profiles.count == 6)

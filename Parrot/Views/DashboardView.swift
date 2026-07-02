@@ -38,7 +38,12 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.canvas)
-        .alert("Recording Error", isPresented: .constant(errorMessage != nil)) {
+        // A real binding, not .constant: SwiftUI writes false into it on any
+        // system-initiated dismissal, which a constant silently drops.
+        .alert("Recording Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
             Button("OK") { errorMessage = nil }
         } message: {
             if let errorMessage {

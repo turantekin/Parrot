@@ -122,8 +122,16 @@ final class RecordingManager {
         meeting.brief = nextCallBrief.nilIfEmpty
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
 
-        // Set up audio capture
-        try await audioCaptureManager.startCapture()
+        // Set up audio capture. On failure, remove the just-inserted meeting —
+        // otherwise it lingers as a ghost .recording row until the next launch's
+        // orphan reconciliation flags it "interrupted".
+        do {
+            try await audioCaptureManager.startCapture()
+        } catch {
+            modelContext.delete(meeting)
+            try? modelContext.save()
+            throw error
+        }
         meeting.systemAudioPath = audioCaptureManager.systemAudioURL?.path ?? ""
         meeting.micAudioPath = audioCaptureManager.micAudioURL?.path
 

@@ -496,8 +496,7 @@ struct TranscriptSegmentRow: View {
     }
 
     private func speakerColor(for label: String) -> Color {
-        let hash = abs(label.hashValue)
-        return Self.speakerColors[hash % Self.speakerColors.count]
+        Self.speakerColors[label.stableHash % Self.speakerColors.count]
     }
 }
 
@@ -561,5 +560,12 @@ struct StoredInsightRow: View {
 extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
+    }
+
+    /// Deterministic non-negative hash. `hashValue` is per-process seeded, so
+    /// hash-derived UI colors would reshuffle on every launch (and abs(Int.min)
+    /// traps). Used for stable speaker/sidebar colors.
+    var stableHash: Int {
+        unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
     }
 }

@@ -240,7 +240,7 @@ private struct MeetingRow: View {
             ProgressView().controlSize(.mini).frame(width: 10, height: 10)
         default:
             Circle()
-                .fill(Self.dots[abs(meeting.id.hashValue) % Self.dots.count])
+                .fill(Self.dots[meeting.id.uuidString.stableHash % Self.dots.count])
                 .frame(width: 7, height: 7)
         }
     }
