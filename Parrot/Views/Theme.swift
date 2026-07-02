@@ -78,7 +78,10 @@ enum Theme {
     enum Metrics {
         static let radius: CGFloat = 10
         static let chipRadius: CGFloat = 8
-        static let contentMaxWidth: CGFloat = 640
+        /// Report/insights column cap. Was 640 — read as "tiny" on wide
+        /// windows (user feedback); wide enough now to use the screen while
+        /// keeping prose lines readable.
+        static let contentMaxWidth: CGFloat = 1100
         static let pad: CGFloat = 16
         static let sectionGap: CGFloat = 24
     }

@@ -246,7 +246,7 @@ struct MeetingDetailView: View {
             }
             .padding(28)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -295,7 +295,7 @@ struct MeetingDetailView: View {
             }
             .padding(28)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -528,7 +528,7 @@ struct StoredInsightRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(insight.title)
-                        .font(.callout.weight(.medium))
+                        .font(Theme.Typography.cardTitle)
 
                     if kindStyle.isPinned {
                         Label(
@@ -541,13 +541,13 @@ struct StoredInsightRow: View {
                 }
 
                 Text(insight.detail)
-                    .font(.caption)
+                    .font(Theme.Typography.secondary)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
 
                 if let reply = insight.reply {
                     (Text("Try: ").bold() + Text("“\(reply)”"))
-                        .font(.caption)
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.action)
                         .textSelection(.enabled)
                 }
