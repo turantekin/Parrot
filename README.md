@@ -1,8 +1,8 @@
 # 🦜 Parrot
 
-**A free, private, on-device meeting recorder for macOS.**
+**A free, private, on-device meeting recorder for macOS — with a live AI copilot when you want one.**
 
-Parrot sits quietly on your Mac and records your Google Meet, Zoom, or any other meeting — transcribing everything in real-time, completely locally. No cloud. No API costs. No data leaving your machine. Just you and your Mac.
+Parrot sits quietly on your Mac and records your Google Meet, Zoom, or any other meeting — transcribing everything in real-time, completely locally by default. No cloud. No API costs. No data leaving your machine. And when you *do* opt into cloud features (faster transcription, the AI copilot), you bring your own keys and Parrot shows you exactly what every call cost, down to the cent.
 
 ---
 
@@ -19,23 +19,30 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 ## What It Does
 
 - **Records system audio + microphone** — Captures what everyone says in a meeting (via ScreenCaptureKit) plus your own voice
-- **Real-time transcription** — Watch the transcript appear as people talk, powered by WhisperKit running on your Mac's Neural Engine
-- **Live Call Copilot (new!)** — An always-on assistant that watches the conversation and suggests answers, flags blockers/objections, and captures action items in real time. Opt-in, powered by the Claude API (bring your own key) — transcript text goes to the API, audio never leaves your Mac
-- **Knows who's talking** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; energy-based diarization then refines who's who within "Them" after the call. The copilot uses this too: suggestions trigger on *their* questions, action items on *your* promises, plus a live talk-ratio readout
-- **Searchable history** — All your meetings stored locally with full-text search
-- **Export** — Save transcripts as TXT or SRT (subtitle format)
-- **Menu bar extra** — Quick start/stop recording from the menu bar
-- **Dark mode** — Because of course
+- **Real-time transcription, your choice of engine** — On-device WhisperKit by default (private, free). Or bring your own key for **Groq** (big-model accuracy for ~$0.04/hr) or **Deepgram** (true streaming — words appear ~300 ms after they're spoken). Cloud engines fall back to on-device automatically if anything fails mid-call
+- **Post-call polish pass (optional)** — After you hit Stop, re-transcribe the whole call through Groq's large model and regenerate the reports from the cleaner text, for pennies
+- **Live Call Copilot** — An always-on assistant that watches the conversation: a live coach card with a 0–100 "how is this call going" score, suggested answers grounded in *your* documents, pinned blocker/question cards that auto-resolve when you handle them, and action items captured as you promise them. Opt-in, powered by the Claude API (bring your own key) — transcript text goes to the API, audio never leaves your Mac
+- **Call Profiles** — Reshape the copilot per call type (sales discovery, 1:1 coaching, interviews…): each profile has its own insight kinds, sentiment gauges, persona, and tone
+- **Per-call AI cost transparency** — Every meeting shows what the AI actually cost: model, tokens, calls, transcription minutes, and estimated dollars, with a line-by-line breakdown. Local features show $0.00, proudly
+- **Knows who's talking** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; energy-based diarization then refines who's who within "Them" after the call
+- **Post-call reports** — AI summary with pain points, plus a coaching report: talk ratio, what went well, what to improve, objections handled vs missed, and commitments
+- **Per-call notes** — Type notes live during the call (side panel) and edit them later; stored with the meeting
+- **Playback synced with the transcript** — Click a transcript line, hear that moment
+- **Searchable history, export, menu bar extra, dark mode** — Meetings stored locally, TXT/SRT export, quick start/stop from the menu bar
 
 ## Tech Stack
 
 | What | How |
 |------|-----|
 | UI | SwiftUI, native macOS (no Electron!) |
-| Speech-to-Text | [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device, runs on Neural Engine |
+| Speech-to-Text (default) | [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device, runs on Neural Engine |
+| Speech-to-Text (optional, BYO key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
+| Copilot & reports (optional, BYO key) | Claude API (Haiku) with structured outputs |
+| Knowledge base | Apple NaturalLanguage embeddings — documents chunked & embedded on-device, never uploaded |
 | System Audio | ScreenCaptureKit (no virtual audio drivers needed) |
 | Microphone | AVAudioEngine |
 | Storage | SwiftData + SQLite |
+| Project | [xcodegen](https://github.com/yonaskolb/XcodeGen) — `project.yml` is the source of truth |
 | Target | macOS 14.0+ (Sonoma and later) |
 
 ## Screenshots
@@ -80,6 +87,18 @@ Parrot uses WhisperKit models for transcription. Pick one during onboarding:
 
 The model downloads automatically on first use. `base` is a good default.
 
+### Or pick a cloud transcription engine (optional)
+
+In **Settings → Transcription** you can trade "audio never leaves the Mac" for accuracy or speed — bring your own key, pay the provider directly:
+
+| Engine | ~Cost (1-hr call, both tracks) | Why pick it |
+|--------|-------------------------------|-------------|
+| On-device Whisper | free | Private. The default. |
+| Groq | ~$0.08 | Large-model accuracy, same latency as local |
+| Deepgram | ~$0.58 | True streaming — words appear as they're spoken |
+
+There's also a **"Polish transcript after each call"** toggle (needs a Groq key): re-transcribes the saved audio with the large model after you hit Stop and regenerates the reports from the cleaner text (~$0.04 per call hour). Whatever you use, the meeting header shows the estimated cost afterwards.
+
 ### Enable the Live Call Copilot (optional)
 
 The Copilot watches the live transcript during a recording and pushes suggested answers, blockers, and action items into a side panel — automatically, the whole call, no button pressing.
@@ -103,38 +122,48 @@ In **Settings → Knowledge** you can brief the copilot like you'd brief a new t
 
 ```
 Parrot/
-  ParrotApp.swift              # App entry point
+  ParrotApp.swift              # App entry point (+ CLI harness flags)
   Models/
     Meeting.swift              # Meeting data model (SwiftData)
     TranscriptSegment.swift    # Individual transcript segments
+    Insight.swift              # Copilot insight cards
+    CallProfile.swift          # Per-call-type copilot configuration
+    KnowledgeBase.swift        # Embedded document chunks
+    AIUsage.swift              # Per-call usage/cost snapshot + pricing table
   Services/
-    AudioCaptureManager.swift  # System audio + mic capture
-    TranscriptionEngine.swift  # WhisperKit wrapper
-    DiarizationEngine.swift    # Speaker identification
+    AudioCaptureManager.swift  # System audio + mic capture (+ echo cancel)
+    TranscriptionEngine.swift  # Backend seam: local Whisper loop + cloud routing
+    CloudTranscription.swift   # Groq + Deepgram backends, polish pass
+    DiarizationEngine.swift    # Speaker refinement within "Them"
+    CallAnalysisEngine.swift   # Live copilot loop (triggers, dedup, sentiment)
+    AnalysisProvider.swift     # Claude API client + usage metering + Keychain
+    KnowledgeBaseService.swift # On-device embedding + retrieval
     RecordingManager.swift     # Orchestrates everything
     ExportService.swift        # TXT/SRT export
   Views/
     ContentView.swift          # Main navigation
     DashboardView.swift        # Landing page with record button
-    LiveRecordingView.swift    # Active recording UI
-    MeetingDetailView.swift    # Meeting playback + transcript
-    SidebarView.swift          # Meeting list
-    OnboardingView.swift       # First-launch wizard
-    SettingsView.swift         # App preferences
-    MenuBarView.swift          # Menu bar extra
+    LiveRecordingView.swift    # Copilot center stage + chat-bubble transcript + notes
+    CopilotPanelView.swift     # Coach card, pinned cards, insight feed
+    MeetingDetailView.swift    # Report/transcript/insights/notes tabs + cost row
+    SettingsView.swift         # Copilot, Transcription, Knowledge, Profiles
+    Theme.swift                # Design tokens (colors, typography)
+    ...
+  ProfileTest.swift            # `--profile-test` logic harness (~60 checks)
+  SnapshotTool.swift           # `--snapshot` / `--copilot-snapshot` offscreen renders
 ```
+
+Contributing note: the project is generated with **xcodegen** — if you add or move files, edit `project.yml` and run `xcodegen generate` rather than editing the `.xcodeproj` by hand.
 
 ## What's Next (My Wishlist)
 
 Things I want to add but haven't figured out yet:
 
 - [ ] **Real speaker diarization** — integrate [SpeakerKit](https://github.com/argmaxinc/argmax-oss-swift) so it actually knows who's talking
-- [ ] **Meeting summaries & action items** — maybe a local LLM via MLX? No cloud, obviously
+- [ ] **Local LLM for summaries & copilot** — the AI features currently need a Claude key; an MLX-based local model would make even those fully offline
 - [ ] **Calendar integration** — auto-name meetings based on what's on my calendar
-- [ ] **Audio playback synced with transcript** — click a line, hear that moment
 - [ ] **Keyword bookmarks** — mark important moments during a recording
 - [ ] **Better waveform visualization** — the current one is... functional
-- [ ] **A proper app icon** — currently using the system bird icon, which is fine but not *Parrot*
 - [ ] **Notarize and distribute** — so people can run it without Xcode
 
 If any of these excite you, jump in!
@@ -145,7 +174,7 @@ Seriously, if you're into Swift/macOS development, audio processing, or ML on-de
 
 Here's where I could really use a hand:
 
-- **Speaker diarization** — The current approach is embarrassingly basic (it just alternates speakers based on silence gaps). If you know anything about CoreML, Pyannote, or voice fingerprinting, please help me make this actually work.
+- **Speaker diarization** — The current approach is energy-based and can't reliably tell multiple far-side voices apart. If you know anything about CoreML, Pyannote, or voice fingerprinting, please help me make this actually work.
 - **Screen Recording permission headaches** — macOS permissions are driving me a little crazy. If you've dealt with ScreenCaptureKit in sandboxed apps, I want to hear from you.
 - **Bug fixes** — Found something broken? Open a PR, I'll review it quickly.
 - **Feature ideas** — Open an issue and let's chat about it.
@@ -157,7 +186,7 @@ No formal process. No templates. Just open an issue or PR and we'll figure it ou
 
 - **Screen Recording permission is annoying** — When running from Xcode, the binary gets re-signed each build, which can invalidate the permission. If recording fails, remove Parrot from Screen Recording in System Settings, re-add it, and restart. I'm still figuring this one out.
 - **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
-- **Speaker diarization is... not great** — It basically alternates speakers when there's silence. I know. It's on my list.
+- **Speaker diarization is... okay** — "Me" vs "Them" is exact (separate audio tracks), but splitting multiple far-side voices apart is energy-based and imperfect, especially with 3+ people on the other end. Real voice fingerprinting is on my list.
 
 ## License
 
