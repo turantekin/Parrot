@@ -15,8 +15,10 @@ enum AIPricing {
     static let haikuOutputUSDPerMTok = 5.00
     /// Groq whisper-large-v3-turbo: $0.04 per audio hour.
     static let groqUSDPerAudioHour = 0.04
-    /// Deepgram Nova-3 streaming: ~$0.0077 per audio minute per stream.
-    static let deepgramUSDPerAudioMinute = 0.0077
+    /// Deepgram Nova-3 streaming: $0.29 per audio hour per stream — matches the
+    /// "rate applied" on Deepgram's own billing dashboard (verified against a
+    /// real invoice 2026-07-02: 220s billed = $0.01788).
+    static let deepgramUSDPerAudioHour = 0.29
 }
 
 /// Per-meeting AI usage snapshot, stored denormalized in `Meeting.aiUsageData`
@@ -60,7 +62,7 @@ struct AIUsage: Codable {
         let transcriptionUSD: Double = switch backend {
         case .local: 0
         case .groq: billedSeconds / 3600 * AIPricing.groqUSDPerAudioHour
-        case .deepgram: billedSeconds / 60 * AIPricing.deepgramUSDPerAudioMinute
+        case .deepgram: billedSeconds / 3600 * AIPricing.deepgramUSDPerAudioHour
         }
         items.append(LineItem(
             label: "Transcription \(backend.label)",

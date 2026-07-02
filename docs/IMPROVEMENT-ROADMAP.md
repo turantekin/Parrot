@@ -55,7 +55,8 @@ Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸
   "AI cost ~$X — Copilot · Transcription · Polish" with a breakdown popover
   ("estimated" disclaimer). Pricing constants live in `AIPricing`
   (claude-haiku-4-5 $1/$5 per MTok verified against current list prices
-  2026-07-02; Groq $0.04/audio-hr; Deepgram ~$0.0077/min/stream). Harness
+  2026-07-02; Groq $0.04/audio-hr; Deepgram $0.29/audio-hr/stream — verified
+  against a real Deepgram invoice 2026-07-02). Harness
   +20 checks (WAV encoder, backend default, cost math, round-trip) ALL PASS.
   **To verify live:** record one call per engine (Groq/Deepgram need your
   keys), confirm the cost row appears and roughly matches console usage.

@@ -214,12 +214,14 @@ enum ProfileTest {
         check("wav data size field", u32(40) == 8)
         check("wav first sample zero", i16(44) == 0)
         check("wav clamps overdrive to Int16.max-ish", i16(50) == 32767)
-        check("backend defaults to local", TranscriptionBackend.selected == .local)
+        // `selected` falls back to .local via `?? .local`; asserting on it directly
+        // read the tester's real UserDefaults and broke once a cloud engine was chosen.
+        check("unknown backend raw value rejected", TranscriptionBackend(rawValue: "gibberish") == nil)
     }
 
     static func testAIUsageCost() {
         // Known tokens → known dollars: 1M in ($1.00) + 200k out ($1.00) = $2.00;
-        // Deepgram 10 min × 2 tracks = 20 min × $0.0077 = $0.154;
+        // Deepgram 10 min × 2 tracks = 1/3 hr × $0.29 ≈ $0.0967;
         // polish 20 min = 1/3 hr × $0.04 ≈ $0.0133.
         var usage = AIUsage()
         usage.copilotModel = "claude-haiku-4-5"
@@ -233,7 +235,13 @@ enum ProfileTest {
         check("cost has 3 line items", items.count == 3)
         check("copilot cost $2.00", abs(items[0].usd - 2.00) < 0.0001)
         check("copilot detail has calls + tokens", items[0].detail.contains("41 calls") && items[0].detail.contains("1000k in"))
-        check("deepgram cost $0.154", abs(items[1].usd - 0.154) < 0.0001)
+        check("deepgram cost matches $0.29/hr rate", abs(items[1].usd - 1200.0 / 3600 * 0.29) < 0.0001)
+        // The real invoice this rate was verified against: 1:50 call, 2 streams.
+        var invoice = AIUsage()
+        invoice.transcriptionBackend = TranscriptionBackend.deepgram.rawValue
+        invoice.transcriptionSeconds = 110
+        invoice.transcriptionTracks = 2
+        check("deepgram matches real bill ±10%", abs(invoice.totalUSD - 0.01788) < 0.0018)
         check("polish cost ~$0.0133", abs(items[2].usd - 1200.0 / 3600 * 0.04) < 0.0001)
         check("total sums line items", abs(usage.totalUSD - items.reduce(0) { $0 + $1.usd }) < 0.0001)
 
