@@ -23,7 +23,7 @@ struct ProfilesSettingsView: View {
                         .tag(profile.id)
                 }
                 .listStyle(.sidebar)
-                .frame(width: 170)
+                .frame(width: 200)
 
                 Divider()
 
@@ -62,7 +62,7 @@ struct ProfilesSettingsView: View {
                 .padding(.vertical, 6)
                 .background(.windowBackground)
             }
-            .frame(width: 170)
+            .frame(width: 200)
 
             Divider()
 
@@ -166,7 +166,7 @@ private struct ProfileDetailView: View {
                         .foregroundStyle(.secondary)
                     TextEditor(text: $profile.persona)
                         .font(.callout)
-                        .frame(height: 60)
+                        .frame(minHeight: 90)
                         .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
                 }
 

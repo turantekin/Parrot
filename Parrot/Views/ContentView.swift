@@ -62,9 +62,9 @@ struct ContentView: View {
                 .padding(.top, 18)
                 .padding(.bottom, 10)
 
+            // Full bleed — no width cap, no centering. A wider window means a
+            // wider editor, period.
             SettingsView(isEmbedded: true)
-                .frame(maxWidth: 860)
-                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
