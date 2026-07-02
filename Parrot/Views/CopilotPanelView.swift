@@ -2,10 +2,11 @@ import SwiftUI
 
 /// Live insight feed shown next to the transcript while recording.
 ///
-/// Layout: unhandled blockers stay pinned at the top; everything else flows in a
-/// newest-first feed below. New cards never hijack scroll position — when the user
-/// has scrolled down, a "new insights" pill appears instead. Old cards auto-collapse
-/// to one-line rows to keep long calls scannable.
+/// Layout ("glanceable copilot"): sentiment chips and unhandled blockers up top,
+/// then a fixed HERO slot that always shows the newest insight at glance scale
+/// (17.5pt payload, kind-tinted, brief glow on arrival), then older insights as
+/// compact one-line rows. The panel is read in 1-second glances mid-call, so
+/// there is exactly one place to look: the hero.
 struct CopilotPanelView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.openSettings) private var openSettings
@@ -13,14 +14,10 @@ struct CopilotPanelView: View {
     /// Set by tapping a card timestamp; LiveRecordingView scrolls the transcript there.
     @Binding var transcriptJumpTarget: TimeInterval?
 
-    @State private var atTop = true
-    @State private var unseenCount = 0
-    @State private var seenInsightCount = 0
-    /// Insights the user has manually tucked into a one-line row. Nothing collapses
-    /// by age anymore — A3 cut the volume enough to keep everything readable.
-    @State private var manuallyCollapsed: Set<UUID> = []
-
-    private static let topAnchorID = "copilot-top"
+    /// History rows the user has expanded inline — compact is the default.
+    @State private var expanded: Set<UUID> = []
+    /// Hero insight currently announcing itself; its glow fades after ~1.5s.
+    @State private var glowingID: UUID?
 
     private var engine: CallAnalysisEngine { recordingManager.callAnalysisEngine }
 
@@ -37,7 +34,7 @@ struct CopilotPanelView: View {
 
             content
         }
-        .frame(minWidth: 280, idealWidth: 360, maxWidth: 640)
+        .frame(minWidth: 320, idealWidth: 420, maxWidth: 640)
         .background(Theme.Colors.panel)
     }
 
@@ -51,6 +48,11 @@ struct CopilotPanelView: View {
         // Everything except unhandled pinned insights (those live in the pinned zone).
         engine.insights.filter { !(style(for: $0).isPinned && !$0.isHandled) }
     }
+
+    /// The focal slot: newest feed insight (engine inserts newest at index 0).
+    private var heroInsight: Insight? { feedInsights.first }
+
+    private var historyInsights: [Insight] { Array(feedInsights.dropFirst()) }
 
     // MARK: - Header
 
@@ -132,13 +134,15 @@ struct CopilotPanelView: View {
     @ViewBuilder
     private func feedArea(errorMessage: String?) -> some View {
         VStack(spacing: 0) {
-            // Always-on sentiment strip — shown whenever the active profile has gauges.
+            // Compact always-on sentiment chips — one row, details in tooltips.
             SentimentStripView(
                 gauges: engine.activeProfile?.gauges ?? [],
                 values: engine.sentiment,
                 read: engine.sentimentRead
             )
-            .padding(.horizontal, 12).padding(.top, 8)
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
 
             if !pinnedBlockers.isEmpty {
                 pinnedZone
@@ -175,7 +179,7 @@ struct CopilotPanelView: View {
                 .font(.title2)
                 .foregroundStyle(.tertiary)
             Text("Listening to the call.\nSuggestions, blockers and action items will appear here as the conversation unfolds.")
-                .font(.callout)
+                .font(.system(size: 15))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
@@ -183,37 +187,56 @@ struct CopilotPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Hero + history feed
+
     private func feed(errorMessage: String?) -> some View {
-        ScrollViewReader { proxy in
-            ZStack(alignment: .top) {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        // Sentinel that tells us whether the user is at the top.
-                        Color.clear
-                            .frame(height: 1)
-                            .id(Self.topAnchorID)
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: AtTopPreferenceKey.self,
-                                        value: geo.frame(in: .named("copilotScroll")).minY > -24
-                                    )
-                                }
-                            )
+        VStack(alignment: .leading, spacing: 0) {
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
 
-                        if let errorMessage {
-                            Label(errorMessage, systemImage: "exclamationmark.triangle")
-                                .font(.caption)
-                                .foregroundStyle(.yellow)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+            if let hero = heroInsight {
+                HeroInsightCard(
+                    insight: hero,
+                    kindStyle: style(for: hero),
+                    isGlowing: glowingID == hero.id,
+                    onJump: { transcriptJumpTarget = hero.callTime },
+                    onDismiss: {
+                        withAnimation(.spring(duration: 0.25)) {
+                            engine.dismiss(hero)
                         }
+                    }
+                )
+                .id(hero.id)  // fresh identity per insight so the arrival transition fires
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+            }
 
-                        ForEach(feedInsights) { insight in
+            if !historyInsights.isEmpty {
+                Text("EARLIER")
+                    .font(Theme.Typography.cap)
+                    .foregroundStyle(Theme.Colors.ink3)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
+                    .padding(.bottom, 4)
+
+                ScrollView {
+                    // Plain VStack: insight volume is capped (≤2 per analysis
+                    // pass), and lazy stacks don't lay out under ImageRenderer,
+                    // which would blind the --copilot-snapshot harness.
+                    VStack(spacing: 6) {
+                        ForEach(historyInsights) { insight in
                             InsightCard(
                                 insight: insight,
                                 kindStyle: style(for: insight),
-                                isCollapsed: isCollapsed(insight),
-                                onToggleCollapse: { toggleCollapse(insight) },
+                                isCollapsed: !expanded.contains(insight.id),
+                                onToggleCollapse: { toggleExpanded(insight) },
                                 onJump: { transcriptJumpTarget = insight.callTime },
                                 onDismiss: {
                                     withAnimation(.spring(duration: 0.25)) {
@@ -224,70 +247,30 @@ struct CopilotPanelView: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
-                    .padding(10)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
                 }
-                .coordinateSpace(name: "copilotScroll")
-                .onPreferenceChange(AtTopPreferenceKey.self) { isAtTop in
-                    atTop = isAtTop
-                    if isAtTop {
-                        unseenCount = 0
-                        seenInsightCount = engine.insights.count
-                    }
-                }
-                .onChange(of: engine.insights.count) { _, newCount in
-                    if atTop {
-                        seenInsightCount = newCount
-                    } else {
-                        unseenCount = max(0, newCount - seenInsightCount)
-                    }
-                }
-                .animation(.spring(duration: 0.3), value: engine.insights)
-
-                if unseenCount > 0 && !atTop {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo(Self.topAnchorID, anchor: .top)
-                        }
-                        unseenCount = 0
-                        seenInsightCount = engine.insights.count
-                    } label: {
-                        Label("\(unseenCount) new", systemImage: "arrow.up")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Theme.Colors.accent, in: Capsule())
-                            .foregroundStyle(.white)
-                            .shadow(radius: 3, y: 1)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .animation(.spring(duration: 0.3), value: engine.insights)
+        .onChange(of: heroInsight?.id) { _, newID in
+            guard let newID else { return }
+            glowingID = newID
+            Task {
+                try? await Task.sleep(for: .seconds(1.6))
+                if glowingID == newID { glowingID = nil }
             }
         }
     }
 
-    // MARK: - Collapse logic
-
-    private func isCollapsed(_ insight: Insight) -> Bool {
-        if manuallyCollapsed.contains(insight.id) { return true }
-        // Handled pinned insights tuck themselves away; everything else stays open.
-        return style(for: insight).isPinned && insight.isHandled
-    }
-
-    private func toggleCollapse(_ insight: Insight) {
-        if manuallyCollapsed.contains(insight.id) {
-            manuallyCollapsed.remove(insight.id)
+    private func toggleExpanded(_ insight: Insight) {
+        if expanded.contains(insight.id) {
+            expanded.remove(insight.id)
         } else {
-            manuallyCollapsed.insert(insight.id)
+            expanded.insert(insight.id)
         }
-    }
-}
-
-private struct AtTopPreferenceKey: PreferenceKey {
-    static var defaultValue = true
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = nextValue()
     }
 }
 
@@ -302,17 +285,17 @@ struct PinnedBlockerRow: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-                .font(.caption)
+                .font(.system(size: 13))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(insight.title)
-                    .font(.callout.weight(.semibold))
+                    .font(.system(size: 15, weight: .semibold))
 
                 HStack(spacing: 6) {
                     TimestampButton(insight: insight, action: onJump)
 
                     Text(insight.detail)
-                        .font(.caption)
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -322,12 +305,13 @@ struct PinnedBlockerRow: View {
 
             Button(action: onHandled) {
                 Image(systemName: "checkmark.circle")
+                    .font(.system(size: 17))
                     .foregroundStyle(.orange)
             }
             .buttonStyle(.plain)
             .help("Mark as handled")
         }
-        .padding(8)
+        .padding(10)
         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -336,7 +320,113 @@ struct PinnedBlockerRow: View {
     }
 }
 
-// MARK: - Insight Card
+// MARK: - Hero Insight Card
+
+/// The focal slot at the top of the copilot panel: the newest insight rendered
+/// at glance scale, strongly kind-tinted, glowing briefly when it arrives.
+struct HeroInsightCard: View {
+    let insight: Insight
+    let kindStyle: KindStyle
+    let isGlowing: Bool
+    let onJump: () -> Void
+    let onDismiss: () -> Void
+
+    @State private var copied = false
+
+    /// Kinds whose detail is a line the user can literally say — they get the
+    /// prominent Copy pill.
+    private var isSayable: Bool {
+        ["suggestion", "answer", "reflection", "open_question", "follow_up_question"]
+            .contains(insight.kindKey)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: kindStyle.iconSystemName)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(kindStyle.label)
+                    .font(.system(size: 13, weight: .semibold))
+
+                if kindStyle.isPinned && insight.isHandled {
+                    Label("Handled", systemImage: "checkmark")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.Colors.action)
+                }
+
+                Spacer()
+
+                TimestampButton(insight: insight, action: onJump)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.ink3)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss — the previous insight moves up")
+            }
+            .foregroundStyle(kindStyle.color)
+
+            Text(insight.title)
+                .font(Theme.Typography.heroTitle)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(insight.detail)
+                .font(Theme.Typography.heroDetail)
+                .foregroundStyle(Theme.Colors.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                if isSayable {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(insight.detail, forType: .string)
+                        copied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            copied = false
+                        }
+                    } label: {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 12, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(kindStyle.color.opacity(0.18), in: Capsule())
+                            .foregroundStyle(kindStyle.color)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy this line")
+                }
+
+                if let source = insight.source {
+                    Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Colors.ink3)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(kindStyle.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(kindStyle.color.opacity(0.35), lineWidth: 1.5)
+        )
+        .shadow(color: isGlowing ? kindStyle.color.opacity(0.55) : .clear,
+                radius: isGlowing ? 10 : 0)
+        .animation(.easeOut(duration: 1.2), value: isGlowing)
+        .contextMenu {
+            Button("Jump to transcript") { onJump() }
+            Button("Dismiss", role: .destructive) { onDismiss() }
+        }
+    }
+}
+
+// MARK: - Insight Card (history rows)
 
 struct InsightCard: View {
     let insight: Insight
@@ -376,7 +466,7 @@ struct InsightCard: View {
                     .foregroundStyle(kindStyle.color)
 
                 Text(insight.title)
-                    .font(.callout)
+                    .font(Theme.Typography.rowTitle)
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
 
@@ -495,4 +585,3 @@ struct TimestampButton: View {
         .help("Jump to this moment in the transcript")
     }
 }
-

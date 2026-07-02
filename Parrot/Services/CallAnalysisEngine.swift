@@ -251,6 +251,23 @@ final class CallAnalysisEngine {
         }
     }
 
+    // MARK: - Snapshot Harness Support
+
+    /// Dev-harness only: seed the engine with fake state so the copilot panel
+    /// can be rendered offscreen (`--copilot-snapshot`) without a live call.
+    func seedForSnapshot(profile: CallProfile?, insights: [Insight],
+                         sentiment: [String: Int], read: String?,
+                         meCharacters: Int, themCharacters: Int) {
+        activeProfile = profile
+        self.insights = insights
+        self.sentiment = sentiment
+        sentimentRead = read
+        self.meCharacters = meCharacters
+        self.themCharacters = themCharacters
+        isActive = true
+        status = .listening
+    }
+
     // MARK: - Card Actions
 
     /// Marks a pinned blocker as handled; it moves from the pinned zone into the feed.

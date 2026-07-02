@@ -58,6 +58,15 @@ enum Theme {
         static let caption = Font.system(size: 12)
         /// Tiny uppercase panel label ("ASK PARROT").
         static let cap = Font.system(size: 11, weight: .semibold)
+
+        // Live copilot "glance" scale — the panel is read in 1-second glances
+        // mid-call, so its focal card runs well above document sizes.
+        /// Hero card payload (the line the user can say).
+        static let heroDetail = Font.system(size: 17.5)
+        /// Hero card title.
+        static let heroTitle = Font.system(size: 15.5, weight: .semibold)
+        /// Compact history row title.
+        static let rowTitle = Font.system(size: 14)
     }
 
     // MARK: - Metrics
