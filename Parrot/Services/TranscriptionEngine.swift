@@ -27,6 +27,13 @@ final class TranscriptionEngine {
     private var audioBuffers: [AudioSource: [Float]] = [.me: [], .them: []]
     private let bufferLock = OSAllocatedUnfairLock()
     private var transcriptionTask: Task<Void, Never>?
+    /// Live Deepgram sockets, one per source, when the deepgram backend is
+    /// active. Audio routes straight to them instead of the chunk buffers.
+    /// Same benign cross-thread pattern as `isCapturing`.
+    private var deepgramStreamers: [AudioSource: DeepgramStreamer] = [:]
+    /// Set on the first Deepgram failure: audio falls back to the local
+    /// buffer/loop path for the rest of the session.
+    private var deepgramFailed = false
 
     private(set) var isReady = false
     private(set) var isTranscribing = false
@@ -86,6 +93,12 @@ final class TranscriptionEngine {
         let frameCount = Int(buffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
 
+        // Streaming backend: straight to the socket, no chunk buffering.
+        if !deepgramFailed, let streamer = deepgramStreamers[source] {
+            streamer.send(samples)
+            return
+        }
+
         bufferLock.withLock {
             audioBuffers[source, default: []].append(contentsOf: samples)
         }
@@ -108,6 +121,8 @@ final class TranscriptionEngine {
         var backend = TranscriptionBackend.selected
         var groqKey: String?
         cloudNotice = nil
+        deepgramFailed = false
+        deepgramStreamers = [:]
         if backend == .groq {
             groqKey = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!)
             if groqKey?.isEmpty != false {
@@ -115,13 +130,19 @@ final class TranscriptionEngine {
                 cloudNotice = "Groq key missing — using on-device Whisper"
             }
         }
-        if backend == .deepgram {
-            backend = .local
-        }
 
         // Resolve the user's transcription language ("auto"/nil = auto-detect).
         let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
         let language = (setting == nil || setting == "auto") ? nil : setting
+
+        if backend == .deepgram {
+            if let key = APIKeyStore.load(account: TranscriptionBackend.deepgram.keychainAccount!), !key.isEmpty {
+                startDeepgram(apiKey: key, language: language)
+            } else {
+                backend = .local
+                cloudNotice = "Deepgram key missing — using on-device Whisper"
+            }
+        }
         var decodeOptions = DecodingOptions(
             task: .transcribe,
             language: language,
@@ -292,12 +313,64 @@ final class TranscriptionEngine {
         }
     }
 
+    /// Wire up one Deepgram socket per audio source. Interims drive the live
+    /// line; finals become segments with Deepgram's stream-relative timestamps
+    /// (= meeting-relative, streaming starts with the recording). Any failure
+    /// flips the session to the local buffer/loop path.
+    private func startDeepgram(apiKey: String, language: String?) {
+        for source in AudioSource.allCases {
+            let streamer = DeepgramStreamer()
+            streamer.onInterim = { [weak self] text in
+                let partial = Self.cleaned(text)
+                guard !partial.isEmpty else { return }
+                Task { @MainActor in self?.currentText = partial }
+            }
+            streamer.onFinal = { [weak self] text, start, end in
+                guard let self else { return }
+                let cleanedText = Self.cleaned(text)
+                // energy 1.0: Deepgram runs its own voice-activity detection,
+                // so only punctuation-only junk is filtered here.
+                guard !cleanedText.isEmpty,
+                      !Self.isLikelyHallucination(cleanedText, energy: 1.0) else { return }
+                Task { @MainActor in
+                    self.currentText = cleanedText
+                    self.onSegment?(TranscriptionResult(
+                        text: cleanedText, source: source,
+                        startTime: start, endTime: end, confidence: nil))
+                }
+            }
+            streamer.onError = { [weak self] message in
+                guard let self else { return }
+                NSLog("Parrot: Deepgram stream failed (\(source.label)) — \(message)")
+                self.deepgramFailed = true
+                Task { @MainActor in
+                    self.cloudNotice = "Deepgram error — switched to on-device Whisper"
+                }
+            }
+            streamer.connect(apiKey: apiKey, language: language)
+            deepgramStreamers[source] = streamer
+        }
+    }
+
     /// Stop transcription, draining the buffered backlog first so the final words
     /// of the call (previously always dropped — the loop needed ≥2 s buffered)
     /// make it into the transcript. Await this before assembling the transcript.
     // ponytail: drain is uncapped — a hung whisper pass hangs stop; upgrade path
     // is a wall-clock cap + surfaced timeout.
     func stopTranscribing() async {
+        // Streaming backend: flush finals, then tear down. When the stream is
+        // healthy, the chunk buffers only hold pre-connection audio — clear
+        // them so the drain can't re-emit the call's first words at the end.
+        if !deepgramStreamers.isEmpty {
+            for streamer in deepgramStreamers.values { streamer.finish() }
+            try? await Task.sleep(for: .seconds(1.2))  // grace for final results
+            for streamer in deepgramStreamers.values { streamer.close() }
+            if !deepgramFailed {
+                bufferLock.withLock { audioBuffers = [.me: [], .them: []] }
+            }
+            deepgramStreamers = [:]
+        }
+
         isTranscribing = false          // flips the loop into drain mode
         await transcriptionTask?.value  // deliberately not cancel(): let it finish
         transcriptionTask = nil

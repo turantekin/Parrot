@@ -166,3 +166,110 @@ enum WAVEncoder {
         return out
     }
 }
+
+// MARK: - Deepgram streaming
+
+/// One live websocket to Deepgram per audio source ("Me" mic / "Them" system).
+/// Sends 16 kHz mono linear16 PCM continuously; receives interim transcripts
+/// (word-by-word, ~300 ms) and finals with stream-relative timestamps — which
+/// equal meeting-relative here, since streaming starts with the recording.
+final class DeepgramStreamer {
+    private var task: URLSessionWebSocketTask?
+
+    /// Called off-main with the latest interim transcript for the live line.
+    var onInterim: ((String) -> Void)?
+    /// Called off-main with a finalized utterance (text, start, end seconds).
+    var onFinal: ((String, Double, Double) -> Void)?
+    /// Called once on any socket/API failure; the engine falls back to local.
+    var onError: ((String) -> Void)?
+
+    func connect(apiKey: String, language: String?) {
+        var components = URLComponents(string: "wss://api.deepgram.com/v1/listen")!
+        components.queryItems = [
+            URLQueryItem(name: "model", value: "nova-3"),
+            URLQueryItem(name: "encoding", value: "linear16"),
+            URLQueryItem(name: "sample_rate", value: "16000"),
+            URLQueryItem(name: "channels", value: "1"),
+            URLQueryItem(name: "interim_results", value: "true"),
+            URLQueryItem(name: "smart_format", value: "true"),
+            // "multi" = Nova-3 multilingual streaming; a specific code pins it.
+            URLQueryItem(name: "language", value: (language == nil || language == "auto") ? "multi" : language!),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
+        task = URLSession.shared.webSocketTask(with: request)
+        task?.resume()
+        receiveLoop()
+    }
+
+    /// Push PCM floats (called from the audio callback thread; WebSocket send
+    /// is thread-safe).
+    func send(_ samples: [Float]) {
+        guard let task else { return }
+        var pcm = [Int16](repeating: 0, count: samples.count)
+        for (i, s) in samples.enumerated() {
+            pcm[i] = Int16(max(-1, min(1, s)) * 32767)
+        }
+        let data = pcm.withUnsafeBufferPointer { Data(buffer: $0) }
+        task.send(.data(data)) { [weak self] error in
+            if let error { self?.fail(error.localizedDescription) }
+        }
+    }
+
+    /// Ask Deepgram to flush remaining finals; caller waits a short grace
+    /// period before tearing down.
+    func finish() {
+        task?.send(.string(#"{"type":"CloseStream"}"#)) { _ in }
+    }
+
+    func close() {
+        task?.cancel(with: .normalClosure, reason: nil)
+        task = nil
+    }
+
+    private var failed = false
+    private func fail(_ message: String) {
+        guard !failed else { return }
+        failed = true
+        onError?(message)
+    }
+
+    private func receiveLoop() {
+        task?.receive { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                self.fail(error.localizedDescription)
+            case .success(let message):
+                if case .string(let text) = message { self.handle(text) }
+                self.receiveLoop()
+            }
+        }
+    }
+
+    private struct Response: Decodable {
+        struct Alternative: Decodable { let transcript: String }
+        struct Channel: Decodable { let alternatives: [Alternative] }
+        let type: String?
+        let channel: Channel?
+        let isFinal: Bool?
+        let start: Double?
+        let duration: Double?
+    }
+
+    private func handle(_ json: String) {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let response = try? decoder.decode(Response.self, from: Data(json.utf8)),
+              response.type == "Results",
+              let transcript = response.channel?.alternatives.first?.transcript,
+              !transcript.isEmpty else { return }
+
+        if response.isFinal == true {
+            let start = response.start ?? 0
+            onFinal?(transcript, start, start + (response.duration ?? 0))
+        } else {
+            onInterim?(transcript)
+        }
+    }
+}

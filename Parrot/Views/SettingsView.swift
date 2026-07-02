@@ -65,6 +65,7 @@ struct SettingsView: View {
                 Picker("Engine", selection: $transcriptionBackend) {
                     Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
                     Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
+                    Text("Deepgram cloud — fastest, word-by-word streaming (~$1/hr)").tag(TranscriptionBackend.deepgram.rawValue)
                 }
                 .pickerStyle(.radioGroup)
 
@@ -74,6 +75,15 @@ struct SettingsView: View {
                         account: TranscriptionBackend.groq.keychainAccount!,
                         placeholder: "gsk_…",
                         hint: "Audio chunks are sent to Groq for transcription. Get a key at console.groq.com. Applies from the next recording; on-device remains the automatic fallback."
+                    )
+                }
+
+                if transcriptionBackend == TranscriptionBackend.deepgram.rawValue {
+                    ProviderKeyField(
+                        label: "Deepgram API key",
+                        account: TranscriptionBackend.deepgram.keychainAccount!,
+                        placeholder: "dg_…",
+                        hint: "Audio streams live to Deepgram (both mic and system tracks — billed per track). New accounts include $200 credit at console.deepgram.com. Applies from the next recording; on-device remains the automatic fallback."
                     )
                 }
 
