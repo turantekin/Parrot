@@ -143,6 +143,7 @@ struct LiveRecordingView: View {
     // MARK: - Transcript Area
 
     private var transcriptArea: some View {
+        GeometryReader { viewport in
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
@@ -169,8 +170,35 @@ struct LiveRecordingView: View {
                                 .padding(.horizontal)
                                 .padding(.top, 20)
                         }
+
+                        // Live-edge sentinel: a stable scroll anchor that also
+                        // measures how far below the fold the bottom is, so a
+                        // manual scroll-up pauses auto-scroll instead of the view
+                        // yanking back down mid-read (CopilotPanelView pattern).
+                        Color.clear
+                            .frame(height: 1)
+                            .id("liveEdge")
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: BottomDistancePreferenceKey.self,
+                                        value: geo.frame(in: .named("liveTranscript")).minY
+                                            - viewport.size.height
+                                    )
+                                }
+                            )
                     }
                     .padding()
+                }
+                .coordinateSpace(name: "liveTranscript")
+                .onPreferenceChange(BottomDistancePreferenceKey.self) { distance in
+                    // Hysteresis: a freshly appended row (~60pt) mid-animation
+                    // must not cancel auto-scroll, but a real upward scroll must.
+                    if distance > 150 {
+                        autoScroll = false
+                    } else if distance < 60 {
+                        autoScroll = true
+                    }
                 }
 
                 // After jumping to a past moment, offer a way back to the live edge.
@@ -178,7 +206,7 @@ struct LiveRecordingView: View {
                     Button {
                         autoScroll = true
                         withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo("currentText", anchor: .bottom)
+                            proxy.scrollTo("liveEdge", anchor: .bottom)
                         }
                     } label: {
                         Label("Resume live", systemImage: "arrow.down.to.line")
@@ -199,7 +227,7 @@ struct LiveRecordingView: View {
                 displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
                 if autoScroll {
                     withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo("currentText", anchor: .bottom)
+                        proxy.scrollTo("liveEdge", anchor: .bottom)
                     }
                 }
             }
@@ -223,6 +251,16 @@ struct LiveRecordingView: View {
                 copilotJumpTarget = nil
             }
         }
+        }
+    }
+}
+
+/// Distance (pt) between the transcript's live edge and the bottom of the
+/// visible viewport. 0-ish = pinned to live.
+private struct BottomDistancePreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

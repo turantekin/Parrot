@@ -53,34 +53,10 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             Button {
                 Task {
-                    // Check Screen Recording permission BEFORE touching any
-                    // ScreenCaptureKit API. Calling SCShareableContent while
-                    // unauthorized makes macOS pop its own prompt AND throws — the
-                    // app then showed a second custom alert, hence two dialogs.
-                    // Preflight, trigger the single official prompt if needed, stop.
-                    guard CGPreflightScreenCaptureAccess() else {
-                        if !CGRequestScreenCaptureAccess() {
-                            // Previously denied: macOS won't re-prompt, so guide
-                            // the user straight to the right Settings pane.
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                        }
-                        return
-                    }
-
-                    // Ensure the microphone is authorized so the user's own voice
-                    // ("Me") is captured. Without this the engine runs but feeds
-                    // silence. Non-fatal: system audio still records if denied.
-                    switch AVCaptureDevice.authorizationStatus(for: .audio) {
-                    case .notDetermined:
-                        _ = await AVCaptureDevice.requestAccess(for: .audio)
-                    case .denied, .restricted:
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                    default:
-                        break
-                    }
-
                     do {
-                        try await recordingManager.startRecording(modelContext: modelContext)
+                        // Shared permission preflight + start (also used by the
+                        // menu bar) — see RecordingManager for the rationale.
+                        try await recordingManager.preflightPermissionsAndStart(modelContext: modelContext)
                     } catch {
                         errorMessage = error.localizedDescription
                     }

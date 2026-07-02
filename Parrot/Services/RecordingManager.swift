@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import CoreGraphics
+import AVFoundation
 
 /// Orchestrates audio capture, transcription, and storage for a recording session.
 @MainActor
@@ -65,6 +67,39 @@ final class RecordingManager {
     }
 
     // MARK: - Recording Control
+
+    /// The one shared entry point for every "start recording" button — checks
+    /// permissions, then starts. Returns without starting (and without throwing)
+    /// when a permission flow was triggered instead.
+    func preflightPermissionsAndStart(modelContext: ModelContext) async throws {
+        // Check Screen Recording permission BEFORE touching any ScreenCaptureKit
+        // API. Calling SCShareableContent while unauthorized makes macOS pop its
+        // own prompt AND throws — the app then showed a second custom alert,
+        // hence two dialogs. Preflight, trigger the single official prompt if
+        // needed, stop.
+        guard CGPreflightScreenCaptureAccess() else {
+            if !CGRequestScreenCaptureAccess() {
+                // Previously denied: macOS won't re-prompt, so guide the user
+                // straight to the right Settings pane.
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+            }
+            return
+        }
+
+        // Ensure the microphone is authorized so the user's own voice ("Me")
+        // is captured. Without this the engine runs but feeds silence.
+        // Non-fatal: system audio still records if denied.
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .notDetermined:
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+        case .denied, .restricted:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        default:
+            break
+        }
+
+        try await startRecording(modelContext: modelContext)
+    }
 
     func startRecording(modelContext: ModelContext) async throws {
         self.modelContext = modelContext

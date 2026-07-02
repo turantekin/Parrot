@@ -41,7 +41,18 @@ struct MenuBarView: View {
 
                 Button("Start Recording") {
                     Task {
-                        try? await recordingManager.startRecording(modelContext: modelContext)
+                        do {
+                            // Same preflight as the dashboard button — without it
+                            // this path silently failed when Screen Recording
+                            // permission was missing.
+                            try await recordingManager.preflightPermissionsAndStart(modelContext: modelContext)
+                        } catch {
+                            NSApp.activate(ignoringOtherApps: true)
+                            let alert = NSAlert()
+                            alert.messageText = "Couldn't start recording"
+                            alert.informativeText = error.localizedDescription
+                            alert.runModal()
+                        }
                     }
                 }
                 .disabled(!recordingManager.transcriptionEngine.isReady)

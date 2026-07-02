@@ -1,6 +1,5 @@
 import SwiftUI
 import AVFoundation
-import ScreenCaptureKit
 
 struct OnboardingView: View {
     @Environment(RecordingManager.self) private var recordingManager
@@ -107,17 +106,12 @@ struct OnboardingView: View {
                     description: "Required to capture system audio from meetings. Parrot only records audio — never your screen content.",
                     isGranted: screenGranted,
                     action: {
-                        // Trigger ScreenCaptureKit permission prompt, then open Settings
-                        Task {
-                            do {
-                                _ = try await SCShareableContent.current
-                                await MainActor.run { screenGranted = true }
-                            } catch {
-                                // Permission denied or not yet granted — open Settings
-                                await MainActor.run {
-                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                                }
-                            }
+                        // Single official prompt if never asked; if previously
+                        // denied macOS won't re-prompt, so open Settings instead.
+                        if CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() {
+                            screenGranted = true
+                        } else {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                         }
                     }
                 )
@@ -150,16 +144,11 @@ struct OnboardingView: View {
         }
         .padding()
         .onAppear {
-            // Check current permission status
+            // Check current permission status. CGPreflight is side-effect-free —
+            // querying SCShareableContent here triggered the macOS permission
+            // prompt the moment the step appeared, before the user hit Grant.
             micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-            Task {
-                do {
-                    _ = try await SCShareableContent.current
-                    await MainActor.run { screenGranted = true }
-                } catch {
-                    await MainActor.run { screenGranted = false }
-                }
-            }
+            screenGranted = CGPreflightScreenCaptureAccess()
         }
     }
 

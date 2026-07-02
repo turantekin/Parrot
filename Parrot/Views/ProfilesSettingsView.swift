@@ -364,6 +364,9 @@ private struct KindEditorRow: View {
     /// Stored as a `let` so `.onChange(of: element)` can detect external mutations.
     let element: ProfileKind
     @State private var draft: ProfileKind
+    /// True while any text field in this row has focus; commit on loss —
+    /// .onSubmit alone loses the draft when the user clicks elsewhere.
+    @FocusState private var focused: Bool
     let onUpdate: (ProfileKind) -> Void
     let onDelete: () -> Void
 
@@ -381,11 +384,13 @@ private struct KindEditorRow: View {
                 TextField("Key", text: $draft.key)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("Label", text: $draft.label)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
 
@@ -395,11 +400,13 @@ private struct KindEditorRow: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
                     .frame(maxWidth: 80)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("SF Symbol", text: $draft.iconSystemName)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
 
@@ -407,6 +414,7 @@ private struct KindEditorRow: View {
             TextField("Trigger description", text: $draft.triggerDescription)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
+                .focused($focused)
                 .onSubmit { onUpdate(draft) }
 
             // Row 4: Pinned toggle + Priority stepper + Remove button
@@ -432,6 +440,11 @@ private struct KindEditorRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 6)
         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        // Commit on focus loss, not just Return — otherwise clicking another
+        // control (or closing Settings) reverts the draft via the resync below.
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { onUpdate(draft) }
+        }
         // Fix 2: re-sync draft when the element is externally mutated
         .onChange(of: element) { _, newElement in
             draft = newElement
@@ -446,6 +459,9 @@ private struct GaugeEditorRow: View {
     /// Stored as a `let` so `.onChange(of: element)` can detect external mutations.
     let element: SentimentGauge
     @State private var draft: SentimentGauge
+    /// True while any text field in this row has focus; commit on loss —
+    /// .onSubmit alone loses the draft when the user clicks elsewhere.
+    @FocusState private var focused: Bool
     let onUpdate: (SentimentGauge) -> Void
     let onDelete: () -> Void
 
@@ -463,11 +479,13 @@ private struct GaugeEditorRow: View {
                 TextField("Key", text: $draft.key)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("Label", text: $draft.label)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
 
@@ -476,17 +494,20 @@ private struct GaugeEditorRow: View {
                 TextField("Low label", text: $draft.lowLabel)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("High label", text: $draft.highLabel)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("#hex", text: $draft.colorHex)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
                     .frame(maxWidth: 80)
+                    .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 Button(role: .destructive) { onDelete() } label: {
@@ -499,6 +520,11 @@ private struct GaugeEditorRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 6)
         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        // Commit on focus loss, not just Return — otherwise clicking another
+        // control (or closing Settings) reverts the draft via the resync below.
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { onUpdate(draft) }
+        }
         // Fix 2: re-sync draft when the element is externally mutated
         .onChange(of: element) { _, newElement in
             draft = newElement

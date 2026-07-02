@@ -378,6 +378,15 @@ struct MeetingDetailView: View {
         } else {
             startSynced()
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                // AVAudioPlayer goes silent at end-of-track without a callback
+                // here — detect it, or the timer runs forever and the button
+                // stays stuck on pause.
+                if audioPlayer?.isPlaying != true && micPlayer?.isPlaying != true {
+                    stopPlayback()
+                    playbackTime = 0
+                    updateActiveSegment()
+                    return
+                }
                 playbackTime = audioPlayer?.currentTime ?? micPlayer?.currentTime ?? 0
                 updateActiveSegment()
             }
@@ -398,7 +407,10 @@ struct MeetingDetailView: View {
         micPlayer?.pause()
         audioPlayer?.currentTime = min(time, audioPlayer?.duration ?? time)
         micPlayer?.currentTime = min(time, micPlayer?.duration ?? time)
-        playbackTime = time
+        // Clamp the UI too: an insight callTime past the audio's end must not
+        // draw a >100% progress bar.
+        let duration = max(audioPlayer?.duration ?? 0, micPlayer?.duration ?? 0)
+        playbackTime = duration > 0 ? min(time, duration) : time
         updateActiveSegment()
         if wasPlaying { startSynced() }
     }
