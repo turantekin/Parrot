@@ -4,11 +4,13 @@ import SwiftData
 struct SidebarView: View {
     @Binding var selectedMeeting: Meeting?
     @Binding var showDashboard: Bool
+    /// Settings render in the main detail pane (the old sheet was a cramped
+    /// 520pt popup that made the Profiles editor unusable).
+    @Binding var showSettings: Bool
     @Binding var searchText: String
 
     @Environment(RecordingManager.self) private var recordingManager
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
-    @State private var showSettings = false
     @State private var deleteTarget: Meeting?
 
     var body: some View {
@@ -31,13 +33,15 @@ struct SidebarView: View {
 
             // Primary nav
             VStack(spacing: 2) {
-                NavRow(title: "Dashboard", icon: "house", selected: showDashboard) {
+                NavRow(title: "Dashboard", icon: "house", selected: showDashboard && !showSettings) {
                     showDashboard = true
                     selectedMeeting = nil
+                    showSettings = false
                 }
                 NavRow(title: "New recording", icon: "mic.circle", selected: false) {
                     showDashboard = true
                     selectedMeeting = nil
+                    showSettings = false
                 }
             }
             .padding(.horizontal, 8)
@@ -66,6 +70,7 @@ struct SidebarView: View {
                                     .onTapGesture {
                                         selectedMeeting = meeting
                                         showDashboard = false
+                                        showSettings = false
                                     }
                                     .contextMenu {
                                         Button("Delete Meeting", role: .destructive) {
@@ -84,8 +89,10 @@ struct SidebarView: View {
             // Footer: in-app Settings + account
             VStack(spacing: 2) {
                 Divider().padding(.horizontal, 8).padding(.bottom, 4)
-                NavRow(title: "Settings", icon: "gearshape", selected: false) {
+                NavRow(title: "Settings", icon: "gearshape", selected: showSettings) {
                     showSettings = true
+                    showDashboard = false
+                    selectedMeeting = nil
                 }
                 AccountChip()
             }
@@ -111,19 +118,6 @@ struct SidebarView: View {
             }
         } message: {
             Text("The recording, transcript, and insights will be permanently removed.")
-        }
-        .sheet(isPresented: $showSettings) {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Settings").font(.headline)
-                    Spacer()
-                    Button("Done") { showSettings = false }
-                        .keyboardShortcut(.defaultAction)
-                }
-                .padding(12)
-                Divider()
-                SettingsView()
-            }
         }
     }
 

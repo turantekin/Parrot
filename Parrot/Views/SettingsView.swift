@@ -2,6 +2,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    /// True when rendered inside the main window's detail pane (wide, fills the
+    /// space); false for the standalone Cmd-, Settings window, which needs a
+    /// fixed sane size.
+    var isEmbedded = false
+
     @Environment(RecordingManager.self) private var recordingManager
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
@@ -46,7 +51,9 @@ struct SettingsView: View {
                     Label("Appearance", systemImage: "paintbrush")
                 }
         }
-        .frame(width: 520, height: 440)
+        .frame(width: isEmbedded ? nil : 520, height: isEmbedded ? nil : 440)
+        .frame(maxWidth: isEmbedded ? .infinity : nil,
+               maxHeight: isEmbedded ? .infinity : nil)
     }
 
     // MARK: - General Tab

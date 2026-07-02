@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var selectedMeeting: Meeting?
     @State private var showDashboard = true
+    @State private var showSettings = false
     @State private var searchText = ""
     @State private var hasLoadedModel = false
 
@@ -14,12 +15,15 @@ struct ContentView: View {
             SidebarView(
                 selectedMeeting: $selectedMeeting,
                 showDashboard: $showDashboard,
+                showSettings: $showSettings,
                 searchText: $searchText
             )
             .navigationSplitViewColumnWidth(min: 215, ideal: 236, max: 320)
         } detail: {
             if recordingManager.isRecording {
                 LiveRecordingView()
+            } else if showSettings {
+                settingsPane
             } else if showDashboard {
                 DashboardView(
                     selectedMeeting: $selectedMeeting,
@@ -46,6 +50,26 @@ struct ContentView: View {
             hasLoadedModel = true
             await recordingManager.prepare(modelContext: modelContext)
         }
+    }
+
+    /// Settings in the main pane — the old sheet was a cramped 520pt popup.
+    private var settingsPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Settings")
+                .font(Theme.Typography.title(24))
+                .foregroundStyle(Theme.Colors.ink)
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
+
+            SettingsView(isEmbedded: true)
+                .frame(maxWidth: 860)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.Colors.canvas)
     }
 }
 
