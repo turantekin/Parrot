@@ -14,6 +14,7 @@ struct DashboardView: View {
     @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
 
     @State private var errorMessage: String?
+    @State private var showImporter = false
     @AppStorage("copilotEnabled") private var copilotEnabled = false
 
     var body: some View {
@@ -76,18 +77,52 @@ struct DashboardView: View {
             .disabled(!recordingManager.transcriptionEngine.isReady)
 
             Text("Start recording")
-                .font(.system(size: 16, weight: .semibold))
+                .font(Theme.Typography.sans(16, .semibold))
                 .foregroundStyle(Theme.Colors.ink)
 
             Text("Captures system audio + your mic, transcribed on-device.")
                 .font(Theme.Typography.secondary)
                 .foregroundStyle(Theme.Colors.ink2)
 
+            importButton
+                .padding(.top, 4)
+
             if copilotEnabled {
                 profilePicker
                 callBriefField
             }
         }
+    }
+
+    /// Bring an existing recording in and transcribe it — the alternative to
+    /// capturing live. Disabled while recording (shared WhisperKit).
+    private var importButton: some View {
+        Button {
+            showImporter = true
+        } label: {
+            Label("Import a recording", systemImage: "square.and.arrow.down")
+                .font(Theme.Typography.sans(13, .medium))
+                .foregroundStyle(Theme.Colors.ink)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Theme.Colors.chip, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(recordingManager.isRecording || recordingManager.importProgress != nil
+                  || !recordingManager.transcriptionEngine.isReady)
+        .fileImporter(isPresented: $showImporter,
+                      allowedContentTypes: AudioImport.contentTypes) { result in
+            if case .success(let url) = result { startImport(url) }
+        }
+    }
+
+    private func startImport(_ url: URL) {
+        guard let meeting = recordingManager.importAudioFile(from: url, modelContext: modelContext) else {
+            errorMessage = "Couldn't import that file. Make sure it's an audio file and nothing else is recording."
+            return
+        }
+        selectedMeeting = meeting
+        showDashboard = false
     }
 
     private var profilePicker: some View {
@@ -97,8 +132,8 @@ struct DashboardView: View {
                     let isActive = profileStore.activeProfile?.id == profile.id
                     Button { profileStore.setActive(profile) } label: {
                         HStack(spacing: 5) {
-                            Image(systemName: profile.iconSystemName).font(.caption)
-                            Text(profile.name).font(.system(size: 12.5, weight: .medium))
+                            Image(systemName: profile.iconSystemName).font(.appCaption)
+                            Text(profile.name).font(Theme.Typography.sans(12.5, .medium))
                         }
                         .padding(.horizontal, 11).padding(.vertical, 6)
                         .background(isActive ? Theme.Colors.accent : Theme.Colors.chip,
@@ -118,7 +153,7 @@ struct DashboardView: View {
         @Bindable var recordingManager = recordingManager
         return HStack(spacing: 6) {
             Image(systemName: "sparkles")
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.purple)
 
             TextField(
@@ -126,7 +161,7 @@ struct DashboardView: View {
                 text: $recordingManager.nextCallBrief
             )
             .textFieldStyle(.roundedBorder)
-            .font(.caption)
+            .font(.appCaption)
         }
         .frame(maxWidth: 420)
         .padding(.top, 4)
@@ -140,13 +175,13 @@ struct DashboardView: View {
         case .notLoaded:
             Label("Model not loaded", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
-                .font(.caption)
+                .font(.appCaption)
         case .loading:
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
                 Text("Loading WhisperKit model...")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
         case .downloading(let progress):
@@ -154,17 +189,17 @@ struct DashboardView: View {
                 ProgressView(value: progress)
                     .frame(width: 200)
                 Text("Downloading model... \(Int(progress * 100))%")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
         case .ready:
             Label("Ready to record", systemImage: "checkmark.circle")
                 .foregroundStyle(.green)
-                .font(.caption)
+                .font(.appCaption)
         case .error(let message):
             Label(message, systemImage: "xmark.circle")
                 .foregroundStyle(.red)
-                .font(.caption)
+                .font(.appCaption)
         }
     }
 
@@ -258,11 +293,11 @@ struct DashboardMeetingRow: View {
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
                 Text(meeting.title)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(Theme.Typography.sans(13.5, .semibold))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(Theme.Typography.sans(12))
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
             }

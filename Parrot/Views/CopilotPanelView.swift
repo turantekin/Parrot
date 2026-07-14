@@ -66,13 +66,13 @@ struct CopilotPanelView: View {
                 .foregroundStyle(Theme.Colors.accent)
 
             Text("Copilot")
-                .font(.headline)
+                .font(.appHeadline)
 
             Spacer()
 
             if let percent = engine.userTalkPercent {
                 Text("You \(percent)%")
-                    .font(.caption)
+                    .font(.appCaption)
                     .monospacedDigit()
                     .foregroundStyle(percent > 70 ? .orange : .secondary)
                     .help("Your share of the conversation so far")
@@ -90,17 +90,17 @@ struct CopilotPanelView: View {
         case .listening:
             HStack(spacing: 5) {
                 Circle().fill(.green).frame(width: 7, height: 7)
-                Text("Listening").font(.caption).foregroundStyle(.secondary)
+                Text("Listening").font(.appCaption).foregroundStyle(.secondary)
             }
         case .analyzing:
             HStack(spacing: 5) {
                 ProgressView().controlSize(.mini)
-                Text("Thinking…").font(.caption).foregroundStyle(.secondary)
+                Text("Thinking…").font(.appCaption).foregroundStyle(.secondary)
             }
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
-                .font(.caption)
+                .font(.appCaption)
         default:
             EmptyView()
         }
@@ -114,10 +114,10 @@ struct CopilotPanelView: View {
         case .needsAPIKey:
             VStack(spacing: 12) {
                 Image(systemName: "key.fill")
-                    .font(.title2)
+                    .font(.appTitle2)
                     .foregroundStyle(.secondary)
                 Text("Copilot needs a Claude API key to suggest answers in real time.")
-                    .font(.callout)
+                    .font(.appCallout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Open Settings…") {
@@ -166,7 +166,7 @@ struct CopilotPanelView: View {
             HStack(spacing: 10) {
                 if let score = engine.callScore {
                     Text("\(score)")
-                        .font(.system(size: 24, weight: .bold))
+                        .font(Theme.Typography.sans(24, .bold))
                         .monospacedDigit()
                         .foregroundStyle(scoreColor(score))
                         .contentTransition(.numericText())
@@ -187,14 +187,14 @@ struct CopilotPanelView: View {
 
                 if !pinnedBlockers.isEmpty {
                     Label("\(pinnedBlockers.count) open", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Theme.Typography.sans(12, .semibold))
                         .foregroundStyle(.orange)
                         .help("Unresolved blockers — they're at the top of the feed below")
                 }
             }
 
             Text(engine.coachLine ?? "Warming up — the coach reads the room after the first exchanges.")
-                .font(.system(size: 15, weight: .semibold))
+                .font(Theme.Typography.sans(15, .semibold))
                 .foregroundStyle(engine.coachLine == nil ? Theme.Colors.ink3 : Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -215,10 +215,10 @@ struct CopilotPanelView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "ear.badge.waveform")
-                .font(.title2)
+                .font(.appTitle2)
                 .foregroundStyle(.tertiary)
             Text("Listening to the call.\nSuggestions, blockers and action items will appear here as the conversation unfolds.")
-                .font(.system(size: 15))
+                .font(Theme.Typography.sans(15))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
@@ -232,7 +232,7 @@ struct CopilotPanelView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.yellow)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -375,7 +375,7 @@ struct PinnedBlockerRow: View {
                 // real truncation in SwiftUI needs a two-pass text layout.
                 if !expanded && insight.detail.count > 120 {
                     Text("show more")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Theme.Typography.sans(11, .medium))
                         .foregroundStyle(.orange)
                 }
             }
@@ -429,11 +429,11 @@ struct HeroInsightCard: View {
                 Image(systemName: kindStyle.iconSystemName)
                     .font(.system(size: 13, weight: .semibold))
                 Text(kindStyle.label)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Theme.Typography.sans(13, .semibold))
 
                 if kindStyle.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(Theme.Colors.action)
                 }
 
@@ -478,7 +478,7 @@ struct HeroInsightCard: View {
                         }
                     } label: {
                         Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(Theme.Typography.sans(12, .semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(kindStyle.color.opacity(0.18), in: Capsule())
@@ -490,7 +490,7 @@ struct HeroInsightCard: View {
 
                 if let source = insight.source {
                     Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
-                        .font(.system(size: 12))
+                        .font(Theme.Typography.sans(12))
                         .foregroundStyle(Theme.Colors.ink3)
                         .lineLimit(1)
                 }
@@ -545,11 +545,11 @@ struct InsightCard: View {
         Button(action: onToggleCollapse) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.right")
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .foregroundStyle(Theme.Colors.ink3)
 
                 Image(systemName: kindStyle.iconSystemName)
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(kindStyle.color)
 
                 Text(insight.title)
@@ -559,14 +559,14 @@ struct InsightCard: View {
 
                 if kindStyle.isPinned && insight.isHandled {
                     Image(systemName: "checkmark")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(Theme.Colors.action)
                 }
 
                 Spacer()
 
                 Text(insight.formattedCallTime)
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .monospacedDigit()
                     .foregroundStyle(Theme.Colors.ink3)
             }
@@ -584,11 +584,11 @@ struct InsightCard: View {
             HStack(spacing: 6) {
                 Image(systemName: kindStyle.iconSystemName)
                 Text(kindStyle.label)
-                    .font(.caption.weight(.semibold))
+                    .font(.appCaption.weight(.semibold))
 
                 if kindStyle.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(Theme.Colors.action)
                 }
 
@@ -607,7 +607,7 @@ struct InsightCard: View {
                         }
                     } label: {
                         Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                            .font(.caption)
+                            .font(.appCaption)
                     }
                     .buttonStyle(.plain)
                     .help("Copy suggested answer")
@@ -630,7 +630,7 @@ struct InsightCard: View {
 
             if let source = insight.source {
                 Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .foregroundStyle(Theme.Colors.ink3)
             }
         }
@@ -674,7 +674,7 @@ struct SuggestedReplyBox: View {
                 .padding(.top, 3)
 
             Text(reply)
-                .font(.system(size: 14, weight: .medium))
+                .font(Theme.Typography.sans(14, .medium))
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -711,7 +711,7 @@ struct TimestampButton: View {
     var body: some View {
         Button(action: action) {
             Text(insight.formattedCallTime)
-                .font(.caption2)
+                .font(.appCaption2)
                 .monospacedDigit()
                 .underline()
                 .foregroundStyle(.secondary)

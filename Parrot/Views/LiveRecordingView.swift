@@ -75,7 +75,7 @@ struct LiveRecordingView: View {
                     .shadow(color: .red.opacity(0.5), radius: 4)
 
                 Text("Recording")
-                    .font(.headline)
+                    .font(.appHeadline)
                     .foregroundStyle(.red)
             }
 
@@ -83,7 +83,7 @@ struct LiveRecordingView: View {
 
             // Timer
             Text(recordingManager.formattedElapsedTime)
-                .font(.title2)
+                .font(.appTitle2)
                 .monospacedDigit()
                 .fontWeight(.medium)
 
@@ -97,7 +97,7 @@ struct LiveRecordingView: View {
                     }
                 } label: {
                     Image(systemName: "sparkles")
-                        .font(.headline)
+                        .font(.appHeadline)
                         .foregroundStyle(showCopilot ? .purple : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -114,7 +114,7 @@ struct LiveRecordingView: View {
             } label: {
                 Label(recordingManager.isStopping ? "Finalizing…" : "Stop",
                       systemImage: "stop.circle.fill")
-                    .font(.headline)
+                    .font(.appHeadline)
                     .foregroundStyle(recordingManager.isStopping ? Color.secondary : Color.red)
             }
             .buttonStyle(.plain)
@@ -133,7 +133,7 @@ struct LiveRecordingView: View {
             Image(systemName: cap.micActive ? "mic.fill" : "mic.slash.fill")
                 .foregroundStyle(cap.micActive ? .blue : .orange)
             Text(cap.inputDeviceName.isEmpty ? "No input" : cap.inputDeviceName)
-                .font(.caption)
+                .font(.appCaption)
                 .lineLimit(1)
             MicLevelView(level: cap.micLevel)
             if !cap.micActive || cap.micSeemsDead {
@@ -141,7 +141,7 @@ struct LiveRecordingView: View {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
                 } label: {
                     Label("not hearing you — enable mic", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(.orange)
                 }
                 .buttonStyle(.plain)
@@ -150,14 +150,14 @@ struct LiveRecordingView: View {
 
             if cap.echoCancellerStarved {
                 Label("echo cancel inactive", systemImage: "waveform.slash")
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .foregroundStyle(.orange)
                     .help("System audio isn't in the expected format, so speaker bleed may transcribe as \"Me\". Headphones avoid this entirely.")
             }
 
             if let notice = recordingManager.transcriptionEngine.cloudNotice {
                 Label(notice, systemImage: "icloud.slash")
-                    .font(.caption2)
+                    .font(.appCaption2)
                     .foregroundStyle(.orange)
             }
 
@@ -166,7 +166,7 @@ struct LiveRecordingView: View {
             Image(systemName: "speaker.wave.2.fill")
                 .foregroundStyle(.secondary)
             Text(cap.outputDeviceName.isEmpty ? "Output" : cap.outputDeviceName)
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -287,16 +287,20 @@ struct LiveRecordingView: View {
                             .id(segment.id)
                         }
 
-                        // The Granola-style "typing" bubble: interim transcription
-                        // streams in with pulsing dots until the segment commits.
-                        if !recordingManager.transcriptionEngine.currentText.isEmpty {
+                        // The Granola-style "typing" bubble: shows while speech is
+                        // landing — pulsing dots as soon as someone talks, interim
+                        // text when the backend streams it (chunked backends like
+                        // Groq have no interims, so dots carry the liveness).
+                        if !recordingManager.transcriptionEngine.currentText.isEmpty
+                            || recordingManager.transcriptionEngine.isHearingSpeech {
                             TypingBubble(text: recordingManager.transcriptionEngine.currentText)
                                 .id("currentText")
                                 .padding(.top, 8)
                         }
 
                         if recordingManager.currentMeeting?.segments.isEmpty == true
-                            && recordingManager.transcriptionEngine.currentText.isEmpty {
+                            && recordingManager.transcriptionEngine.currentText.isEmpty
+                            && !recordingManager.transcriptionEngine.isHearingSpeech {
                             Text("Parrot is listening...")
                                 .font(Theme.Typography.body)
                                 .foregroundStyle(.tertiary)
@@ -350,7 +354,7 @@ struct LiveRecordingView: View {
                         }
                     } label: {
                         Label("Resume live", systemImage: "arrow.down.to.line")
-                            .font(.caption.weight(.semibold))
+                            .font(.appCaption.weight(.semibold))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(.ultraThinMaterial, in: Capsule())
@@ -419,10 +423,10 @@ struct ChatBubbleRow: View {
             if isFirstOfGroup {
                 HStack(spacing: 6) {
                     Text(segment.speakerLabel ?? "Speaker")
-                        .font(.caption.weight(.medium))
+                        .font(.appCaption.weight(.medium))
                         .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
                     Text(segment.formattedTimestamp)
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .monospacedDigit()
                         .foregroundStyle(Theme.Colors.ink3)
                 }
@@ -455,10 +459,12 @@ struct TypingBubble: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 7) {
-            Text(text)
-                .font(Theme.Typography.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if !text.isEmpty {
+                Text(text)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             TypingDots()
                 .padding(.bottom, 4)
         }

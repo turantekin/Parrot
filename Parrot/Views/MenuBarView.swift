@@ -14,7 +14,7 @@ struct MenuBarView: View {
                         .fill(.red)
                         .frame(width: 8, height: 8)
                     Text("Recording")
-                        .font(.headline)
+                        .font(.appHeadline)
                     Spacer()
                     Text(recordingManager.formattedElapsedTime)
                         .monospacedDigit()
@@ -29,14 +29,14 @@ struct MenuBarView: View {
             } else {
                 // Idle state
                 Text("Parrot")
-                    .font(.headline)
+                    .font(.appHeadline)
 
                 Text(recordingManager.transcriptionEngine.isReady ? "Ready to record" : "Loading model...")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
 
                 Text(profileStore.activeProfile?.name ?? "Default")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
 
                 Button("Start Recording") {

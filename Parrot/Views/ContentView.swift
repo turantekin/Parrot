@@ -45,11 +45,31 @@ struct ContentView: View {
                 EmptyStateView()
             }
         }
+        // Drop an audio file anywhere in the window to import it — off while
+        // recording, which owns the shared WhisperKit.
+        .audioImportDrop(enabled: !recordingManager.isRecording) { url in
+            startImport(url)
+        }
+        .overlay(alignment: .top) {
+            if let progress = recordingManager.importProgress {
+                ImportingBanner(progress: progress)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: recordingManager.importProgress)
         .task {
             guard !hasLoadedModel else { return }
             hasLoadedModel = true
             await recordingManager.prepare(modelContext: modelContext)
         }
+    }
+
+    private func startImport(_ url: URL) {
+        guard let meeting = recordingManager.importAudioFile(from: url, modelContext: modelContext) else { return }
+        selectedMeeting = meeting
+        showDashboard = false
+        showSettings = false
     }
 
     /// Settings in the main pane — the old sheet was a cramped 520pt popup.
@@ -82,7 +102,7 @@ struct EmptyStateView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
             Text("Select a meeting or start recording")
-                .font(.title3)
+                .font(.appTitle3)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

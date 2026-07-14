@@ -77,3 +77,6 @@ targets:
         # Points Finder/Dock at the asset-catalog icon (asset compiler doesn't
         # inject this when the Info.plist is static).
         CFBundleIconName: AppIcon
+        # Auto-register bundled fonts (Parrot/Fonts/*.otf, flattened into
+        # Resources by xcodegen) — the whole UI runs on Inter.
+        ATSApplicationFontsPath: "."

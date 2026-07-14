@@ -60,7 +60,7 @@ struct SidebarView: View {
                         let rows = filtered(group)
                         if !rows.isEmpty {
                             Text(key)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(Theme.Typography.sans(11, .semibold))
                                 .foregroundStyle(Theme.Colors.ink3)
                                 .padding(.horizontal, 10)
                                 .padding(.top, 9)
@@ -166,7 +166,7 @@ private struct NavRow: View {
                     .frame(width: 16)
                     .foregroundStyle(selected ? Theme.Colors.accent : Theme.Colors.ink2)
                 Text(title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    .font(Theme.Typography.sans(13, selected ? .semibold : .medium))
                     .foregroundStyle(Theme.Colors.ink)
                 Spacer()
             }
@@ -199,17 +199,17 @@ private struct MeetingRow: View {
             statusDot
             VStack(alignment: .leading, spacing: 1) {
                 Text(meeting.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Theme.Typography.sans(12.5, .semibold))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
                 Text(subtitle)
-                    .font(.system(size: 11.5))
+                    .font(Theme.Typography.sans(11.5))
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             Text(meeting.date, style: .time)
-                .font(.system(size: 11))
+                .font(Theme.Typography.sans(11))
                 .monospacedDigit()
                 .foregroundStyle(Theme.Colors.ink3)
         }
@@ -246,17 +246,17 @@ private struct AccountChip: View {
     var body: some View {
         HStack(spacing: 9) {
             Text(initials)
-                .font(.system(size: 10, weight: .semibold))
+                .font(Theme.Typography.sans(10, .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Theme.Colors.accent, in: Circle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(name)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Theme.Typography.sans(12.5, .semibold))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
                 Text("On-device · Private")
-                    .font(.system(size: 11))
+                    .font(Theme.Typography.sans(11))
                     .foregroundStyle(Theme.Colors.ink2)
             }
             Spacer()

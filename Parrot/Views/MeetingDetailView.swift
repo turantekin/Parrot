@@ -41,11 +41,15 @@ struct MeetingDetailView: View {
         VStack(spacing: 0) {
             meetingHeader
 
+            if meeting.wasRecovered { recoveredBanner }
+
             Divider()
 
             // Audio player bar — persists above the tabs (drives transcript +
-            // insight seeking).
-            if meeting.status == .done || meeting.status == .processing {
+            // insight seeking). Needs a real audio file: a recovered call whose .caf
+            // couldn't be finalized has its path cleared, so hide the dead control.
+            if meeting.status == .done || meeting.status == .processing,
+               meeting.systemAudioPath.nilIfEmpty != nil {
                 audioPlayerBar
                 Divider()
             }
@@ -117,7 +121,7 @@ struct MeetingDetailView: View {
                     meeting.title = titleText
                     editingTitle = false
                 })
-                .font(.title)
+                .font(.appTitle)
                 .textFieldStyle(.plain)
             } else {
                 Text(meeting.title)
@@ -136,7 +140,7 @@ struct MeetingDetailView: View {
                 }
                 statusBadge
             }
-            .font(.caption)
+            .font(.appCaption)
             .foregroundStyle(.secondary)
 
             // What the AI cost for this call (estimated); old meetings have no data.
@@ -154,7 +158,7 @@ struct MeetingDetailView: View {
                 .textFieldStyle(.plain)
                 .frame(maxWidth: 240)
             }
-            .font(.caption)
+            .font(.appCaption)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -180,7 +184,7 @@ struct MeetingDetailView: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .font(.caption)
+            .font(.appCaption)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showCostBreakdown, arrowEdge: .bottom) {
@@ -223,6 +227,23 @@ struct MeetingDetailView: View {
         .frame(width: 320)
     }
 
+    /// Honest heads-up on a salvaged call: its transcript is intact but the tail
+    /// and audio playback may be gone.
+    private var recoveredBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.clockwise.circle")
+                .font(.appCallout)
+            Text("Recovered from an interrupted recording — the last few seconds and audio playback may be missing.")
+                .font(Theme.Typography.caption)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Theme.Colors.ink2)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.chip)
+    }
+
     @ViewBuilder
     private var statusBadge: some View {
         switch meeting.status {
@@ -233,7 +254,14 @@ struct MeetingDetailView: View {
             Label("Failed", systemImage: "xmark.circle")
                 .foregroundStyle(.red)
         default:
-            EmptyView()
+            // A recovered call is otherwise `.done`; flag it so it doesn't read as
+            // a clean recording.
+            if meeting.wasRecovered {
+                Label("Recovered", systemImage: "arrow.clockwise.circle")
+                    .foregroundStyle(Theme.Colors.ink2)
+            } else {
+                EmptyView()
+            }
         }
     }
 
@@ -245,7 +273,7 @@ struct MeetingDetailView: View {
                 togglePlayback()
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
+                    .font(.appTitle3)
             }
             .buttonStyle(.plain)
 
@@ -276,7 +304,7 @@ struct MeetingDetailView: View {
 
             // Time display
             Text("\(formatTime(playbackTime)) / \(formatTime(meeting.duration))")
-                .font(.caption)
+                .font(.appCaption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 100)
@@ -409,7 +437,7 @@ struct MeetingDetailView: View {
             ProgressView()
                 .controlSize(.small)
             Text("Identifying speakers...")
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)
@@ -562,7 +590,7 @@ struct TranscriptSegmentRow: View {
         HStack(alignment: .top, spacing: 8) {
             // Timestamp
             Text(segment.formattedTimestamp)
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .frame(width: 40, alignment: .trailing)
@@ -570,7 +598,7 @@ struct TranscriptSegmentRow: View {
             // Speaker label
             if let speaker = displayLabel {
                 Text(speaker)
-                    .font(.caption)
+                    .font(.appCaption)
                     .fontWeight(.medium)
                     .foregroundStyle(speakerColor(for: speaker))
                     .frame(width: 70, alignment: .leading)
@@ -607,7 +635,7 @@ struct StoredInsightRow: View {
         HStack(alignment: .top, spacing: 8) {
             Button(action: onSeek) {
                 Text(insight.formattedCallTime)
-                    .font(.caption)
+                    .font(.appCaption)
                     .monospacedDigit()
                     .underline()
                     .foregroundStyle(.secondary)
@@ -616,7 +644,7 @@ struct StoredInsightRow: View {
             .help("Play from this moment")
 
             Image(systemName: kindStyle.iconSystemName)
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(kindStyle.color)
                 .frame(width: 16)
 
@@ -630,7 +658,7 @@ struct StoredInsightRow: View {
                             insight.isHandled ? "Handled" : "Unresolved",
                             systemImage: insight.isHandled ? "checkmark" : "exclamationmark.circle"
                         )
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(insight.isHandled ? Color.green : .orange)
                     }
                 }
@@ -649,7 +677,7 @@ struct StoredInsightRow: View {
 
                 if let source = insight.source {
                     Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(.tertiary)
                 }
             }

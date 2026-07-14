@@ -31,13 +31,34 @@ final class TranscriptionEngine {
     /// active. Audio routes straight to them instead of the chunk buffers.
     /// Same benign cross-thread pattern as `isCapturing`.
     private var deepgramStreamers: [AudioSource: DeepgramStreamer] = [:]
-    /// Set on the first Deepgram failure: audio falls back to the local
-    /// buffer/loop path for the rest of the session.
-    private var deepgramFailed = false
+    /// Sources whose Deepgram socket has failed: their audio falls back to the
+    /// local buffer/loop path for the rest of the session. Per-source, so one
+    /// dead socket (a mic that stopped feeding it) doesn't take the other,
+    /// healthy stream off Deepgram with it. Guarded by `bufferLock`.
+    private var deepgramFailedSources: Set<AudioSource> = []
+    /// Offset added to locally-derived timestamps, per source. Sample counts
+    /// don't measure dead time: when a stream falls off Deepgram mid-call (or
+    /// the mic restarts after a device change) the counter is way behind the
+    /// meeting clock, and without re-anchoring the fallback segments restart
+    /// at 0:00 — the bug that filed the back half of a call under minute 3.
+    /// Guarded by `bufferLock`.
+    private var localClockOffset: [AudioSource: TimeInterval] = [:]
+    /// Total samples consumed (and freed) per stream by the local loop. The
+    /// buffers only ever hold not-yet-transcribed samples, so memory stays flat
+    /// over a long call; these running totals keep segment timestamps absolute.
+    /// Guarded by `bufferLock` (the loop and `reanchorLocalClock` both touch it).
+    private var consumedSamples: [AudioSource: Int] = [:]
+    private var meetingStartTime = Date()
 
     private(set) var isReady = false
     private(set) var isTranscribing = false
     private(set) var currentText = ""
+    /// True while live audio carries speech-level energy. Drives the typing
+    /// bubble on chunked backends (Groq, local Whisper) that have no interim
+    /// stream — the bubble shows dots while someone talks, text when interims
+    /// exist. Same benign cross-thread pattern as the streamers dict.
+    private(set) var isHearingSpeech = false
+    private var lastSpeechAt = Date.distantPast
     private(set) var modelState: ModelState = .notLoaded
     /// One-line notice when a cloud backend can't be used (missing key, API
     /// errors) and the session is running on-device instead. Shown in the
@@ -93,8 +114,24 @@ final class TranscriptionEngine {
         let frameCount = Int(buffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
 
+        // Speech-presence for the typing bubble: mark speech on energetic
+        // buffers (same 0.002 floor as the chunk loop), release after 1 s of
+        // silence — capture keeps feeding silent buffers, so the flip-off is
+        // driven from here too.
+        if isTranscribing, frameCount > 0 {
+            let energy = samples.reduce(into: Float(0)) { $0 += abs($1) } / Float(frameCount)
+            if energy > 0.002 { lastSpeechAt = Date() }
+            let hearing = Date().timeIntervalSince(lastSpeechAt) < 1.0
+            if hearing != isHearingSpeech {
+                Task { @MainActor in self.isHearingSpeech = hearing }
+            }
+        }
+
         // Streaming backend: straight to the socket, no chunk buffering.
-        if !deepgramFailed, let streamer = deepgramStreamers[source] {
+        let streamer: DeepgramStreamer? = bufferLock.withLock {
+            deepgramFailedSources.contains(source) ? nil : deepgramStreamers[source]
+        }
+        if let streamer {
             streamer.send(samples)
             return
         }
@@ -121,7 +158,12 @@ final class TranscriptionEngine {
         var backend = TranscriptionBackend.selected
         var groqKey: String?
         cloudNotice = nil
-        deepgramFailed = false
+        self.meetingStartTime = meetingStartTime
+        bufferLock.withLock {
+            deepgramFailedSources = []
+            localClockOffset = [:]
+            consumedSamples = [.me: 0, .them: 0]
+        }
         deepgramStreamers = [:]
         if backend == .groq {
             groqKey = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!)
@@ -150,23 +192,8 @@ final class TranscriptionEngine {
         )
 
         // Custom vocabulary: prime Whisper with the user's names/terms so it stops
-        // mangling proper nouns (e.g. "LaunchEase" → "Lawn Cheese"). Fed as an
-        // initial prompt, the standard Whisper mechanism for biasing spelling.
-        let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer {
-            let terms = vocab
-                .components(separatedBy: CharacterSet(charactersIn: ",\n"))
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            if !terms.isEmpty {
-                let promptText = "Glossary: " + terms.joined(separator: ", ") + "."
-                let tokens = tokenizer.encode(text: " " + promptText)
-                    .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
-                decodeOptions.promptTokens = tokens
-                decodeOptions.usePrefillPrompt = true
-            }
-        }
+        // mangling proper nouns (e.g. "LaunchEase" → "Lawn Cheese").
+        primeGlossary(into: &decodeOptions)
 
         // Quality + anti-garbage decoding. We derive each segment's timestamps from
         // sample offsets, so suppress Whisper's special + timestamp tokens — they were
@@ -194,10 +221,6 @@ final class TranscriptionEngine {
             // Capping keeps every emitted segment ~2 s; under sustained load
             // latency grows gracefully instead of dumping a paragraph.
             let maxChunkSamples = 32000
-            // Total samples consumed (and freed) per stream. The audio buffers only
-            // ever hold not-yet-transcribed samples, so memory stays flat over a long
-            // call; these running totals keep segment timestamps absolute regardless.
-            var consumedSamples: [AudioSource: Int] = [.me: 0, .them: 0]
 
             while !Task.isCancelled {
                 // isTranscribing == false flips the loop into drain mode: keep
@@ -211,22 +234,22 @@ final class TranscriptionEngine {
                 for source in AudioSource.allCases {
                     // Pull one bounded window for this stream under the lock —
                     // freeing the consumed audio so it doesn't pile up for the whole
-                    // call, and avoiding any index race with a reset.
-                    let chunk: [Float] = self.bufferLock.withLock {
+                    // call, and avoiding any index race with a reset. The sample
+                    // counter and clock offset ride along in the same lock.
+                    let (chunk, startSample, clockOffset): ([Float], Int, TimeInterval) = self.bufferLock.withLock {
                         guard let buffered = self.audioBuffers[source],
-                              buffered.count >= (draining ? 1 : chunkSize) else { return [] }
+                              buffered.count >= (draining ? 1 : chunkSize) else { return ([], 0, 0) }
                         let take = min(buffered.count, maxChunkSamples)
                         self.audioBuffers[source] = Array(buffered[take...])
-                        return Array(buffered[..<take])
+                        let start = self.consumedSamples[source] ?? 0
+                        self.consumedSamples[source] = start + take
+                        return (Array(buffered[..<take]), start, self.localClockOffset[source] ?? 0)
                     }
                     guard !chunk.isEmpty else { continue }
                     didWork = true
 
-                    let startSample = consumedSamples[source] ?? 0
-                    let endSample = startSample + chunk.count
-                    consumedSamples[source] = endSample
-                    let startTime = Double(startSample) / 16000.0
-                    let endTime = Double(endSample) / 16000.0
+                    let startTime = Double(startSample) / 16000.0 + clockOffset
+                    let endTime = Double(startSample + chunk.count) / 16000.0 + clockOffset
 
                     // Skip near-silent chunks — saves Whisper passes and avoids
                     // hallucinated text on silence. (0.001 let too much room
@@ -285,7 +308,10 @@ final class TranscriptionEngine {
                             guard !Self.isLikelyHallucination(text, energy: energy) else { continue }
 
                             await MainActor.run {
-                                self.currentText = text
+                                // Clear the interim line — the text lives in the
+                                // committed segment now; leaving it here kept a
+                                // duplicate "typing" bubble on screen.
+                                self.currentText = ""
                                 self.onSegment?(TranscriptionResult(
                                     text: text,
                                     source: source,
@@ -333,7 +359,9 @@ final class TranscriptionEngine {
                 guard !cleanedText.isEmpty,
                       !Self.isLikelyHallucination(cleanedText, energy: 1.0) else { return }
                 Task { @MainActor in
-                    self.currentText = cleanedText
+                    // Same as the Whisper path: the final belongs to the committed
+                    // segment; the interim line must clear or it duplicates.
+                    self.currentText = ""
                     self.onSegment?(TranscriptionResult(
                         text: cleanedText, source: source,
                         startTime: start, endTime: end, confidence: nil))
@@ -342,13 +370,92 @@ final class TranscriptionEngine {
             streamer.onError = { [weak self] message in
                 guard let self else { return }
                 NSLog("Parrot: Deepgram stream failed (\(source.label)) — \(message)")
-                self.deepgramFailed = true
+                // Only this stream falls back to local; the other socket keeps
+                // streaming. Re-anchor before the first fallback sample lands.
+                self.bufferLock.withLock { _ = self.deepgramFailedSources.insert(source) }
+                self.reanchorLocalClock(source: source)
                 Task { @MainActor in
-                    self.cloudNotice = "Deepgram error — switched to on-device Whisper"
+                    self.cloudNotice = "Deepgram error — \(source.label) stream now on on-device Whisper"
                 }
             }
             streamer.connect(apiKey: apiKey, language: language)
             deepgramStreamers[source] = streamer
+        }
+    }
+
+    /// Re-anchor a stream's locally-derived timestamps to "now" in meeting time.
+    /// Called when a stream falls off Deepgram mid-call and when the mic capture
+    /// restarts after an input-device change — in both cases the sample counter
+    /// wasn't ticking through the gap, so the next locally-transcribed segments
+    /// would otherwise land minutes early.
+    func reanchorLocalClock(source: AudioSource) {
+        let elapsed = Date().timeIntervalSince(meetingStartTime)
+        bufferLock.withLock {
+            localClockOffset[source] = elapsed - Double(consumedSamples[source] ?? 0) / 16000.0
+        }
+    }
+
+    /// Prime Whisper with the user's custom glossary so proper nouns aren't
+    /// mangled — shared by the live loop and file import. Fed as an initial
+    /// prompt, the standard Whisper mechanism for biasing spelling.
+    private func primeGlossary(into options: inout DecodingOptions) {
+        let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer else { return }
+        let terms = vocab
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard !terms.isEmpty else { return }
+        let promptText = "Glossary: " + terms.joined(separator: ", ") + "."
+        let tokens = tokenizer.encode(text: " " + promptText)
+            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        options.promptTokens = tokens
+        options.usePrefillPrompt = true
+    }
+
+    // MARK: - File Import (whole-file, on-device)
+
+    /// Transcribe a complete audio file on-device — the import path. Runs fully
+    /// independent of the live streaming loop (never touches `isTranscribing` or
+    /// the chunk buffers), so importing can't disturb an in-flight recording.
+    /// Unlike the live loop it keeps Whisper's own segment timestamps: the loop
+    /// derives them from sample offsets and suppresses them, but for a whole file
+    /// Whisper's per-utterance boundaries are exactly what we want.
+    /// WhisperKit loads + resamples any format (m4a/mp3/wav/aac/caf) to 16 kHz mono.
+    func transcribeFile(url: URL) async throws -> [TranscriptionResult] {
+        guard let whisperKit else { throw RecordingError.modelNotReady }
+
+        let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        let language = (setting == nil || setting == "auto") ? nil : setting
+
+        var options = DecodingOptions(
+            task: .transcribe,
+            language: language,
+            detectLanguage: language == nil
+        )
+        // Same anti-garbage decoding as the live loop, but WITHOUT
+        // `withoutTimestamps` — we want the segment timestamps here.
+        options.skipSpecialTokens = true
+        options.compressionRatioThreshold = 2.4
+        options.logProbThreshold = -1.0
+        options.noSpeechThreshold = 0.6
+        options.temperatureFallbackCount = 3
+        primeGlossary(into: &options)
+
+        let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
+
+        // One mixed track, so every segment is "Them"; diarization splits it later.
+        return results.flatMap(\.segments).compactMap { segment in
+            let text = Self.cleaned(segment.text)
+            guard !text.isEmpty else { return nil }
+            return TranscriptionResult(
+                text: text,
+                source: .them,
+                startTime: Double(segment.start),
+                endTime: Double(segment.end),
+                confidence: segment.avgLogprob
+            )
         }
     }
 
@@ -365,8 +472,12 @@ final class TranscriptionEngine {
             for streamer in deepgramStreamers.values { streamer.finish() }
             try? await Task.sleep(for: .seconds(1.2))  // grace for final results
             for streamer in deepgramStreamers.values { streamer.close() }
-            if !deepgramFailed {
-                bufferLock.withLock { audioBuffers = [.me: [], .them: []] }
+            // Clear the pre-connection buffers of streams that stayed on
+            // Deepgram; a fallen-back stream's buffered tail still needs draining.
+            bufferLock.withLock {
+                for source in AudioSource.allCases where !deepgramFailedSources.contains(source) {
+                    audioBuffers[source] = []
+                }
             }
             deepgramStreamers = [:]
         }
@@ -380,6 +491,7 @@ final class TranscriptionEngine {
         }
 
         currentText = ""
+        isHearingSpeech = false
     }
 
     /// The classic Whisper silence hallucinations — phrases the model invents

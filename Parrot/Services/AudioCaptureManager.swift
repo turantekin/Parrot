@@ -73,6 +73,12 @@ final class AudioCaptureManager: NSObject {
     /// stream they came from (mic = the user, system = everyone else).
     var onAudioBuffer: ((AVAudioPCMBuffer, AudioSource) -> Void)?
 
+    /// Called after the mic engine is rebuilt following an input-device change,
+    /// so the transcription clock for "Me" can be re-anchored past the dead gap.
+    var onMicRestarted: (() -> Void)?
+    /// Observer for AVAudioEngineConfigurationChange on the current engine.
+    private var micRestartObserver: NSObjectProtocol?
+
     private let sampleRate: Double = 16000
     private let channels: UInt32 = 1
 
@@ -133,6 +139,8 @@ final class AudioCaptureManager: NSObject {
         }
 
         // Stop mic engine
+        if let micRestartObserver { NotificationCenter.default.removeObserver(micRestartObserver) }
+        micRestartObserver = nil
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine = nil
@@ -275,6 +283,46 @@ final class AudioCaptureManager: NSObject {
         engine.prepare()
         try engine.start()
         self.audioEngine = engine
+
+        // AVAudioEngine stops itself when the input device changes or vanishes
+        // (dead AirPods, a manual input switch in System Settings) and never
+        // comes back on its own — a 1-hour call once lost its mic at minute 44
+        // this way. Rebuild the tap on whatever the new default input is.
+        if let micRestartObserver { NotificationCenter.default.removeObserver(micRestartObserver) }
+        micRestartObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            self?.restartMicCapture()
+        }
+    }
+
+    /// Tear down the stopped engine and rebuild the mic tap on the current
+    /// default input. Retries for a while — a Bluetooth handoff takes seconds
+    /// to settle, and mid-transition there may briefly be no input device.
+    private func restartMicCapture(attempt: Int = 0) {
+        guard isCapturing else { return }
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+        do {
+            try startMicCapture()
+            micActive = true
+            inputDeviceName = Self.defaultDeviceName(input: true)
+            NSLog("Parrot: mic restarted after device change — input: \(inputDeviceName)")
+            // ponytail: the mic .caf keeps writing continuously, so its file
+            // timeline compresses by the dead gap (post-call polish would place
+            // late "Me" words early); pad silence on restart if that matters.
+            onMicRestarted?()
+        } catch {
+            micActive = false
+            guard attempt < 10 else {
+                NSLog("Parrot: mic restart gave up after \(attempt) retries — \(error.localizedDescription)")
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.restartMicCapture(attempt: attempt + 1)
+            }
+        }
     }
 
     // MARK: - Audio File Writing

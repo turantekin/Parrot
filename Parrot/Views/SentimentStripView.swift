@@ -15,7 +15,7 @@ struct SentimentStripView: View {
             HStack(spacing: 12) {
                 if let read, !read.isEmpty {
                     Text(read.capitalized)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Theme.Typography.sans(12, .semibold))
                         .foregroundStyle(Theme.Colors.ink2)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -42,7 +42,7 @@ struct SentimentStripView: View {
                 .fill(Color(hex: gauge.colorHex))
                 .frame(width: 6, height: 6)
             Text(gauge.label)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.Typography.sans(12, .medium))
                 .foregroundStyle(Theme.Colors.ink2)
                 .lineLimit(1)
             ZStack(alignment: .leading) {

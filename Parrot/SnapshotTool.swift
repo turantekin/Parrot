@@ -203,10 +203,10 @@ enum CopilotSnapshot {
                 .overlay(Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(color))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(Theme.Typography.sans(13.5, .semibold))
                     .foregroundStyle(Theme.Colors.ink)
                 Text(blurb)
-                    .font(.system(size: 12))
+                    .font(Theme.Typography.sans(12))
                     .foregroundStyle(Theme.Colors.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -280,7 +280,7 @@ enum SnapshotIO {
 @MainActor
 enum ReportSnapshot {
     static func write(to path: String) {
-        // A faithful slice of the report screen: serif title + meta + the styled
+        // A faithful slice of the report screen: title + meta + the styled
         // report content (the part that was previously a raw-text dump).
         let view = VStack(alignment: .leading, spacing: 0) {
             Text("Parenting coaching session")

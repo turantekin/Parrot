@@ -29,6 +29,11 @@ final class Meeting {
     /// panel) and editable afterwards (Notes tab). Defaulted → old rows migrate.
     var notes: String = ""
 
+    /// True when this meeting was salvaged from an interrupted recording (crash or
+    /// force-quit) on the next launch, rather than finished cleanly. Drives the
+    /// "Recovered" badge/banner. Defaulted → old rows migrate.
+    var wasRecovered: Bool = false
+
     /// Profile recorded under (nil for pre-Phase-C meetings).
     var profile: CallProfile?
     /// One-line brief for this specific call (was ephemeral nextCallBrief).

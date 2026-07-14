@@ -72,11 +72,11 @@ struct OnboardingView: View {
                 .foregroundStyle(Color.accentColor)
 
             Text("Meet Parrot")
-                .font(.largeTitle)
+                .font(.appLargeTitle)
                 .fontWeight(.bold)
 
             Text("Your private, on-device meeting recorder.\nParrot listens, transcribes, and remembers — all locally on your Mac.")
-                .font(.body)
+                .font(.appBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
@@ -96,7 +96,7 @@ struct OnboardingView: View {
             Spacer()
 
             Text("Permissions Needed")
-                .font(.title)
+                .font(.appTitle)
                 .fontWeight(.semibold)
 
             VStack(alignment: .leading, spacing: 16) {
@@ -137,7 +137,7 @@ struct OnboardingView: View {
             .frame(maxWidth: 380)
 
             Text("All processing happens locally. Nothing leaves your Mac.")
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -159,11 +159,11 @@ struct OnboardingView: View {
             Spacer()
 
             Text("Choose a Model")
-                .font(.title)
+                .font(.appTitle)
                 .fontWeight(.semibold)
 
             Text("Parrot uses WhisperKit for transcription.\nLarger models are more accurate but use more memory.")
-                .font(.body)
+                .font(.appBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
@@ -224,17 +224,17 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Downloading and loading model...")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
         case .ready:
             Label("Model ready!", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-                .font(.callout)
+                .font(.appCallout)
         case .error(let msg):
             Label(msg, systemImage: "xmark.circle")
                 .foregroundStyle(.red)
-                .font(.caption)
+                .font(.appCaption)
         default:
             Button("Download Model") {
                 selectModel(selectedModel)
@@ -256,15 +256,15 @@ struct PermissionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.appTitle2)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.headline)
+                    .font(.appHeadline)
                 Text(description)
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.secondary)
             }
 
@@ -273,7 +273,7 @@ struct PermissionRow: View {
             if isGranted {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                    .font(.title3)
+                    .font(.appTitle3)
             } else {
                 Button("Grant") {
                     action()
@@ -299,9 +299,9 @@ struct ModelOption: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name)
-                        .font(.headline)
+                        .font(.appHeadline)
                     Text("\(description) (\(size))")
-                        .font(.caption)
+                        .font(.appCaption)
                         .foregroundStyle(.secondary)
                 }
 

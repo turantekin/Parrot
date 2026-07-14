@@ -1,83 +1,95 @@
 import SwiftUI
 
-/// Parrot's design system — a calm, editorial "Granola-style" language: near-white
-/// canvas, serif headings, generous whitespace, hairline dividers, and a single calm
-/// blue-teal accent. See docs/IMPROVEMENT-ROADMAP.md (Phase B) and the mockup at
-/// .context/mockups/parrot-redesign.html.
+/// Parrot's design system — the tweakcn "Claude +" shadcn theme rendered natively:
+/// Outfit typography, warm cream neutrals, terracotta accent, round 16pt radii.
+/// Source: https://tweakcn.com/themes/cmdght103000n04lh3e2ae93r
+/// Fonts are bundled in Parrot/Fonts and auto-registered via
+/// ATSApplicationFontsPath in project.yml.
 ///
-/// Colors adapt to light/dark so dark mode isn't regressed; the light values match
-/// the approved mockup.
+/// Colors adapt to light/dark; values track the theme's light/dark CSS variables.
 enum Theme {
 
     // MARK: - Colors
 
     enum Colors {
-        /// App canvas.
-        static let canvas = Color(lightHex: 0xFFFFFF, darkHex: 0x1C1C1E)
-        /// Sidebar / side panels — faint warm off-white in light mode.
-        static let panel = Color(lightHex: 0xFAFAF9, darkHex: 0x242427)
-        /// Chip / segmented-control background.
-        static let chip = Color(lightHex: 0xF4F4F2, darkHex: 0x303034)
-        /// Hairline divider.
-        static let line = Color(lightHex: 0xECECEA, darkHex: 0x39393D)
-        /// Selected row tint.
-        static let selection = Color(lightHex: 0xEEF3EF, darkHex: 0x2C3A3E)
+        /// App canvas — theme background.
+        static let canvas = Color(lightHex: 0xFAF9F5, darkHex: 0x262624)
+        /// Sidebar / side panels — theme sidebar.
+        static let panel = Color(lightHex: 0xF5F4EE, darkHex: 0x1F1E1D)
+        /// Chip / segmented-control background — theme secondary/popover.
+        static let chip = Color(lightHex: 0xE9E6DC, darkHex: 0x30302E)
+        /// Hairline divider — theme border.
+        static let line = Color(lightHex: 0xDAD9D4, darkHex: 0x3E3E38)
+        /// Selected row tint — theme muted.
+        static let selection = Color(lightHex: 0xEDE9DE, darkHex: 0x30302E)
 
-        /// Primary text.
-        static let ink = Color(lightHex: 0x1C1C1E, darkHex: 0xF2F2F4)
-        /// Secondary text.
-        static let ink2 = Color(lightHex: 0x5F6470, darkHex: 0xA0A4AD)
-        /// Tertiary text / timestamps.
-        static let ink3 = Color(lightHex: 0x9AA0AA, darkHex: 0x70747C)
-        /// Slate section labels ("Key points").
-        static let label = Color(lightHex: 0x6B7686, darkHex: 0x9098A6)
+        /// Primary text — theme foreground (warm near-black).
+        static let ink = Color(lightHex: 0x3D3929, darkHex: 0xF1F1EF)
+        /// Secondary text — theme muted-foreground.
+        static let ink2 = Color(lightHex: 0x6E6D68, darkHex: 0xB7B5A9)
+        /// Tertiary text / timestamps (derived — theme has no tertiary step).
+        static let ink3 = Color(lightHex: 0x9A988F, darkHex: 0x8A887D)
+        /// Section labels ("Key points") — theme muted-foreground.
+        static let label = Color(lightHex: 0x6E6D68, darkHex: 0xB7B5A9)
 
-        /// Brand / primary accent — calm blue-teal.
-        static let accent = Color(lightHex: 0x2F7E96, darkHex: 0x57AEC6)
-        /// Action-item semantic (muted green).
-        static let action = Color(lightHex: 0x3F9168, darkHex: 0x5BBE8C)
-        /// Blocker / objection semantic (amber).
-        static let blocker = Color(lightHex: 0xE8943A, darkHex: 0xE8A85C)
-        /// Sub-points / secondary links (muted indigo).
-        static let subtle = Color(lightHex: 0x4F6FB0, darkHex: 0x8AA0D0)
+        /// Brand / primary accent — theme primary (Claude terracotta).
+        static let accent = Color(lightHex: 0xC96442, darkHex: 0xD97757)
+        /// Action-item semantic (emerald).
+        static let action = Color(lightHex: 0x059669, darkHex: 0x34D399)
+        /// Blocker / objection semantic — red, so it can't be confused with the
+        /// terracotta accent (the old amber sat too close to it).
+        static let blocker = Color(lightHex: 0xDC2626, darkHex: 0xEF4444)
+        /// Sub-points / secondary links (indigo).
+        static let subtle = Color(lightHex: 0x6366F1, darkHex: 0x818CF8)
     }
 
     // MARK: - Typography
 
     enum Typography {
-        /// Big editorial title (meeting name, report heading) — system serif.
-        static func title(_ size: CGFloat = 27) -> Font {
-            .system(size: size, weight: .semibold, design: .serif)
+        /// App typeface family — swap here to retheme (fonts live in Parrot/Fonts).
+        /// Hardcoded view fonts should route through sans() (or a token below),
+        /// never .system, or they silently fall back to SF Pro.
+        static let family = "Outfit"
+
+        static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+            .custom(family, size: size).weight(weight)
+        }
+
+        /// Big title (meeting name, report heading) — semibold,
+        /// tracking-tight applied at call sites.
+        static func title(_ size: CGFloat = 26) -> Font {
+            sans(size, .semibold)
         }
         // Scale matched to the card-guide legend (user-approved look, 2026-07-02):
         // bold ~15pt titles over relaxed ~14pt gray body.
         /// Slate section label ("Key points", "Next steps").
-        static let sectionLabel = Font.system(size: 14, weight: .semibold)
+        static let sectionLabel = sans(14, .semibold)
         /// Lede / overview paragraph.
-        static let lede = Font.system(size: 16.5)
-        static let body = Font.system(size: 15)
-        static let secondary = Font.system(size: 14)
-        static let caption = Font.system(size: 12.5)
+        static let lede = sans(16.5)
+        static let body = sans(15)
+        static let secondary = sans(14)
+        static let caption = sans(12.5)
         /// Tiny uppercase panel label ("ASK PARROT").
-        static let cap = Font.system(size: 11, weight: .semibold)
+        static let cap = sans(11, .semibold)
 
         // Live copilot "glance" scale — the panel is read in 1-second glances
         // mid-call, so its focal card runs well above document sizes.
         /// Hero card payload (the line the user can say).
-        static let heroDetail = Font.system(size: 17.5)
+        static let heroDetail = sans(17.5)
         /// Hero card title.
-        static let heroTitle = Font.system(size: 16, weight: .semibold)
+        static let heroTitle = sans(16, .semibold)
         /// Card title (history rows, expanded cards, pinned cards).
-        static let cardTitle = Font.system(size: 15, weight: .semibold)
+        static let cardTitle = sans(15, .semibold)
         /// Compact history row title.
-        static let rowTitle = Font.system(size: 15)
+        static let rowTitle = sans(15)
     }
 
     // MARK: - Metrics
 
     enum Metrics {
-        static let radius: CGFloat = 10
-        static let chipRadius: CGFloat = 8
+        // Theme --radius: 1rem — the round, soft Claude look.
+        static let radius: CGFloat = 16
+        static let chipRadius: CGFloat = 10
         /// Report/insights column cap. Was 640 — read as "tiny" on wide
         /// windows (user feedback); wide enough now to use the screen while
         /// keeping prose lines readable.
@@ -85,6 +97,23 @@ enum Theme {
         static let pad: CGFloat = 16
         static let sectionGap: CGFloat = 24
     }
+}
+
+/// App-typeface stand-ins for the built-in macOS text styles, at the system's fixed
+/// point sizes. Views say `.font(.appCaption)` instead of `.font(.caption)` —
+/// the built-ins always render SF Pro and would bypass the app typeface.
+extension Font {
+    static let appLargeTitle = Theme.Typography.sans(26)
+    static let appTitle = Theme.Typography.sans(22)
+    static let appTitle2 = Theme.Typography.sans(17)
+    static let appTitle3 = Theme.Typography.sans(15)
+    static let appHeadline = Theme.Typography.sans(13, .semibold)
+    static let appBody = Theme.Typography.sans(13)
+    static let appCallout = Theme.Typography.sans(12)
+    static let appSubheadline = Theme.Typography.sans(11)
+    static let appFootnote = Theme.Typography.sans(10)
+    static let appCaption = Theme.Typography.sans(10)
+    static let appCaption2 = Theme.Typography.sans(10)
 }
 
 extension Color {

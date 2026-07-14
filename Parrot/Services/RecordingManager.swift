@@ -35,6 +35,23 @@ final class RecordingManager {
     private var timer: Timer?
     private var modelContext: ModelContext?
 
+    /// Non-nil while a file import runs — drives the import banner in the UI.
+    private(set) var importProgress: ImportProgress?
+
+    struct ImportProgress: Equatable {
+        var fileName: String
+        var phase: Phase
+        enum Phase {
+            case transcribing, analyzing
+            var label: String {
+                switch self {
+                case .transcribing: "Transcribing…"
+                case .analyzing: "Analyzing…"
+                }
+            }
+        }
+    }
+
     init() {
         callAnalysisEngine.knowledgeBase = knowledgeBase
     }
@@ -42,28 +59,69 @@ final class RecordingManager {
     /// Initialize and load the default WhisperKit model
     func prepare(modelContext: ModelContext) async {
         self.modelContext = modelContext
-        Self.reconcileOrphanedRecordings(in: modelContext)
+        recoverInterruptedRecordings(in: modelContext)
         profileStore.seedAndMigrateIfNeeded(context: modelContext, knowledgeBase: knowledgeBase)
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
     }
 
-    /// A meeting left in `.recording` or `.processing` means a previous session was
-    /// killed (crash or force-quit) before it could finish. Those can never resume
-    /// and their audio file was never finalized, so mark them failed instead of
-    /// letting them linger as if active.
-    private static func reconcileOrphanedRecordings(in context: ModelContext) {
+    /// A meeting left in `.recording` or `.processing` means the previous session was
+    /// killed (crash or force-quit) before it could finish. The live transcript is
+    /// already durable — `addSegment` saves every segment as it lands — so instead of
+    /// discarding these, salvage the ones that captured any speech: re-run the normal
+    /// post-call chain (diarization + report) on the surviving transcript and present
+    /// them as recovered. Only truly empty orphans (killed before a word) stay failed.
+    ///
+    /// Runs at launch, off WhisperKit (transcript exists, diarization is energy-based,
+    /// the report is a cloud call), so it needn't wait for the model.
+    private func recoverInterruptedRecordings(in context: ModelContext) {
         guard let meetings = try? context.fetch(FetchDescriptor<Meeting>()) else { return }
         var changed = false
         for meeting in meetings where meeting.status == .recording || meeting.status == .processing {
-            meeting.status = .failed
-            if meeting.errorMessage == nil {
-                meeting.errorMessage = "Recording was interrupted before it finished."
+            if meeting.segments.isEmpty {
+                // Nothing was captured — the audio was never finalized and there's no
+                // transcript to keep. Fail it, as before.
+                meeting.status = .failed
+                if meeting.errorMessage == nil {
+                    meeting.errorMessage = "Recording was interrupted before it finished."
+                }
+            } else {
+                // Salvageable: finish it in the background like a just-stopped call.
+                meeting.wasRecovered = true
+                meeting.status = .processing
+                if meeting.duration == 0 {
+                    meeting.duration = meeting.sortedSegments.last?.endTime ?? 0
+                }
+                let ref = meeting
+                Task { await self.finishRecovery(meeting: ref) }
             }
             changed = true
         }
         if changed { try? context.save() }
+    }
+
+    private func finishRecovery(meeting: Meeting) async {
+        // Audio is best-effort: a crash leaves the .caf header unfinalized, so it may
+        // not open. If it doesn't, drop the paths so no dead player shows and
+        // diarization is skipped cleanly (segments keep their live "Me"/"Them" labels).
+        if let path = meeting.systemAudioPath.nilIfEmpty,
+           (try? AVAudioFile(forReading: URL(fileURLWithPath: path))) == nil {
+            meeting.systemAudioPath = ""
+            meeting.micAudioPath = nil
+            try? modelContext?.save()
+        }
+
+        // Same chain a clean stop runs: diarization refines speakers and sets .done;
+        // the report runs when the copilot is configured. Coaching stays on — a
+        // crashed live call still has a real per-segment "Me"/"Them" split.
+        await postProcess(meeting: meeting)
+        if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured,
+           meeting.summary == nil {
+            callAnalysisEngine.provider.resetUsage()
+            await generateSummary(meeting: meeting)
+        }
+        writeAIUsage(meeting: meeting, polishSeconds: 0)
     }
 
     // MARK: - Recording Control
@@ -104,8 +162,9 @@ final class RecordingManager {
     func startRecording(modelContext: ModelContext) async throws {
         self.modelContext = modelContext
         // Reject re-entry up front (before any await) so a double-trigger can't
-        // start two recordings / two transcription loops.
-        guard !isRecording, !isStarting, !isStopping else { return }
+        // start two recordings / two transcription loops. Also blocked while a
+        // file import is running — both drive the same shared WhisperKit.
+        guard !isRecording, !isStarting, !isStopping, importProgress == nil else { return }
         guard transcriptionEngine.isReady else {
             throw RecordingError.modelNotReady
         }
@@ -138,6 +197,13 @@ final class RecordingManager {
         // Wire audio to transcription, tagged by stream (mic = Me, system = Them)
         audioCaptureManager.onAudioBuffer = { [weak self] buffer, source in
             self?.transcriptionEngine.appendAudio(buffer, source: source)
+        }
+
+        // A mid-call input-device change (dead AirPods, manual switch) rebuilds
+        // the mic tap; the "Me" stream's clock must skip the dead gap or its
+        // next locally-transcribed segments land minutes early.
+        audioCaptureManager.onMicRestarted = { [weak self] in
+            self?.transcriptionEngine.reanchorLocalClock(source: .me)
         }
 
         // Wire transcription output to storage and the live copilot
@@ -229,6 +295,101 @@ final class RecordingManager {
         recordingStartTime = nil
     }
 
+    // MARK: - File Import
+
+    /// Import an existing audio file as a new meeting: copy it into app storage,
+    /// transcribe the whole file on-device, then run the same diarization + report
+    /// chain a live recording gets. Returns the created meeting (already inserted,
+    /// status `.processing`) so the caller can select it; nil if it couldn't start.
+    @discardableResult
+    func importAudioFile(from pickedURL: URL, modelContext: ModelContext) -> Meeting? {
+        self.modelContext = modelContext
+        // One owner of WhisperKit at a time: refuse while recording or importing.
+        guard !isRecording, !isStarting, !isStopping, importProgress == nil,
+              transcriptionEngine.isReady else { return nil }
+
+        // A user-picked file lives outside the sandbox — open the scope to copy it.
+        let scoped = pickedURL.startAccessingSecurityScopedResource()
+        defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
+
+        let name = pickedURL.deletingPathExtension().lastPathComponent
+        let ext = pickedURL.pathExtension.isEmpty ? "m4a" : pickedURL.pathExtension
+        // Copy in, so playback and diarization survive the original moving/deleting.
+        let dest = AudioCaptureManager.storageDirectory()
+            .appendingPathComponent("import_\(Int(Date().timeIntervalSince1970)).\(ext)")
+        do {
+            try FileManager.default.copyItem(at: pickedURL, to: dest)
+        } catch {
+            NSLog("Parrot: import copy failed — \(error.localizedDescription)")
+            return nil
+        }
+
+        // Land under the file's own date, so a recording from last week reads as
+        // last week rather than "now".
+        let fileDate = (try? pickedURL.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? .now
+
+        let meeting = Meeting(title: name, date: fileDate, systemAudioPath: dest.path)
+        meeting.status = .processing
+        let profile = profileStore.activeProfile
+        meeting.profile = profile
+        meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
+        modelContext.insert(meeting)
+        try? modelContext.save()
+
+        importProgress = ImportProgress(fileName: name, phase: .transcribing)
+        let ref = meeting
+        Task { await runImport(meeting: ref, audioURL: dest) }
+        return meeting
+    }
+
+    private func runImport(meeting: Meeting, audioURL: URL) async {
+        defer { importProgress = nil }
+
+        // 1. Whole-file, on-device transcription. Every segment is "Them" (one
+        //    mixed track, no mic channel to tag "Me"); diarization splits it below.
+        do {
+            let results = try await transcriptionEngine.transcribeFile(url: audioURL)
+            guard !results.isEmpty else {
+                meeting.status = .failed
+                meeting.errorMessage = "No speech found in this file."
+                try? modelContext?.save()
+                return
+            }
+            for result in results {
+                let segment = TranscriptSegment(
+                    startTime: result.startTime, endTime: result.endTime,
+                    text: result.text, speakerLabel: result.source.label,
+                    confidence: result.confidence)
+                modelContext?.insert(segment)
+                segment.meeting = meeting
+            }
+            // Real audio length (trailing silence included) for stats/cost.
+            if let file = try? AVAudioFile(forReading: audioURL) {
+                meeting.duration = Double(file.length) / file.fileFormat.sampleRate
+            } else {
+                meeting.duration = results.last?.endTime ?? 0
+            }
+            try? modelContext?.save()
+        } catch {
+            meeting.status = .failed
+            meeting.errorMessage = "Couldn't transcribe this file. \(error.localizedDescription)"
+            try? modelContext?.save()
+            return
+        }
+
+        // 2. Same post-call chain as a recording: diarization refines the speaker
+        //    labels and flips status to .done; the summary runs when the copilot
+        //    is configured. Coaching is skipped — no "Me" channel to measure.
+        importProgress?.phase = .analyzing
+        await postProcess(meeting: meeting)
+        if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
+            callAnalysisEngine.provider.resetUsage()
+            await generateSummary(meeting: meeting, includeCoaching: false)
+        }
+        writeAIUsage(meeting: meeting, polishSeconds: 0, backendOverride: .local)
+    }
+
     // MARK: - Deletion
 
     /// Deletes a meeting and its audio files. The only removal path in the app —
@@ -270,7 +431,10 @@ final class RecordingManager {
 
     // MARK: - Post-Call Summary
 
-    private func generateSummary(meeting: Meeting) async {
+    /// `includeCoaching` is false for imported files: a single mixed track has no
+    /// "Me" channel, so talk-ratio/coaching would be measured against 0% and read
+    /// as broken. The summary itself works fine from any transcript.
+    private func generateSummary(meeting: Meeting, includeCoaching: Bool = true) async {
         let segments = meeting.sortedSegments
         guard !segments.isEmpty else { return }
 
@@ -293,6 +457,8 @@ final class RecordingManager {
         } catch {
             // Best-effort: the transcript and insights are already saved.
         }
+
+        guard includeCoaching else { return }
 
         // Coaching + follow-ups report, with the user's real talk balance.
         let meWords = segments
@@ -366,13 +532,15 @@ final class RecordingManager {
 
     /// Freezes this call's AI usage (copilot tokens + transcription/polish audio
     /// seconds) onto the meeting so the detail view can show what it cost.
-    private func writeAIUsage(meeting: Meeting, polishSeconds: Double) {
+    private func writeAIUsage(meeting: Meeting, polishSeconds: Double,
+                              backendOverride: TranscriptionBackend? = nil) {
         var usage = AIUsage()
         usage.copilotModel = ClaudeAnalysisProvider.model
         usage.copilot = callAnalysisEngine.provider.usageTotals
         // ponytail: reads the backend setting at stop time; a mid-call engine
-        // switch or cloud→local fallback mislabels one estimated row.
-        usage.transcriptionBackend = TranscriptionBackend.selected.rawValue
+        // switch or cloud→local fallback mislabels one estimated row. Import
+        // passes an override since it's always on-device regardless of the setting.
+        usage.transcriptionBackend = (backendOverride ?? TranscriptionBackend.selected).rawValue
         usage.transcriptionSeconds = meeting.duration
         usage.transcriptionTracks = meeting.micAudioPath?.nilIfEmpty != nil ? 2 : 1
         usage.polishSeconds = polishSeconds
