@@ -28,6 +28,8 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 - **Post-call reports** — AI summary with pain points, plus a coaching report: talk ratio, what went well, what to improve, objections handled vs missed, and commitments
 - **Per-call notes** — Type notes live during the call (side panel) and edit them later; stored with the meeting
 - **Playback synced with the transcript** — Click a transcript line, hear that moment
+- **Import existing recordings** — Drop an audio file (m4a, mp3, wav, aac…) onto the app and it's transcribed, diarized, and summarized like any live meeting
+- **Doesn't lose your meeting** — If the app crashes or gets force-quit mid-call, the recording is recovered with its transcript and reports on next launch. AirPods dying mid-call no longer kill the mic either
 - **Searchable history, export, menu bar extra, dark mode** — Meetings stored locally, TXT/SRT export, quick start/stop from the menu bar
 
 ## Tech Stack
@@ -51,12 +53,15 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 
 ## Getting Started
 
-### Prerequisites
-- macOS 14.0 (Sonoma) or later
-- Xcode 15+
-- A Mac with Apple Silicon (recommended) or Intel
+### Download (the easy way)
 
-### Build & Run
+Grab the latest notarized `.dmg` from the **[Releases page](https://github.com/turantekin/Parrot/releases)**, drag Parrot into Applications, and hit record. No Xcode, no build step. Requires macOS 14+ (Sonoma) on Apple Silicon.
+
+*It's an early beta — if something breaks, please open an issue. That genuinely helps.*
+
+### Build from source
+
+Prerequisites: macOS 14.0+, Xcode 15+, Apple Silicon recommended.
 
 ```bash
 git clone https://github.com/turantekin/Parrot.git
@@ -68,11 +73,11 @@ Then hit **Run** in Xcode (or `Cmd+R`).
 
 ### Permissions
 
-On first launch, Parrot will ask for:
-1. **Screen Recording** — needed to capture system audio from meetings (it only records audio, never your screen content)
-2. **Microphone** — to capture your voice
+On first launch, Parrot walks you through the two permissions it needs:
+1. **Screen Recording** — this is simply how macOS exposes system audio. Parrot only captures audio, never your screen content
+2. **Microphone** — your side of the call
 
-Grant both in **System Settings > Privacy & Security**. You may need to restart the app after granting Screen Recording permission (macOS requirement).
+The onboarding page shows live status for both and deep-links to the exact Settings panes. One macOS quirk to know: Screen Recording takes effect when the app restarts — if the row doesn't turn green after you grant it, quit and reopen Parrot (onboarding picks up right where you left off).
 
 ### Choose a Model
 
@@ -164,7 +169,7 @@ Things I want to add but haven't figured out yet:
 - [ ] **Calendar integration** — auto-name meetings based on what's on my calendar
 - [ ] **Keyword bookmarks** — mark important moments during a recording
 - [ ] **Better waveform visualization** — the current one is... functional
-- [ ] **Notarize and distribute** — so people can run it without Xcode
+- [x] **Notarize and distribute** — done! Notarized DMG on the [Releases page](https://github.com/turantekin/Parrot/releases). Auto-update (Sparkle) still to come
 
 If any of these excite you, jump in!
 
@@ -184,7 +189,7 @@ No formal process. No templates. Just open an issue or PR and we'll figure it ou
 
 ## Known Issues (I'm Working on It)
 
-- **Screen Recording permission is annoying** — When running from Xcode, the binary gets re-signed each build, which can invalidate the permission. If recording fails, remove Parrot from Screen Recording in System Settings, re-add it, and restart. I'm still figuring this one out.
+- **Screen Recording permission resets on source builds** — Xcode re-signs the binary each build, which can invalidate the permission (remove Parrot from Screen Recording in System Settings, re-add it, restart). Downloaded release builds are signed with a stable Developer ID and keep the grant across updates.
 - **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
 - **Speaker diarization is... okay** — "Me" vs "Them" is exact (separate audio tracks), but splitting multiple far-side voices apart is energy-based and imperfect, especially with 3+ people on the other end. Real voice fingerprinting is on my list.
 

@@ -37,3 +37,4 @@ Packages/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+dist/
