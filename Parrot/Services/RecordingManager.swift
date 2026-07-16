@@ -131,30 +131,15 @@ final class RecordingManager {
     /// when a permission flow was triggered instead.
     func preflightPermissionsAndStart(modelContext: ModelContext) async throws {
         // Check Screen Recording permission BEFORE touching any ScreenCaptureKit
-        // API. Calling SCShareableContent while unauthorized makes macOS pop its
-        // own prompt AND throws — the app then showed a second custom alert,
-        // hence two dialogs. Preflight, trigger the single official prompt if
-        // needed, stop.
-        guard CGPreflightScreenCaptureAccess() else {
-            if !CGRequestScreenCaptureAccess() {
-                // Previously denied: macOS won't re-prompt, so guide the user
-                // straight to the right Settings pane.
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-            }
-            return
-        }
+        // API (querying SCShareableContent while unauthorized pops the OS prompt
+        // AND throws). PermissionFlow posts the single official prompt on a
+        // first ask, or deep-links to Settings if previously denied — never both.
+        guard PermissionFlow.requestScreenCapture() == .granted else { return }
 
         // Ensure the microphone is authorized so the user's own voice ("Me")
         // is captured. Without this the engine runs but feeds silence.
         // Non-fatal: system audio still records if denied.
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .notDetermined:
-            _ = await AVCaptureDevice.requestAccess(for: .audio)
-        case .denied, .restricted:
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-        default:
-            break
-        }
+        _ = await PermissionFlow.requestMicrophone()
 
         try await startRecording(modelContext: modelContext)
     }
