@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SwiftData
 import WhisperKit
 
 /// Dev-only: transcribes a real audio file with the production decoding options to
@@ -155,7 +156,7 @@ enum CopilotSnapshot {
     /// A one-image guide to the live panel: the four zones plus every card kind
     /// of the given profile, drawn with the app's real colors and icons.
     private static func legend(profile: CallProfile?) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Parrot Copilot — what each card means")
                 .font(Theme.Typography.title(20))
                 .foregroundStyle(Theme.Colors.ink)
@@ -170,7 +171,7 @@ enum CopilotSnapshot {
             legendRow(Theme.Colors.subtle, "rectangle.inset.filled.top",
                       "Hero card — the big tinted one",
                       "The newest insight, at full size. Glows briefly when it lands. This is the one to glance at.")
-            legendRow(.orange, "exclamationmark.triangle.fill",
+            legendRow(Theme.Colors.warn, "exclamationmark.triangle.fill",
                       "Orange cards — unresolved",
                       "Objections and questions you haven't dealt with yet. Click to read all of it; ✓ marks it handled — or it clears itself when the call actually resolves it.")
             legendRow(Theme.Colors.ink3, "list.bullet",
@@ -189,7 +190,7 @@ enum CopilotSnapshot {
                           legendBlurb(for: kind.key))
             }
         }
-        .padding(20)
+        .padding(Theme.Metrics.pad)
         .frame(width: 480)
         .background(Theme.Colors.canvas)
     }
@@ -197,16 +198,16 @@ enum CopilotSnapshot {
     private static func legendRow(_ color: Color, _ icon: String,
                                   _ title: String, _ blurb: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
                 .fill(color.opacity(0.16))
                 .frame(width: 30, height: 30)
                 .overlay(Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(color))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(Theme.Typography.sans(13.5, .semibold))
+                    .font(Theme.Typography.cardTitle)
                     .foregroundStyle(Theme.Colors.ink)
                 Text(blurb)
-                    .font(Theme.Typography.sans(12))
+                    .font(Theme.Typography.secondary)
                     .foregroundStyle(Theme.Colors.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -272,6 +273,93 @@ enum SnapshotIO {
     }
 }
 
+/// Offscreen renderer for the sidebar's waveform meeting rows. Run with:
+///   Parrot --sidebar-snapshot /tmp/sidebar.png
+/// Seeds an in-memory store with meetings whose transcripts have distinct talk
+/// balances (even, me-heavy, live-recording, empty) so the dual-lane strips can
+/// be eyeballed in light AND dark ("-dark" suffix). Dev-only.
+@MainActor
+enum SidebarSnapshot {
+    static func write(to path: String) {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else {
+            FileHandle.standardError.write(Data("sidebar-snapshot: container failed\n".utf8))
+            exit(1)
+        }
+        let context = container.mainContext
+
+        // Alternating two-sided call — balanced strip.
+        let balanced = seed(context, "Sales discovery — Acme", minutes: 45,
+                            pattern: [("Me", 20), ("Them", 40), ("Me", 30), ("Them", 25)])
+        // The user monologues the middle third — lopsided top lane.
+        let meHeavy = seed(context, "1:1 coaching — Deniz", minutes: 30,
+                           pattern: [("Them", 15), ("Me", 90), ("Them", 20), ("Me", 15)])
+        // Live recording, few segments so the strip is sparse.
+        let live = seed(context, "Weekly review", minutes: 4,
+                        pattern: [("Me", 12), ("Them", 8)])
+        live.status = .recording
+        // No transcript at all — centerline only.
+        let empty = seed(context, "Imported audio", minutes: 0, pattern: [])
+
+        let rows = VStack(spacing: 1) {
+            MeetingRow(meeting: live, selected: false)
+            MeetingRow(meeting: balanced, selected: true)
+            MeetingRow(meeting: meHeavy, selected: false)
+            MeetingRow(meeting: empty, selected: false)
+        }
+        .padding(8)
+        .frame(width: 240)
+        .background(Theme.Colors.panel)
+
+        let light = render(rows, dark: false, to: path)
+        let dark = render(rows, dark: true, to: (path as NSString).deletingPathExtension + "-dark.png")
+        FileHandle.standardError.write(Data("sidebar-snapshot: wrote \(light.path) + \(dark.path)\n".utf8))
+        exit(0)
+    }
+
+    /// Repeats `pattern` (speaker, seconds) turns until the duration is filled.
+    private static func seed(_ context: ModelContext, _ title: String,
+                             minutes: Double, pattern: [(String, Double)]) -> Meeting {
+        let meeting = Meeting(title: title)
+        meeting.duration = minutes * 60
+        meeting.status = .done
+        context.insert(meeting)
+        guard !pattern.isEmpty else { return meeting }
+        var t: TimeInterval = 0
+        var i = 0
+        while t < meeting.duration {
+            let (speaker, secs) = pattern[i % pattern.count]
+            let seg = TranscriptSegment(startTime: t, endTime: min(t + secs, meeting.duration),
+                                        text: "…", speakerLabel: speaker)
+            seg.meeting = meeting
+            context.insert(seg)
+            t += secs + 4  // small silence gap between turns
+            i += 1
+        }
+        return meeting
+    }
+
+    private static func render(_ view: some View, dark: Bool, to path: String) -> URL {
+        let renderer = ImageRenderer(
+            content: AnyView(view.environment(\.colorScheme, dark ? .dark : .light)))
+        renderer.scale = 2
+        var cg: CGImage?
+        NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
+            cg = renderer.cgImage
+        }
+        guard let cg else {
+            FileHandle.standardError.write(Data("sidebar-snapshot: render failed\n".utf8))
+            exit(1)
+        }
+        let rep = NSBitmapImageRep(cgImage: cg)
+        guard let data = rep.representation(using: .png, properties: [:]) else { exit(1) }
+        return SnapshotIO.write(data, to: path)
+    }
+}
+
 /// Offscreen renderer for design verification. Run with:
 ///   Parrot --snapshot /tmp/report.png
 /// It renders the post-meeting report exactly as the app does (same views + theme)
@@ -284,7 +372,7 @@ enum ReportSnapshot {
         // report content (the part that was previously a raw-text dump).
         let view = VStack(alignment: .leading, spacing: 0) {
             Text("Parenting coaching session")
-                .font(Theme.Typography.title(27))
+                .font(Theme.Typography.title(20))
                 .foregroundStyle(Theme.Colors.ink)
             HStack(spacing: 8) {
                 metaPill("calendar", "Jun 19, 2026")
@@ -293,12 +381,12 @@ enum ReportSnapshot {
             }
             .padding(.top, 12)
 
-            Divider().overlay(Theme.Colors.line).padding(.vertical, 18)
+            Divider().overlay(Theme.Colors.line).padding(.vertical, 16)
 
             ReportContentView(summary: sampleSummary, coaching: sampleCoaching, talkPercentMe: 29)
         }
         .frame(width: 600, alignment: .leading)
-        .padding(28)
+        .padding(Theme.Metrics.pad)
         .background(Theme.Colors.canvas)
 
         let renderer = ImageRenderer(content: view)
@@ -318,9 +406,9 @@ enum ReportSnapshot {
         Label(text, systemImage: icon)
             .font(Theme.Typography.caption)
             .foregroundStyle(Theme.Colors.ink2)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: 7))
+            .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
     }
 
     static let sampleSummary = """

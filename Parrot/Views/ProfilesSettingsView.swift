@@ -59,8 +59,8 @@ struct ProfilesSettingsView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(.windowBackground)
+                .padding(.vertical, 4)
+                .background(Theme.Colors.panel)
             }
             .frame(width: 200)
 
@@ -81,7 +81,7 @@ struct ProfilesSettingsView: View {
                 VStack {
                     Spacer()
                     Text("Select a profile to edit")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -103,7 +103,7 @@ private struct ProfileRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: profile.iconSystemName.isEmpty ? "person.crop.circle" : profile.iconSystemName)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(profile.name)
@@ -112,7 +112,7 @@ private struct ProfileRow: View {
                 if profile.isBuiltIn {
                     Text("Built-in")
                         .font(.appCaption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.Colors.ink3)
                 }
             }
         }
@@ -153,7 +153,7 @@ private struct ProfileDetailView: View {
                             .frame(maxWidth: 240)
                         Text("What the copilot calls them in cards & notes.")
                             .font(.appCaption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
                     }
                 }
             }
@@ -163,27 +163,27 @@ private struct ProfileDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Persona")
                         .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                     TextEditor(text: $profile.persona)
                         .font(.appCallout)
                         .frame(minHeight: 90)
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Custom rules")
                         .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                     TextEditor(text: $profile.tone)
                         .font(.appCallout)
                         .frame(height: 80)
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
                     Text("Standing house rules the copilot follows on every call with this profile — one per line. "
                         + "e.g. \"Alert me if I leave a question unanswered.\" · "
                         + "\"If they mention a pain point, suggest how we can solve it.\" · "
                         + "\"Always confirm budget before discussing timeline.\"")
                         .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                 }
 
                 Toggle("Answer from general knowledge when documents don't cover it",
@@ -195,7 +195,7 @@ private struct ProfileDetailView: View {
                 if knowledgeBase.documents.isEmpty {
                     Text("No documents yet — add them in the Knowledge tab, then tag them here.")
                         .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                 } else {
                     ForEach(knowledgeBase.documents) { doc in
                         DocTagToggle(doc: doc, profileID: profile.id, knowledgeBase: knowledgeBase)
@@ -209,8 +209,8 @@ private struct ProfileDetailView: View {
                     // Kinds subsection
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Call Kinds")
-                            .font(.appCaption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Typography.sectionLabel)
+                            .foregroundStyle(Theme.Colors.label)
 
                         ForEach(profile.kinds) { kind in
                             KindEditorRow(kind: kind) { updated in
@@ -233,8 +233,8 @@ private struct ProfileDetailView: View {
                     // Gauges subsection
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Sentiment Gauges")
-                            .font(.appCaption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Typography.sectionLabel)
+                            .foregroundStyle(Theme.Colors.label)
 
                         ForEach(profile.gauges) { gauge in
                             GaugeEditorRow(gauge: gauge) { updated in
@@ -276,7 +276,7 @@ private struct ProfileDetailView: View {
         var ks = profile.kinds
         ks.append(ProfileKind(
             id: UUID(), key: "new_kind", label: "New Kind",
-            colorHex: "#888888", iconSystemName: "questionmark.circle",
+            colorHex: "4F6FB0", iconSystemName: "questionmark.circle",
             triggerDescription: "", isPinned: false, priority: ks.count))
         profile.kinds = ks
         profile.isUserModified = true
@@ -310,7 +310,7 @@ private struct ProfileDetailView: View {
         var gs = profile.gauges
         gs.append(SentimentGauge(
             id: UUID(), key: "new_gauge", label: "New Gauge",
-            lowLabel: "Low", highLabel: "High", colorHex: "#888888"))
+            lowLabel: "Low", highLabel: "High", colorHex: "4F6FB0"))
         profile.gauges = gs
         profile.isUserModified = true
         try? context.save()
@@ -351,7 +351,7 @@ private struct DocTagToggle: View {
                     .lineLimit(1)
                 Text("\(doc.chunkCount) chunks")
                     .font(.appCaption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.ink3)
             }
         }
     }
@@ -432,14 +432,14 @@ private struct KindEditorRow: View {
                 Button(role: .destructive) { onDelete() } label: {
                     Label("Remove", systemImage: "minus.circle")
                         .font(.appCaption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Colors.stop)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 6)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         // Commit on focus loss, not just Return — otherwise clicking another
         // control (or closing Settings) reverts the draft via the resync below.
         .onChange(of: focused) { _, isFocused in
@@ -512,14 +512,14 @@ private struct GaugeEditorRow: View {
 
                 Button(role: .destructive) { onDelete() } label: {
                     Image(systemName: "minus.circle")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Colors.stop)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 6)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         // Commit on focus loss, not just Return — otherwise clicking another
         // control (or closing Settings) reverts the draft via the resync below.
         .onChange(of: focused) { _, isFocused in

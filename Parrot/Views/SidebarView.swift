@@ -16,7 +16,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Search
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Colors.ink3)
@@ -24,9 +24,9 @@ struct SidebarView: View {
                     .textFieldStyle(.plain)
                     .font(Theme.Typography.secondary)
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(Color.black.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
             .padding(.horizontal, 8)
             .padding(.top, 8)
             .padding(.bottom, 6)
@@ -50,20 +50,22 @@ struct SidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     Text("Meetings")
+                        .textCase(.uppercase)
                         .font(Theme.Typography.cap)
                         .foregroundStyle(Theme.Colors.ink3)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 14)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 12)
                         .padding(.bottom, 2)
 
                     ForEach(orderedGroups, id: \.0) { key, group in
                         let rows = filtered(group)
                         if !rows.isEmpty {
                             Text(key)
-                                .font(Theme.Typography.sans(11, .semibold))
+                                .textCase(.uppercase)
+                                .font(Theme.Typography.cap)
                                 .foregroundStyle(Theme.Colors.ink3)
-                                .padding(.horizontal, 10)
-                                .padding(.top, 9)
+                                .padding(.horizontal, 8)
+                                .padding(.top, 8)
                                 .padding(.bottom, 2)
                             ForEach(rows) { meeting in
                                 MeetingRow(meeting: meeting, selected: selectedMeeting?.id == meeting.id)
@@ -160,20 +162,20 @@ private struct NavRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 13))
                     .frame(width: 16)
                     .foregroundStyle(selected ? Theme.Colors.accent : Theme.Colors.ink2)
                 Text(title)
-                    .font(Theme.Typography.sans(13, selected ? .semibold : .medium))
+                    .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
                 Spacer()
             }
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(selected ? Theme.Colors.selection : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 8))
+                        in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -182,61 +184,155 @@ private struct NavRow: View {
 
 // MARK: - Meeting row
 
-private struct MeetingRow: View {
+/// Two-line row: title + trailing time, then a dual-lane talk strip drawn from
+/// the transcript — Me above the centerline, Them below. The strip replaces the
+/// old colored status dot as the row's identity.
+struct MeetingRow: View {
     let meeting: Meeting
     let selected: Bool
 
-    private static let dots: [Color] = [
-        Color(lightHex: 0x6A8CAF, darkHex: 0x7FA4C6),
-        Color(lightHex: 0xB08A6A, darkHex: 0xC9A380),
-        Color(lightHex: 0x7A9A7A, darkHex: 0x93B593),
-        Color(lightHex: 0x9A7AA0, darkHex: 0xB694BC),
-        Color(lightHex: 0xC4806A, darkHex: 0xD79A85),
-    ]
-
     var body: some View {
-        HStack(spacing: 9) {
-            statusDot
-            VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 Text(meeting.title)
-                    .font(Theme.Typography.sans(12.5, .semibold))
+                    .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(Theme.Typography.sans(11.5))
-                    .foregroundStyle(Theme.Colors.ink2)
-                    .lineLimit(1)
+                Spacer(minLength: 4)
+                trailing
             }
-            Spacer(minLength: 4)
-            Text(meeting.date, style: .time)
-                .font(Theme.Typography.sans(11))
-                .monospacedDigit()
-                .foregroundStyle(Theme.Colors.ink3)
+            TalkStripView(meeting: meeting, selected: selected)
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(selected ? Theme.Colors.selection : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8))
+                    in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .contentShape(Rectangle())
     }
 
-    private var subtitle: String {
-        let who = meeting.themName?.nilIfEmpty
-            ?? (meeting.speakerCount > 1 ? "\(meeting.speakerCount) people" : "Them")
-        return "\(who) · \(meeting.formattedDuration)"
-    }
-
-    @ViewBuilder private var statusDot: some View {
+    @ViewBuilder private var trailing: some View {
         switch meeting.status {
         case .recording:
-            Circle().fill(.red).frame(width: 7, height: 7)
+            HStack(spacing: 4) {
+                Circle().fill(Theme.Colors.stop).frame(width: 5, height: 5)
+                // Live elapsed time — .timer counts up from the meeting start.
+                Text(meeting.date, style: .timer)
+                    .font(Theme.Typography.mono(11, .semibold))
+                    .foregroundStyle(Theme.Colors.stop)
+            }
         case .processing:
             ProgressView().controlSize(.mini).frame(width: 10, height: 10)
         default:
-            Circle()
-                .fill(Self.dots[meeting.id.uuidString.stableHash % Self.dots.count])
-                .frame(width: 7, height: 7)
+            Text(meeting.date, style: .time)
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.ink2)
         }
+    }
+}
+
+// MARK: - Talk strip
+
+/// Dual-lane activity strip: the call is split into 48 time buckets; per bucket,
+/// seconds spoken by "Me" draw as a bar growing up from the centerline and
+/// everyone else grows down. Empty transcript → just the centerline.
+struct TalkStripView: View {
+    let meeting: Meeting
+    let selected: Bool
+
+    private static let bucketCount = 48
+    private static let laneHeight: CGFloat = 6
+    private static let barWidth: CGFloat = 1.5
+
+    // ponytail: process-lifetime cache keyed by meeting.id — entries are 48
+    // tuples so leftovers from deleted meetings are negligible. Keyed on
+    // segments.count so a live recording invalidates itself as segments stream in.
+    private static var cache: [UUID: (count: Int, buckets: [(me: Double, them: Double)])] = [:]
+
+    var body: some View {
+        // Reading meeting.segments here (not inside Canvas) both feeds the cache
+        // and registers observation, so the strip grows live while recording.
+        let buckets = Self.buckets(for: meeting)
+        let peak = buckets.reduce(0.0) { max($0, max($1.me, $1.them)) }
+        Canvas { context, size in
+            let midY = size.height / 2
+            context.fill(
+                Path(CGRect(x: 0, y: midY - 0.5, width: size.width, height: 1)),
+                with: .color(Theme.Colors.line)
+            )
+            guard peak > 0 else { return }
+            let step = size.width / CGFloat(buckets.count)
+            let meColor = selected ? Theme.Colors.accent : Theme.Colors.ink3
+            for (index, bucket) in buckets.enumerated() {
+                let x = (CGFloat(index) + 0.5) * step - Self.barWidth / 2
+                if bucket.me > 0 {
+                    let h = max(0.5, CGFloat(bucket.me / peak) * Self.laneHeight)
+                    context.fill(
+                        Path(CGRect(x: x, y: midY - h, width: Self.barWidth, height: h)),
+                        with: .color(meColor)
+                    )
+                }
+                if bucket.them > 0 {
+                    let h = max(0.5, CGFloat(bucket.them / peak) * Self.laneHeight)
+                    context.fill(
+                        Path(CGRect(x: x, y: midY, width: Self.barWidth, height: h)),
+                        with: .color(Theme.Colors.ink3)
+                    )
+                }
+            }
+        }
+        .frame(height: 14)
+        .overlay(alignment: .trailing) {
+            Text(meeting.formattedDuration)
+                .font(Theme.Typography.mono(10))
+                .foregroundStyle(Theme.Colors.ink3)
+                .padding(.leading, 4)
+                // Match the row background (selection tint over panel) so the
+                // label reads cleanly over the bars.
+                .background(selected ? Theme.Colors.selection : Color.clear)
+                .background(Theme.Colors.panel)
+        }
+    }
+
+    /// Cached per-bucket (me, them) speaking seconds. Recomputed only when the
+    /// segment count changes; the Canvas closure never touches segments.
+    private static func buckets(for meeting: Meeting) -> [(me: Double, them: Double)] {
+        let segments = meeting.segments
+        if let cached = cache[meeting.id], cached.count == segments.count {
+            return cached.buckets
+        }
+        let computed = compute(segments: segments, duration: meeting.duration)
+        cache[meeting.id] = (segments.count, computed)
+        return computed
+    }
+
+    private static func compute(
+        segments: [TranscriptSegment],
+        duration: TimeInterval
+    ) -> [(me: Double, them: Double)] {
+        guard !segments.isEmpty else { return [] }
+        let total = max(duration, segments.map(\.endTime).max() ?? 0)
+        guard total > 0 else { return [] }
+        let bucketLength = total / Double(bucketCount)
+        var buckets = [(me: Double, them: Double)](
+            repeating: (0, 0), count: bucketCount
+        )
+        for segment in segments {
+            let start = max(0, segment.startTime)
+            let end = min(total, max(start, segment.endTime))
+            let isMe = segment.speakerLabel == "Me"
+            let first = min(bucketCount - 1, Int(start / bucketLength))
+            let last = min(bucketCount - 1, Int(end / bucketLength))
+            for index in first...last {
+                let bucketStart = Double(index) * bucketLength
+                let overlap = max(0, min(end, bucketStart + bucketLength) - max(start, bucketStart))
+                if isMe {
+                    buckets[index].me += overlap
+                } else {
+                    buckets[index].them += overlap
+                }
+            }
+        }
+        return buckets
     }
 }
 
@@ -244,7 +340,7 @@ private struct MeetingRow: View {
 
 private struct AccountChip: View {
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
             Text(initials)
                 .font(Theme.Typography.sans(10, .semibold))
                 .foregroundStyle(.white)
@@ -252,17 +348,17 @@ private struct AccountChip: View {
                 .background(Theme.Colors.accent, in: Circle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(name)
-                    .font(Theme.Typography.sans(12.5, .semibold))
+                    .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
                 Text("On-device · Private")
-                    .font(Theme.Typography.sans(11))
+                    .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink2)
             }
             Spacer()
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 
     private var name: String {

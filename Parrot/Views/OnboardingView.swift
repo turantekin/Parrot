@@ -38,7 +38,7 @@ struct OnboardingView: View {
                 HStack(spacing: 6) {
                     ForEach(0..<3) { step in
                         Circle()
-                            .fill(step == currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .fill(step == currentStep ? Theme.Colors.accent : Theme.Colors.chip)
                             .frame(width: 8, height: 8)
                     }
                 }
@@ -58,7 +58,7 @@ struct OnboardingView: View {
                     .buttonStyle(.borderedProminent)
                 }
             }
-            .padding()
+            .padding(Theme.Metrics.pad)
         }
         .frame(width: 500, height: 540)
     }
@@ -71,21 +71,21 @@ struct OnboardingView: View {
 
             Image(systemName: "bird")
                 .font(.system(size: 64))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.Colors.accent)
 
             Text("Meet Parrot")
                 .font(.appLargeTitle)
                 .fontWeight(.bold)
 
             Text("Your private, on-device meeting recorder.\nParrot listens, transcribes, and remembers — all locally on your Mac.")
-                .font(.appBody)
-                .foregroundStyle(.secondary)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.ink2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
             Spacer()
         }
-        .padding()
+        .padding(Theme.Metrics.pad)
     }
 
     // MARK: - Step 2: Permissions
@@ -107,8 +107,7 @@ struct OnboardingView: View {
             Spacer()
 
             Text("Permissions Needed")
-                .font(.appTitle)
-                .fontWeight(.semibold)
+                .font(Theme.Typography.title())
 
             VStack(alignment: .leading, spacing: 16) {
                 PermissionRow(
@@ -126,8 +125,8 @@ struct OnboardingView: View {
 
                 if screenAsked && !screenGranted {
                     Text("Already flipped the switch? macOS applies Screen Recording when Parrot restarts — quit and reopen Parrot, and this page will pick up right here.")
-                        .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
                         .padding(.leading, 44) // align under the row's text column
                 }
 
@@ -146,12 +145,12 @@ struct OnboardingView: View {
             .frame(maxWidth: 380)
 
             Text("All processing happens locally. Nothing leaves your Mac.")
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.ink2)
 
             Spacer()
         }
-        .padding()
+        .padding(Theme.Metrics.pad)
         .onAppear(perform: refreshPermissions)
         // Rows flip green on their own: returning from System Settings fires
         // didBecomeActive, and the 1 s poll catches grants made while the OS
@@ -174,12 +173,11 @@ struct OnboardingView: View {
             Spacer()
 
             Text("Choose a Model")
-                .font(.appTitle)
-                .fontWeight(.semibold)
+                .font(Theme.Typography.title())
 
             Text("Parrot uses WhisperKit for transcription.\nLarger models are more accurate but use more memory.")
-                .font(.appBody)
-                .foregroundStyle(.secondary)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.ink2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
 
@@ -220,7 +218,7 @@ struct OnboardingView: View {
 
             Spacer()
         }
-        .padding()
+        .padding(Theme.Metrics.pad)
     }
 
     @AppStorage("whisperModel") private var selectedModel = "base"
@@ -239,17 +237,17 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Downloading and loading model...")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         case .ready:
             Label("Model ready!", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.appCallout)
+                .foregroundStyle(Theme.Colors.good)
+                .font(Theme.Typography.secondary)
         case .error(let msg):
             Label(msg, systemImage: "xmark.circle")
-                .foregroundStyle(.red)
-                .font(.appCaption)
+                .foregroundStyle(Theme.Colors.stop)
+                .font(Theme.Typography.caption)
         default:
             Button("Download Model") {
                 selectModel(selectedModel)
@@ -272,22 +270,22 @@ struct PermissionRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.appTitle2)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.Colors.accent)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.appHeadline)
+                    .font(Theme.Typography.cardTitle)
                 Text(description)
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
 
             Spacer()
 
             if isGranted {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.Colors.good)
                     .font(.appTitle3)
             } else {
                 Button("Grant") {
@@ -314,27 +312,27 @@ struct ModelOption: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name)
-                        .font(.appHeadline)
+                        .font(Theme.Typography.cardTitle)
                     Text("\(description) (\(size))")
-                        .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
                 }
 
                 Spacer()
 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Theme.Colors.accent)
                 }
             }
-            .padding(10)
+            .padding(12)
             .background(
-                isSelected ? Color.accentColor.opacity(0.1) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8)
+                isSelected ? Theme.Colors.accent.opacity(0.1) : Color.clear,
+                in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                    .stroke(isSelected ? Theme.Colors.accent : Theme.Colors.line, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

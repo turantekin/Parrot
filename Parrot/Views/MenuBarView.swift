@@ -11,14 +11,14 @@ struct MenuBarView: View {
                 // Recording state
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(.red)
+                        .fill(Theme.Colors.stop)
                         .frame(width: 8, height: 8)
                     Text("Recording")
                         .font(.appHeadline)
                     Spacer()
                     Text(recordingManager.formattedElapsedTime)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Typography.mono(11))
+                        .foregroundStyle(Theme.Colors.ink2)
                 }
 
                 Button(recordingManager.isStopping ? "Finalizing…" : "Stop Recording") {
@@ -33,11 +33,11 @@ struct MenuBarView: View {
 
                 Text(recordingManager.transcriptionEngine.isReady ? "Ready to record" : "Loading model...")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Text(profileStore.activeProfile?.name ?? "Default")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Button("Start Recording") {
                     Task {

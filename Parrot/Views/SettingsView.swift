@@ -87,16 +87,17 @@ struct SettingsView: View {
             if showSavedToast {
                 Label("Saved", systemImage: "checkmark.circle.fill")
                     .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.canvas)
+                    .foregroundStyle(Theme.Colors.ink)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Theme.Colors.ink.opacity(0.92), in: Capsule())
-                    .padding(.bottom, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Colors.line))
+                    .padding(.bottom, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .allowsHitTesting(false)
             }
         }
-        .frame(width: isEmbedded ? nil : 520, height: isEmbedded ? nil : 440)
+        .frame(width: isEmbedded ? nil : 560, height: isEmbedded ? nil : 460)
         .frame(maxWidth: isEmbedded ? .infinity : nil,
                maxHeight: isEmbedded ? .infinity : nil)
     }
@@ -133,14 +134,14 @@ struct SettingsView: View {
 
                 Text("On-device keeps every second of audio on this Mac. Cloud engines trade that for accuracy — bring your own key, pay the provider directly.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Divider()
 
                 Toggle("Polish transcript after each call (Groq)", isOn: $polishAfterCall)
                 Text("When you hit Stop, the saved audio is re-transcribed with a large model (~$0.04 per call hour, ~15s per hour of audio) and the report is regenerated from the cleaner text. The live view is unaffected.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 if polishAfterCall && transcriptionBackend != TranscriptionBackend.groq.rawValue {
                     ProviderKeyField(
@@ -190,20 +191,19 @@ struct SettingsView: View {
                 }
                 Text("Applies to the next recording. Auto-detect works well for most calls; pick a language if it keeps guessing wrong.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
 
             Section("Custom Vocabulary") {
                 TextEditor(text: $customVocabulary)
                     .frame(height: 64)
                     .font(.appCallout)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.2)))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
                 Text("Names, products, or jargon Whisper keeps mis-hearing — comma or line separated (e.g. LaunchEase, Shopify, Uygar). Primes the next recording so it spells them right.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         }
-        .padding()
     }
 
     @ViewBuilder
@@ -211,18 +211,18 @@ struct SettingsView: View {
         switch recordingManager.transcriptionEngine.modelState {
         case .ready:
             Label("Model loaded and ready", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.Colors.good)
                 .font(.appCaption)
         case .loading:
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading model...")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         case .error(let msg):
             Label(msg, systemImage: "xmark.circle")
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.Colors.stop)
                 .font(.appCaption)
         default:
             EmptyView()
@@ -236,18 +236,18 @@ struct SettingsView: View {
             Section("Input") {
                 Text("System audio is always captured via ScreenCaptureKit.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Text("Microphone uses your default input device.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
 
             Section("Echo Cancellation") {
                 Toggle("Cancel speaker echo from the mic", isOn: $echoCancellation)
                 Text("When you're on speakers (no headphones), your mic also picks up the other person. This subtracts that echo so only your voice is recorded as \"Me\". Turn off if you always use headphones.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
 
             Section("Storage") {
@@ -255,7 +255,7 @@ struct SettingsView: View {
                 LabeledContent("Audio files") {
                     Text(path)
                         .font(.appCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -265,7 +265,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .padding()
     }
 
     // MARK: - Copilot Tab
@@ -277,7 +276,7 @@ struct SettingsView: View {
 
                 Text("Watches the live transcript for the whole call and suggests answers, flags blockers, and captures action items in real time — no button needed.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
 
             Section("Claude API Key") {
@@ -297,21 +296,20 @@ struct SettingsView: View {
 
                     if keySaved {
                         Label("Saved", systemImage: "checkmark.circle")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.Colors.good)
                             .font(.appCaption)
                     } else if keySaveFailed {
                         Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.Colors.warn)
                             .font(.appCaption)
                     }
                 }
 
                 Text("Stored in your keychain. Copilot sends transcript text to Anthropic's API — your audio never leaves your Mac. Get a key at console.anthropic.com.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         }
-        .padding()
     }
 
     // MARK: - Knowledge Tab
@@ -321,12 +319,12 @@ struct SettingsView: View {
             Section("Documents") {
                 Text("Drop in pricing sheets, FAQs, playbooks — the copilot grounds its suggested answers in them and cites the source. Everything is indexed on this Mac; documents are never uploaded.")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 if recordingManager.knowledgeBase.documents.isEmpty {
                     Text("No documents yet")
                         .font(.appCaption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.Colors.ink3)
                 } else {
                     ForEach(recordingManager.knowledgeBase.documents) { document in
                         KBDocumentRow(document: document, knowledgeBase: recordingManager.knowledgeBase)
@@ -343,18 +341,17 @@ struct SettingsView: View {
                             .controlSize(.small)
                         Text("Indexing…")
                             .font(.appCaption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
                     }
                 }
 
                 if let error = recordingManager.knowledgeBase.lastError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.appCaption)
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(Theme.Colors.warn)
                 }
             }
         }
-        .padding()
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.pdf, .plainText, .text],
@@ -381,7 +378,6 @@ struct SettingsView: View {
                 .pickerStyle(.radioGroup)
             }
         }
-        .padding()
     }
 }
 
@@ -407,7 +403,7 @@ struct KBDocumentRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: document.name.lowercased().hasSuffix(".pdf") ? "doc.richtext" : "doc.text")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Text(document.name)
                     .font(.appCallout.weight(.medium))
@@ -415,7 +411,7 @@ struct KBDocumentRow: View {
 
                 Text("\(document.chunkCount) chunks")
                     .font(.appCaption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.ink3)
 
                 Spacer()
 
@@ -484,18 +480,18 @@ struct ProviderKeyField: View {
 
                 if saved {
                     Label("Saved", systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Colors.good)
                         .font(.appCaption)
                 } else if failed {
                     Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Colors.warn)
                         .font(.appCaption)
                 }
             }
 
             Text(hint)
                 .font(.appCaption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
     }
 }

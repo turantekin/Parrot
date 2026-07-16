@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Renders the AI's plain-text summary / coaching reports as structured, styled
 /// content — section labels with icons, bulleted lists, and a talk-ratio bar —
-/// instead of dumping the raw string into one `Text`. This is what makes the
-/// report match the design mockup (.context/mockups/parrot-redesign.html).
+/// instead of dumping the raw string into one `Text`, all styled with the
+/// native design system (Theme.swift).
 struct ReportContentView: View {
     let summary: String?
     let coaching: String?
@@ -11,7 +11,7 @@ struct ReportContentView: View {
     var talkPercentMe: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap) {
             if let summary, !summary.isEmpty {
                 ReportProse(text: summary)
             }
@@ -36,16 +36,18 @@ struct TalkRatioBar: View {
     let percentMe: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             Label("Talk balance", systemImage: "chart.bar")
                 .font(Theme.Typography.sectionLabel)
-                .foregroundStyle(Theme.Colors.label)
+                .textCase(.uppercase)
+                .kerning(0.5)
+                .foregroundStyle(Theme.Colors.ink3)
 
             GeometryReader { geo in
                 HStack(spacing: 2) {
                     Capsule().fill(Theme.Colors.accent)
                         .frame(width: max(0, geo.size.width * CGFloat(percentMe) / 100 - 1))
-                    Capsule().fill(Theme.Colors.line)
+                    Capsule().fill(Theme.Colors.chip)
                 }
             }
             .frame(height: 8)
@@ -99,16 +101,18 @@ struct ReportProse: View {
                 Image(systemName: Self.icon(for: title))
             }
             .font(Theme.Typography.sectionLabel)
-            .foregroundStyle(Theme.Colors.label)
+            .textCase(.uppercase)
+            .kerning(0.5)
+            .foregroundStyle(Theme.Colors.ink3)
             .padding(.top, 8)
             .padding(.bottom, 1)
 
         case .bullet(let text, let level):
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
                 Circle()
                     .fill(level > 0 ? Theme.Colors.subtle.opacity(0.6) : Theme.Colors.ink3)
                     .frame(width: 5, height: 5)
-                    .padding(.top, 7)
+                    .padding(.top, 7) // optical: centers the dot on the first 13pt line
                     .padding(.leading, level > 0 ? 16 : 2)
                 Self.styled(text)
                     .font(Theme.Typography.body)

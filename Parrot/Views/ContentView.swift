@@ -76,19 +76,19 @@ struct ContentView: View {
     private var settingsPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Settings")
-                .font(Theme.Typography.title(24))
+                .font(Theme.Typography.title())
                 .foregroundStyle(Theme.Colors.ink)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, Theme.Metrics.pad)
+                .padding(.bottom, 8)
 
             // Full bleed — no width cap, no centering. A wider window means a
-            // wider editor, period. Base font raised to the legend scale;
-            // controls without an explicit font inherit it.
+            // wider editor, period. Base font is the body scale; controls
+            // without an explicit font inherit it.
             SettingsView(isEmbedded: true)
                 .font(Theme.Typography.body)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.bottom, Theme.Metrics.pad)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Colors.canvas)
@@ -100,10 +100,10 @@ struct EmptyStateView: View {
         VStack(spacing: 12) {
             Image(systemName: "waveform")
                 .font(.system(size: 48))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.Colors.ink3)
             Text("Select a meeting or start recording")
                 .font(.appTitle3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

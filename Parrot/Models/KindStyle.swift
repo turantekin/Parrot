@@ -46,18 +46,24 @@ extension KindResolver {
         return fallbackStyle(forKey: key)
     }
 
-    /// Maps known Theme-palette light hexes to their adaptive dark counterparts so that
-    /// profile-stored colors (which are persisted as single light hex values) remain
-    /// appearance-correct in dark mode. Unknown custom hexes fall back to a fixed color.
+    /// Maps every hex the built-in presets persist (see ProfilePresets) to an
+    /// adaptive light/dark pair so profile-stored colors (single light hex values
+    /// in user data) remain appearance-correct in dark mode. Light value = the
+    /// stored hex; dark value = a lightened variant of the same hue. Unknown
+    /// custom hexes fall back to a fixed color.
     static func adaptiveColor(forHex hex: String) -> Color {
         // Normalise: uppercase, strip leading '#'.
         let s = hex.hasPrefix("#") ? String(hex.dropFirst().uppercased()) : hex.uppercased()
         switch s {
-        case "4F6FB0": return Color(lightHex: 0x4F6FB0, darkHex: 0x8AA0D0) // subtle
-        case "2F7E96": return Color(lightHex: 0x2F7E96, darkHex: 0x57AEC6) // accent
-        case "E8943A": return Color(lightHex: 0xE8943A, darkHex: 0xE8A85C) // blocker
-        case "3F9168": return Color(lightHex: 0x3F9168, darkHex: 0x5BBE8C) // action
-        case "5F6470": return Color(lightHex: 0x5F6470, darkHex: 0xA0A4AD) // ink2
+        case "4F6FB0": return Color(lightHex: 0x4F6FB0, darkHex: 0x8AA0D0) // blue — suggestions/answers
+        case "2F7E96": return Color(lightHex: 0x2F7E96, darkHex: 0x57AEC6) // teal — questions/next steps
+        case "E8943A": return Color(lightHex: 0xE8943A, darkHex: 0xE8A85C) // orange — blockers/objections
+        case "3F9168": return Color(lightHex: 0x3F9168, darkHex: 0x5BBE8C) // green — actions/commitments
+        case "5F6470": return Color(lightHex: 0x5F6470, darkHex: 0xA0A4AD) // gray — notes/feedback
+        case "C0563B": return Color(lightHex: 0xC0563B, darkHex: 0xD9805F) // terracotta — unanswered question
+        case "7A5FB0": return Color(lightHex: 0x7A5FB0, darkHex: 0xA58FD0) // purple — opportunity
+        case "C29218": return Color(lightHex: 0xC29218, darkHex: 0xD8AE4A) // gold — "Ask this next"
+        case "888888": return Color(lightHex: 0x888888, darkHex: 0xB0B0B0) // legacy default gray
         default:       return Color(hex: hex)
         }
     }

@@ -15,7 +15,7 @@ struct SentimentStripView: View {
             HStack(spacing: 12) {
                 if let read, !read.isEmpty {
                     Text(read.capitalized)
-                        .font(Theme.Typography.sans(12, .semibold))
+                        .font(Theme.Typography.sans(12, .medium))
                         .foregroundStyle(Theme.Colors.ink2)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -37,17 +37,19 @@ struct SentimentStripView: View {
         // Clamp the meter fill: model-returned values aren't fully trusted, so
         // an out-of-range value can't overflow the track.
         let fill = CGFloat(min(max(v ?? 0, 0), 100)) / 100
+        // Adaptive color so profile-stored (light) hexes stay legible in dark mode.
+        let color = KindResolver.adaptiveColor(forHex: gauge.colorHex)
         return HStack(spacing: 5) {
             Circle()
-                .fill(Color(hex: gauge.colorHex))
+                .fill(color)
                 .frame(width: 6, height: 6)
             Text(gauge.label)
-                .font(Theme.Typography.sans(12, .medium))
+                .font(Theme.Typography.secondary)
                 .foregroundStyle(Theme.Colors.ink2)
                 .lineLimit(1)
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.Colors.line)
-                Capsule().fill(Color(hex: gauge.colorHex))
+                Capsule().fill(Theme.Colors.chip)
+                Capsule().fill(color)
                     .frame(width: 36 * fill)
                     .animation(.easeOut(duration: 0.4), value: v)
             }

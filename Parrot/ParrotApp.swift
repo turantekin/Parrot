@@ -15,6 +15,10 @@ struct ParrotMain {
             MainActor.assumeIsolated { CopilotSnapshot.write(to: args[i + 1]) }
             return
         }
+        if let i = args.firstIndex(of: "--sidebar-snapshot"), i + 1 < args.count {
+            MainActor.assumeIsolated { SidebarSnapshot.write(to: args[i + 1]) }
+            return
+        }
         if let i = args.firstIndex(of: "--transcribe-test"), i + 1 < args.count {
             let modelFolder = (i + 2 < args.count) ? args[i + 2] : ""
             TranscribeTest.run(audioPath: args[i + 1], modelFolder: modelFolder)
@@ -31,6 +35,8 @@ struct ParrotMain {
 struct ParrotApp: App {
     @State private var recordingManager = RecordingManager()
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+    /// Same key/enum as SettingsView's Appearance picker.
+    @AppStorage("appearance") private var appearance = Appearance.system
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self])
@@ -55,9 +61,41 @@ struct ParrotApp: App {
                         .environment(recordingManager)
                         .interactiveDismissDisabled()
                 }
+                .onAppear(perform: applyAppearance)
+                .onChange(of: appearance) { applyAppearance() }
         }
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 900, height: 600)
+        .commands {
+            CommandMenu("Recording") {
+                Button("Start Recording") {
+                    Task { @MainActor in
+                        do {
+                            // Same preflight as the menu bar / dashboard buttons.
+                            try await recordingManager.preflightPermissionsAndStart(
+                                modelContext: sharedModelContainer.mainContext
+                            )
+                        } catch {
+                            NSApp.activate(ignoringOtherApps: true)
+                            let alert = NSAlert()
+                            alert.messageText = "Couldn't start recording"
+                            alert.informativeText = error.localizedDescription
+                            alert.runModal()
+                        }
+                    }
+                }
+                .keyboardShortcut("r")
+                .disabled(recordingManager.isRecording || !recordingManager.transcriptionEngine.isReady)
+
+                Button("Stop Recording") {
+                    Task { @MainActor in
+                        await recordingManager.stopRecording()
+                    }
+                }
+                .keyboardShortcut(".")
+                .disabled(!recordingManager.isRecording || recordingManager.isStopping)
+            }
+        }
 
         MenuBarExtra {
             MenuBarView()
@@ -74,5 +112,14 @@ struct ParrotApp: App {
                 .environment(recordingManager.profileStore)
         }
         .modelContainer(sharedModelContainer)
+    }
+
+    /// Applies the Settings → Appearance choice app-wide (titlebar included).
+    private func applyAppearance() {
+        switch appearance {
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 }
