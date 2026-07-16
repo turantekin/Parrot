@@ -36,7 +36,7 @@ struct LiveRecordingView: View {
             // Audio waveform
             AudioWaveformView(level: recordingManager.audioCaptureManager.audioLevel)
                 .frame(height: 40)
-                .padding(.horizontal)
+                .padding(.horizontal, Theme.Metrics.pad)
 
             deviceBar
 
@@ -70,22 +70,19 @@ struct LiveRecordingView: View {
             // Recording indicator
             HStack(spacing: 8) {
                 Circle()
-                    .fill(.red)
+                    .fill(Theme.Colors.stop)
                     .frame(width: 10, height: 10)
-                    .shadow(color: .red.opacity(0.5), radius: 4)
 
                 Text("Recording")
                     .font(.appHeadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Colors.stop)
             }
 
             Spacer()
 
             // Timer
             Text(recordingManager.formattedElapsedTime)
-                .font(.appTitle2)
-                .monospacedDigit()
-                .fontWeight(.medium)
+                .font(Theme.Typography.mono(15, .medium))
 
             Spacer()
 
@@ -98,7 +95,7 @@ struct LiveRecordingView: View {
                 } label: {
                     Image(systemName: "sparkles")
                         .font(.appHeadline)
-                        .foregroundStyle(showCopilot ? .purple : .secondary)
+                        .foregroundStyle(showCopilot ? Theme.Colors.accent : Theme.Colors.ink2)
                 }
                 .buttonStyle(.plain)
                 .help(showCopilot ? "Hide Copilot" : "Show Copilot")
@@ -115,12 +112,13 @@ struct LiveRecordingView: View {
                 Label(recordingManager.isStopping ? "Finalizing…" : "Stop",
                       systemImage: "stop.circle.fill")
                     .font(.appHeadline)
-                    .foregroundStyle(recordingManager.isStopping ? Color.secondary : Color.red)
+                    .foregroundStyle(recordingManager.isStopping ? Theme.Colors.ink2 : Theme.Colors.stop)
             }
             .buttonStyle(.plain)
             .disabled(recordingManager.isStopping)
         }
-        .padding()
+        .padding(.horizontal, Theme.Metrics.pad)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Device Bar
@@ -131,7 +129,7 @@ struct LiveRecordingView: View {
         let cap = recordingManager.audioCaptureManager
         return HStack(spacing: 12) {
             Image(systemName: cap.micActive ? "mic.fill" : "mic.slash.fill")
-                .foregroundStyle(cap.micActive ? .blue : .orange)
+                .foregroundStyle(cap.micActive ? Theme.Colors.good : Theme.Colors.warn)
             Text(cap.inputDeviceName.isEmpty ? "No input" : cap.inputDeviceName)
                 .font(.appCaption)
                 .lineLimit(1)
@@ -142,7 +140,7 @@ struct LiveRecordingView: View {
                 } label: {
                     Label("not hearing you — enable mic", systemImage: "exclamationmark.triangle.fill")
                         .font(.appCaption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Colors.warn)
                 }
                 .buttonStyle(.plain)
                 .help("Open Microphone privacy settings and enable Parrot")
@@ -151,27 +149,27 @@ struct LiveRecordingView: View {
             if cap.echoCancellerStarved {
                 Label("echo cancel inactive", systemImage: "waveform.slash")
                     .font(.appCaption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Colors.warn)
                     .help("System audio isn't in the expected format, so speaker bleed may transcribe as \"Me\". Headphones avoid this entirely.")
             }
 
             if let notice = recordingManager.transcriptionEngine.cloudNotice {
                 Label(notice, systemImage: "icloud.slash")
                     .font(.appCaption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Colors.warn)
             }
 
             Spacer()
 
             Image(systemName: "speaker.wave.2.fill")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
             Text(cap.outputDeviceName.isEmpty ? "Output" : cap.outputDeviceName)
                 .font(.appCaption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
                 .lineLimit(1)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 5)
+        .padding(.horizontal, Theme.Metrics.pad)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Side panel (Transcript | Notes)
@@ -193,12 +191,12 @@ struct LiveRecordingView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = true }
                 } label: {
                     Image(systemName: "sidebar.right")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                 }
                 .buttonStyle(.plain)
                 .help("Collapse this panel")
             }
-            .padding(10)
+            .padding(8)
 
             Divider()
 
@@ -219,8 +217,8 @@ struct LiveRecordingView: View {
                 withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = false }
             } label: {
                 Image(systemName: "text.bubble")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.Colors.ink2)
             }
             .buttonStyle(.plain)
             .help("Show transcript")
@@ -230,15 +228,15 @@ struct LiveRecordingView: View {
                 withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = false }
             } label: {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.Colors.ink2)
             }
             .buttonStyle(.plain)
             .help("Show notes")
 
             Spacer()
         }
-        .padding(.top, 14)
+        .padding(.top, 12)
         .frame(width: 44)
         .frame(maxHeight: .infinity)
         .background(Theme.Colors.panel)
@@ -254,14 +252,14 @@ struct LiveRecordingView: View {
                 TextEditor(text: $meeting.notes)
                     .font(Theme.Typography.body)
                     .scrollContentBackground(.hidden)
-                    .padding(10)
+                    .padding(12)
 
                 if meeting.notes.isEmpty {
                     Text("Type notes — saved with this call.")
                         .font(Theme.Typography.body)
                         .foregroundStyle(Theme.Colors.ink3)
-                        .padding(.top, 18)
-                        .padding(.leading, 15)
+                        .padding(.top, 20)
+                        .padding(.leading, 16)
                         .allowsHitTesting(false)
                 }
             }
@@ -303,7 +301,7 @@ struct LiveRecordingView: View {
                             && !recordingManager.transcriptionEngine.isHearingSpeech {
                             Text("Parrot is listening...")
                                 .font(Theme.Typography.body)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Theme.Colors.ink3)
                                 .italic()
                                 .padding(.horizontal)
                                 .padding(.top, 20)
@@ -354,14 +352,14 @@ struct LiveRecordingView: View {
                         }
                     } label: {
                         Label("Resume live", systemImage: "arrow.down.to.line")
-                            .font(.appCaption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
+                            .font(Theme.Typography.caption.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
                             .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().strokeBorder(.secondary.opacity(0.3)))
+                            .overlay(Capsule().strokeBorder(Theme.Colors.line))
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 8)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -426,8 +424,7 @@ struct ChatBubbleRow: View {
                         .font(.appCaption.weight(.medium))
                         .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
                     Text(segment.formattedTimestamp)
-                        .font(.appCaption2)
-                        .monospacedDigit()
+                        .font(Theme.Typography.mono(11))
                         .foregroundStyle(Theme.Colors.ink3)
                 }
                 .padding(.top, 8)
@@ -438,11 +435,11 @@ struct ChatBubbleRow: View {
                 .font(Theme.Typography.body)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(
-                    isMe ? Theme.Colors.accent.opacity(0.15) : Theme.Colors.chip,
-                    in: RoundedRectangle(cornerRadius: 14)
+                    isMe ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.chip,
+                    in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
                 )
         }
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
@@ -462,15 +459,15 @@ struct TypingBubble: View {
             if !text.isEmpty {
                 Text(text)
                     .font(Theme.Typography.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             TypingDots()
                 .padding(.bottom, 4)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(Theme.Colors.chip.opacity(0.7), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.Colors.chip.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -503,7 +500,7 @@ struct MicLevelView: View {
         return HStack(spacing: 2) {
             ForEach(0..<bars, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(i < active ? Color.blue : Color.secondary.opacity(0.25))
+                    .fill(i < active ? Theme.Colors.accent : Theme.Colors.chip)
                     .frame(width: 3, height: 12)
             }
         }
@@ -521,7 +518,7 @@ struct AudioWaveformView: View {
         HStack(spacing: 2) {
             ForEach(0..<levels.count, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(Color.accentColor.opacity(0.6))
+                    .fill(Theme.Colors.accent.opacity(0.6))
                     .frame(width: 3, height: max(2, CGFloat(levels[index]) * 60))
             }
         }

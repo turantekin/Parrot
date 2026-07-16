@@ -30,6 +30,7 @@ struct MeetingDetailView: View {
     @State private var micPlayer: AVAudioPlayer?        // mic audio ("Me")
     @State private var isPlaying = false
     @State private var playbackTime: TimeInterval = 0
+    @State private var isScrubbing = false              // slider drag in progress
     @State private var playbackSpeed: Float = 1.0
     @State private var playbackTimer: Timer?
     @State private var activeSegmentID: UUID?
@@ -92,8 +93,8 @@ struct MeetingDetailView: View {
         .toolbar {
             ToolbarItemGroup {
                 Menu {
-                    Button("Export as TXT") { exportTXT() }
-                    Button("Export as SRT") { exportSRT() }
+                    Button("Export as TXT") { MeetingActions.exportTXT(meeting) }
+                    Button("Export as SRT") { MeetingActions.exportSRT(meeting) }
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -121,11 +122,11 @@ struct MeetingDetailView: View {
                     meeting.title = titleText
                     editingTitle = false
                 })
-                .font(.appTitle)
+                .font(Theme.Typography.title(20))
                 .textFieldStyle(.plain)
             } else {
                 Text(meeting.title)
-                    .font(Theme.Typography.title(26))
+                    .font(Theme.Typography.title(20))
                     .foregroundStyle(Theme.Colors.ink)
                     .onTapGesture(count: 2) {
                         editingTitle = true
@@ -140,8 +141,8 @@ struct MeetingDetailView: View {
                 }
                 statusBadge
             }
-            .font(.appCaption)
-            .foregroundStyle(.secondary)
+            .font(Theme.Typography.caption)
+            .foregroundStyle(Theme.Colors.ink2)
 
             // What the AI cost for this call (estimated); old meetings have no data.
             if let usage = meeting.aiUsage {
@@ -151,16 +152,16 @@ struct MeetingDetailView: View {
             // Name the other party so the transcript/report read naturally.
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                 TextField("Name the other speaker (e.g. Sam)", text: $themNameText) {
                     meeting.themName = themNameText.trimmingCharacters(in: .whitespaces).nilIfEmpty
                 }
                 .textFieldStyle(.plain)
                 .frame(maxWidth: 240)
             }
-            .font(.appCaption)
+            .font(Theme.Typography.caption)
         }
-        .padding()
+        .padding(Theme.Metrics.pad)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -171,20 +172,20 @@ struct MeetingDetailView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "cpu")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                 Text("AI cost ~\(AIUsage.formatUSD(usage.totalUSD))")
                     .fontWeight(.medium)
                     .foregroundStyle(Theme.Colors.ink)
                 Text(usage.costBreakdown()
                     .map { "\($0.label) \(AIUsage.formatUSD($0.usd))" }
                     .joined(separator: " · "))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.ink2)
             }
-            .font(.appCaption)
+            .font(Theme.Typography.caption)
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showCostBreakdown, arrowEdge: .bottom) {
@@ -203,12 +204,11 @@ struct MeetingDetailView: View {
                             .font(Theme.Typography.secondary)
                         Text(item.detail)
                             .font(Theme.Typography.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
                     }
                     Spacer(minLength: 24)
                     Text(AIUsage.formatUSD(item.usd))
-                        .font(Theme.Typography.secondary)
-                        .monospacedDigit()
+                        .font(Theme.Typography.mono(11))
                 }
             }
             Divider()
@@ -216,14 +216,13 @@ struct MeetingDetailView: View {
                 Text("Total").font(Theme.Typography.secondary.weight(.semibold))
                 Spacer()
                 Text(AIUsage.formatUSD(usage.totalUSD))
-                    .font(Theme.Typography.secondary.weight(.semibold))
-                    .monospacedDigit()
+                    .font(Theme.Typography.mono(11, .semibold))
             }
             Text("Estimated from provider list prices — not a bill.")
                 .font(Theme.Typography.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 320)
     }
 
@@ -238,10 +237,12 @@ struct MeetingDetailView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(Theme.Colors.ink2)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.chip)
+        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .padding(.horizontal, Theme.Metrics.pad)
+        .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -249,10 +250,10 @@ struct MeetingDetailView: View {
         switch meeting.status {
         case .processing:
             Label("Processing", systemImage: "gearshape.2")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.Colors.warn)
         case .failed:
             Label("Failed", systemImage: "xmark.circle")
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.Colors.stop)
         default:
             // A recovered call is otherwise `.done`; flag it so it doesn't read as
             // a clean recording.
@@ -277,36 +278,17 @@ struct MeetingDetailView: View {
             }
             .buttonStyle(.plain)
 
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(height: 4)
-
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.accentColor)
-                        .frame(
-                            width: meeting.duration > 0
-                                ? geo.size.width * (playbackTime / meeting.duration)
-                                : 0,
-                            height: 4
-                        )
-                }
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture { location in
-                    let fraction = location.x / geo.size.width
-                    seekTo(fraction * meeting.duration)
-                }
+            // Native scrubber — drag anywhere; the seek commits on release using
+            // the same call the old tap-to-seek bar used.
+            Slider(value: $playbackTime, in: 0...max(meeting.duration, 0.01)) { editing in
+                isScrubbing = editing
+                if !editing { seekTo(playbackTime) }
             }
-            .frame(height: 20)
 
             // Time display
             Text("\(formatTime(playbackTime)) / \(formatTime(meeting.duration))")
-                .font(.appCaption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.ink2)
                 .frame(width: 100)
 
             // Speed selector
@@ -323,7 +305,8 @@ struct MeetingDetailView: View {
                 micPlayer?.rate = newValue
             }
         }
-        .padding(.horizontal)
+        .controlSize(.small)
+        .padding(.horizontal, Theme.Metrics.pad)
         .padding(.vertical, 8)
     }
 
@@ -344,7 +327,7 @@ struct MeetingDetailView: View {
                     )
                 }
             }
-            .padding(28)
+            .padding(Theme.Metrics.pad)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -375,7 +358,7 @@ struct MeetingDetailView: View {
 
     private var insightsTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 if meeting.insights.isEmpty {
                     emptyTabState("No copilot insights were captured on this call.")
                 } else {
@@ -393,7 +376,7 @@ struct MeetingDetailView: View {
                     }
                 }
             }
-            .padding(28)
+            .padding(Theme.Metrics.pad)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -407,14 +390,17 @@ struct MeetingDetailView: View {
             TextEditor(text: $meeting.notes)
                 .font(Theme.Typography.body)
                 .scrollContentBackground(.hidden)
-                .padding(20)
+                .padding(Theme.Metrics.pad)
 
             if meeting.notes.isEmpty {
+                // Offsets track the editor inset plus TextEditor's intrinsic
+                // text-container inset (~8pt top, ~6pt leading) so the
+                // placeholder sits exactly where typed text starts.
                 Text("Notes for this call — type anything worth keeping.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Colors.ink3)
-                    .padding(.top, 28)
-                    .padding(.leading, 26)
+                    .padding(.top, Theme.Metrics.pad + 8)
+                    .padding(.leading, Theme.Metrics.pad + 6)
                     .allowsHitTesting(false)
             }
         }
@@ -437,8 +423,8 @@ struct MeetingDetailView: View {
             ProgressView()
                 .controlSize(.small)
             Text("Identifying speakers...")
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.ink2)
         }
         .padding(.vertical, 8)
     }
@@ -459,7 +445,7 @@ struct MeetingDetailView: View {
                     }
                 }
             }
-            .padding()
+            .padding(Theme.Metrics.pad)
         }
     }
 
@@ -501,6 +487,9 @@ struct MeetingDetailView: View {
         } else {
             startSynced()
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                // Don't fight the user's drag — the slider owns playbackTime
+                // until the scrub commits.
+                if isScrubbing { return }
                 // AVAudioPlayer goes silent at end-of-track without a callback
                 // here — detect it, or the timer runs forever and the button
                 // stays stuck on pause.
@@ -548,23 +537,6 @@ struct MeetingDetailView: View {
         return String(format: "%02d:%02d", m, s)
     }
 
-    // MARK: - Export
-
-    private func exportTXT() {
-        let content = ExportService.exportToTXT(meeting: meeting)
-        let filename = meeting.title.replacingOccurrences(of: " ", with: "_")
-        if let url = try? ExportService.save(content: content, filename: filename, extension: "txt") {
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-        }
-    }
-
-    private func exportSRT() {
-        let content = ExportService.exportToSRT(meeting: meeting)
-        let filename = meeting.title.replacingOccurrences(of: " ", with: "_")
-        if let url = try? ExportService.save(content: content, filename: filename, extension: "srt") {
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-        }
-    }
 }
 
 // MARK: - Transcript Segment Row
@@ -574,8 +546,12 @@ struct TranscriptSegmentRow: View {
     let isActive: Bool
     var themName: String? = nil
 
+    /// Muted adaptive palette for the other side of the call — "Me" is always
+    /// the accent, so these stay deliberately quiet.
     private static let speakerColors: [Color] = [
-        .blue, .green, .orange, .purple, .pink, .teal, .indigo, .mint
+        Color(lightHex: 0x6A8CAF, darkHex: 0x7FA4C6),
+        Color(lightHex: 0x7A9A7A, darkHex: 0x93B593),
+        Color(lightHex: 0x9A7AA0, darkHex: 0xB694BC)
     ]
 
     /// Resolved speaker name: "Me" stays "Me"; everyone else shows the user's
@@ -590,15 +566,14 @@ struct TranscriptSegmentRow: View {
         HStack(alignment: .top, spacing: 8) {
             // Timestamp
             Text(segment.formattedTimestamp)
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.ink2)
                 .frame(width: 40, alignment: .trailing)
 
             // Speaker label
             if let speaker = displayLabel {
                 Text(speaker)
-                    .font(.appCaption)
+                    .font(Theme.Typography.caption)
                     .fontWeight(.medium)
                     .foregroundStyle(speakerColor(for: speaker))
                     .frame(width: 70, alignment: .leading)
@@ -612,14 +587,16 @@ struct TranscriptSegmentRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(
-            isActive ? Color.accentColor.opacity(0.1) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 6)
+            isActive ? Theme.Colors.accent.opacity(0.12) : Color.clear,
+            in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
         )
         .animation(.easeInOut(duration: 0.15), value: isActive)
     }
 
     private func speakerColor(for label: String) -> Color {
-        Self.speakerColors[label.stableHash % Self.speakerColors.count]
+        label == "Me"
+            ? Theme.Colors.accent
+            : Self.speakerColors[label.stableHash % Self.speakerColors.count]
     }
 }
 
@@ -635,10 +612,9 @@ struct StoredInsightRow: View {
         HStack(alignment: .top, spacing: 8) {
             Button(action: onSeek) {
                 Text(insight.formattedCallTime)
-                    .font(.appCaption)
-                    .monospacedDigit()
+                    .font(Theme.Typography.mono(11))
                     .underline()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
             .buttonStyle(.plain)
             .help("Play from this moment")
@@ -659,17 +635,17 @@ struct StoredInsightRow: View {
                             systemImage: insight.isHandled ? "checkmark" : "exclamationmark.circle"
                         )
                         .font(.appCaption2)
-                        .foregroundStyle(insight.isHandled ? Color.green : .orange)
+                        .foregroundStyle(insight.isHandled ? Theme.Colors.good : Theme.Colors.warn)
                     }
                 }
 
                 Text(insight.detail)
                     .font(Theme.Typography.secondary)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                     .textSelection(.enabled)
 
                 if let reply = insight.reply {
-                    (Text("Try: ").bold() + Text("“\(reply)”"))
+                    (Text("Try: ") + Text("“\(reply)”"))
                         .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.action)
                         .textSelection(.enabled)
@@ -678,7 +654,7 @@ struct StoredInsightRow: View {
                 if let source = insight.source {
                     Label(source, systemImage: source == "general knowledge" ? "globe" : "doc.text")
                         .font(.appCaption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.Colors.ink3)
                 }
             }
         }

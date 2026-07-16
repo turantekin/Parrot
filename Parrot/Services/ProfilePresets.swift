@@ -17,6 +17,9 @@ enum ProfilePresets {
     /// card that carries real value (and the parrot is colorful).
     static let presetVersion = 3
 
+    // The hex strings below are persisted in user data — never change them when
+    // retheming the app. KindResolver.adaptiveColor maps each one to an adaptive
+    // light/dark pair at render time.
     private static func kind(_ key: String, _ label: String, _ hex: String, _ icon: String,
                              _ trigger: String, pinned: Bool = false, priority: Int = 0) -> ProfileKind {
         ProfileKind(id: UUID(), key: key, label: label, colorHex: hex, iconSystemName: icon,

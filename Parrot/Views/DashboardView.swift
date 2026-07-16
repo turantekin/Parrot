@@ -19,7 +19,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 28) {
+            VStack(spacing: Theme.Metrics.sectionGap) {
                 recordButton
                     .padding(.top, 44)
 
@@ -35,7 +35,7 @@ struct DashboardView: View {
             }
             .frame(maxWidth: 600)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 28)
+            .padding(.horizontal, Theme.Metrics.pad)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.canvas)
@@ -70,14 +70,14 @@ struct DashboardView: View {
             } label: {
                 Image(systemName: "record.circle")
                     .font(.system(size: 64))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Colors.stop)
                     .symbolEffect(.pulse, options: .repeating, isActive: recordingManager.isRecording)
             }
             .buttonStyle(.plain)
             .disabled(!recordingManager.transcriptionEngine.isReady)
 
             Text("Start recording")
-                .font(Theme.Typography.sans(16, .semibold))
+                .font(Theme.Typography.cardTitle)
                 .foregroundStyle(Theme.Colors.ink)
 
             Text("Captures system audio + your mic, transcribed on-device.")
@@ -103,7 +103,7 @@ struct DashboardView: View {
             Label("Import a recording", systemImage: "square.and.arrow.down")
                 .font(Theme.Typography.sans(13, .medium))
                 .foregroundStyle(Theme.Colors.ink)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Theme.Colors.chip, in: Capsule())
         }
@@ -133,9 +133,9 @@ struct DashboardView: View {
                     Button { profileStore.setActive(profile) } label: {
                         HStack(spacing: 5) {
                             Image(systemName: profile.iconSystemName).font(.appCaption)
-                            Text(profile.name).font(Theme.Typography.sans(12.5, .medium))
+                            Text(profile.name).font(Theme.Typography.secondary)
                         }
-                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(isActive ? Theme.Colors.accent : Theme.Colors.chip,
                                     in: Capsule())
                         .foregroundStyle(isActive ? .white : Theme.Colors.ink)
@@ -154,7 +154,7 @@ struct DashboardView: View {
         return HStack(spacing: 6) {
             Image(systemName: "sparkles")
                 .font(.appCaption)
-                .foregroundStyle(.purple)
+                .foregroundStyle(Theme.Colors.accent)
 
             TextField(
                 "Brief the copilot (optional) — e.g. \"Call with Westfield PM about AC replacement\"",
@@ -174,7 +174,7 @@ struct DashboardView: View {
         switch recordingManager.transcriptionEngine.modelState {
         case .notLoaded:
             Label("Model not loaded", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.Colors.warn)
                 .font(.appCaption)
         case .loading:
             HStack(spacing: 8) {
@@ -182,7 +182,7 @@ struct DashboardView: View {
                     .controlSize(.small)
                 Text("Loading WhisperKit model...")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         case .downloading(let progress):
             VStack(spacing: 4) {
@@ -190,15 +190,15 @@ struct DashboardView: View {
                     .frame(width: 200)
                 Text("Downloading model... \(Int(progress * 100))%")
                     .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         case .ready:
             Label("Ready to record", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.Colors.good)
                 .font(.appCaption)
         case .error(let message):
             Label(message, systemImage: "xmark.circle")
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.Colors.stop)
                 .font(.appCaption)
         }
     }
@@ -252,6 +252,9 @@ struct DashboardView: View {
                     DashboardMeetingRow(meeting: meeting)
                 }
                 .buttonStyle(.plain)
+                .meetingContextMenu(meeting, onDeleted: {
+                    if selectedMeeting?.id == meeting.id { selectedMeeting = nil }
+                })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -265,9 +268,9 @@ struct StatTile: View {
     let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(Theme.Typography.title(22))
+                .font(Theme.Typography.title())
                 .foregroundStyle(Theme.Colors.ink)
                 .monospacedDigit()
             Text(label)
@@ -275,9 +278,9 @@ struct StatTile: View {
                 .foregroundStyle(Theme.Colors.ink2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Colors.line))
+        .padding(12)
+        .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
     }
 }
 
@@ -287,33 +290,40 @@ struct DashboardMeetingRow: View {
     let meeting: Meeting
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 12) {
             Circle()
                 .fill(Theme.Colors.accent.opacity(0.8))
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
                 Text(meeting.title)
-                    .font(Theme.Typography.sans(13.5, .semibold))
+                    .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(Theme.Typography.sans(12))
-                    .foregroundStyle(Theme.Colors.ink2)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(meeting.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(Theme.Typography.mono(11))
+                        .foregroundStyle(Theme.Colors.ink3)
+                    Text("· \(who) ·")
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    Text(meeting.formattedDuration)
+                        .font(Theme.Typography.mono(11))
+                        .foregroundStyle(Theme.Colors.ink3)
+                }
+                .lineLimit(1)
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.Colors.ink3)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
     }
 
-    private var subtitle: String {
-        let who = meeting.themName?.nilIfEmpty
+    private var who: String {
+        meeting.themName?.nilIfEmpty
             ?? (meeting.speakerCount > 1 ? "\(meeting.speakerCount) people" : "Them")
-        return "\(meeting.date.formatted(date: .abbreviated, time: .shortened)) · \(who) · \(meeting.formattedDuration)"
     }
 }

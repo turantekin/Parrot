@@ -1,6 +1,39 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Settings pages, System Settings-style: topics on the left, ONE topic per
+/// page on the right. Content rules: controls at body size, hints one line at
+/// secondary size — long explanations live in the control's own label instead.
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, recording, transcription, copilot, apiKeys, knowledge, profiles
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .recording: "Recording"
+        case .transcription: "Transcription"
+        case .copilot: "Copilot"
+        case .apiKeys: "API Keys"
+        case .knowledge: "Knowledge"
+        case .profiles: "Profiles"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: "gearshape"
+        case .recording: "mic"
+        case .transcription: "text.quote"
+        case .copilot: "sparkles"
+        case .apiKeys: "key"
+        case .knowledge: "books.vertical"
+        case .profiles: "person.2"
+        }
+    }
+}
+
 struct SettingsView: View {
     /// True when rendered inside the main window's detail pane (wide, fills the
     /// space); false for the standalone Cmd-, Settings window, which needs a
@@ -16,9 +49,7 @@ struct SettingsView: View {
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @AppStorage("polishAfterCall") private var polishAfterCall = false
-    @State private var apiKey = APIKeyStore.load() ?? ""
-    @State private var keySaved = false
-    @State private var keySaveFailed = false
+    @State private var section: SettingsSection = .general
     @State private var showFileImporter = false
     /// There's no Save button — @AppStorage persists on every change. This
     /// drives a small transient "Saved" chip so that's visible, debounced so
@@ -47,117 +78,137 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        TabView {
-            generalTab
-                .tabItem {
-                    Label("General", systemImage: "gear")
+        HStack(spacing: 0) {
+            // MARK: Section nav
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(SettingsSection.allCases) { item in
+                    SettingsNavRow(section: item, selected: section == item) {
+                        section = item
+                    }
                 }
+                Spacer()
+            }
+            .padding(8)
+            .frame(width: 168)
+            .background(Theme.Colors.panel)
 
-            audioTab
-                .tabItem {
-                    Label("Audio", systemImage: "waveform")
-                }
+            Divider()
 
-            copilotTab
-                .tabItem {
-                    Label("Copilot", systemImage: "sparkles")
+            // MARK: Page
+            Group {
+                switch section {
+                case .general: generalPage
+                case .recording: recordingPage
+                case .transcription: transcriptionPage
+                case .copilot: copilotPage
+                case .apiKeys: apiKeysPage
+                case .knowledge: knowledgePage
+                case .profiles: ProfilesSettingsView()
                 }
-
-            ProfilesSettingsView()
-                .tabItem {
-                    Label("Profiles", systemImage: "person.2.badge.gearshape")
-                }
-
-            knowledgeTab
-                .tabItem {
-                    Label("Knowledge", systemImage: "books.vertical")
-                }
-
-            appearanceTab
-                .tabItem {
-                    Label("Appearance", systemImage: "paintbrush")
-                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // Grouped forms pin content to the top and scroll — the default
-        // column style floated each tab's content in the vertical center
-        // of the tall embedded pane.
         .formStyle(.grouped)
         .onChange(of: settingsFingerprint) { flashSavedToast() }
         .overlay(alignment: .bottom) {
             if showSavedToast {
                 Label("Saved", systemImage: "checkmark.circle.fill")
                     .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.canvas)
+                    .foregroundStyle(Theme.Colors.ink)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Theme.Colors.ink.opacity(0.92), in: Capsule())
-                    .padding(.bottom, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.Colors.line))
+                    .padding(.bottom, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .allowsHitTesting(false)
             }
         }
-        .frame(width: isEmbedded ? nil : 520, height: isEmbedded ? nil : 440)
+        .frame(width: isEmbedded ? nil : 780, height: isEmbedded ? nil : 540)
         .frame(maxWidth: isEmbedded ? .infinity : nil,
                maxHeight: isEmbedded ? .infinity : nil)
     }
 
-    // MARK: - General Tab
+    // MARK: - General
 
-    private var generalTab: some View {
+    private var generalPage: some View {
         Form {
-            Section("Transcription Engine") {
+            Section("Appearance") {
+                Picker("Appearance", selection: $appearance) {
+                    Text("Follow System").tag(Appearance.system)
+                    Text("Light").tag(Appearance.light)
+                    Text("Dark").tag(Appearance.dark)
+                }
+                .pickerStyle(.radioGroup)
+            }
+
+            Section("Storage") {
+                let path = AudioCaptureManager.storageDirectory().path
+                LabeledContent("Audio files") {
+                    Text(path)
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Button("Show in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                }
+            }
+        }
+    }
+
+    // MARK: - Recording
+
+    private var recordingPage: some View {
+        Form {
+            Section("Echo Cancellation") {
+                Toggle("Cancel speaker echo from the mic", isOn: $echoCancellation)
+                Hint("On speakers, this keeps the other person's voice out of your \"Me\" track. Turn off with headphones.")
+            }
+
+            Section("Input") {
+                Hint("System audio is captured via ScreenCaptureKit; the microphone uses your default input device.")
+            }
+        }
+    }
+
+    // MARK: - Transcription
+
+    private var transcriptionPage: some View {
+        Form {
+            Section("Engine") {
                 Picker("Engine", selection: $transcriptionBackend) {
                     Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
                     Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
-                    Text("Deepgram cloud — fastest, word-by-word streaming (~$1/hr)").tag(TranscriptionBackend.deepgram.rawValue)
+                    Text("Deepgram cloud — word-by-word streaming, ~$1/hr").tag(TranscriptionBackend.deepgram.rawValue)
                 }
                 .pickerStyle(.radioGroup)
 
-                if transcriptionBackend == TranscriptionBackend.groq.rawValue {
-                    ProviderKeyField(
-                        label: "Groq API key",
-                        account: TranscriptionBackend.groq.keychainAccount!,
-                        placeholder: "gsk_…",
-                        hint: "Audio chunks are sent to Groq for transcription. Get a key at console.groq.com. Applies from the next recording; on-device remains the automatic fallback."
-                    )
+                if transcriptionBackend == TranscriptionBackend.local.rawValue {
+                    Hint("Every second of audio stays on this Mac.")
+                } else {
+                    HStack(spacing: 6) {
+                        Hint("Cloud engines need a key, and fall back to on-device if it's missing.")
+                        Button("Open API Keys") { section = .apiKeys }
+                            .buttonStyle(.link)
+                            .font(Theme.Typography.secondary)
+                    }
                 }
-
-                if transcriptionBackend == TranscriptionBackend.deepgram.rawValue {
-                    ProviderKeyField(
-                        label: "Deepgram API key",
-                        account: TranscriptionBackend.deepgram.keychainAccount!,
-                        placeholder: "40-character hex key",
-                        hint: "Audio streams live to Deepgram (both mic and system tracks — billed per track). New accounts include $200 credit at console.deepgram.com. Applies from the next recording; on-device remains the automatic fallback."
-                    )
-                }
-
-                Text("On-device keeps every second of audio on this Mac. Cloud engines trade that for accuracy — bring your own key, pay the provider directly.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
 
                 Divider()
 
-                Toggle("Polish transcript after each call (Groq)", isOn: $polishAfterCall)
-                Text("When you hit Stop, the saved audio is re-transcribed with a large model (~$0.04 per call hour, ~15s per hour of audio) and the report is regenerated from the cleaner text. The live view is unaffected.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-
-                if polishAfterCall && transcriptionBackend != TranscriptionBackend.groq.rawValue {
-                    ProviderKeyField(
-                        label: "Groq API key",
-                        account: TranscriptionBackend.groq.keychainAccount!,
-                        placeholder: "gsk_…",
-                        hint: "Polish uses Groq — get a key at console.groq.com."
-                    )
-                }
+                Toggle("Polish transcript after each call", isOn: $polishAfterCall)
+                Hint("Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.")
             }
 
-            Section("WhisperKit Model") {
+            Section("On-Device Model") {
                 Picker("Model", selection: $selectedModel) {
-                    Text("Tiny (~40MB) — Fastest, lower accuracy").tag("tiny")
-                    Text("Base (~140MB) — Good balance").tag("base")
-                    Text("Small (~460MB) — Better accuracy").tag("small")
-                    Text("Large V3 Turbo (~1.5GB) — Best accuracy").tag("large-v3-turbo")
+                    Text("Tiny — 40 MB, fastest").tag("tiny")
+                    Text("Base — 140 MB, good balance").tag("base")
+                    Text("Small — 460 MB, better accuracy").tag("small")
+                    Text("Large V3 Turbo — 1.5 GB, best accuracy").tag("large-v3-turbo")
                 }
                 .pickerStyle(.radioGroup)
 
@@ -170,7 +221,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Transcription Language") {
+            Section("Language") {
                 Picker("Language", selection: $transcriptionLanguage) {
                     Text("Auto-detect").tag("auto")
                     Text("English").tag("en")
@@ -188,22 +239,17 @@ struct SettingsView: View {
                     Text("Korean").tag("ko")
                     Text("Hindi").tag("hi")
                 }
-                Text("Applies to the next recording. Auto-detect works well for most calls; pick a language if it keeps guessing wrong.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                Hint("Applies to the next recording. Pick a language only if auto-detect keeps guessing wrong.")
             }
 
             Section("Custom Vocabulary") {
                 TextEditor(text: $customVocabulary)
                     .frame(height: 64)
-                    .font(.appCallout)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.2)))
-                Text("Names, products, or jargon Whisper keeps mis-hearing — comma or line separated (e.g. LaunchEase, Shopify, Uygar). Primes the next recording so it spells them right.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typography.secondary)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+                Hint("Names and jargon Whisper mis-hears — comma or line separated (e.g. LaunchEase, Uygar).")
             }
         }
-        .padding()
     }
 
     @ViewBuilder
@@ -211,122 +257,97 @@ struct SettingsView: View {
         switch recordingManager.transcriptionEngine.modelState {
         case .ready:
             Label("Model loaded and ready", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
-                .font(.appCaption)
+                .foregroundStyle(Theme.Colors.good)
+                .font(Theme.Typography.secondary)
         case .loading:
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading model...")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typography.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
             }
         case .error(let msg):
             Label(msg, systemImage: "xmark.circle")
-                .foregroundStyle(.red)
-                .font(.appCaption)
+                .foregroundStyle(Theme.Colors.stop)
+                .font(Theme.Typography.secondary)
         default:
             EmptyView()
         }
     }
 
-    // MARK: - Audio Tab
+    // MARK: - Copilot
 
-    private var audioTab: some View {
-        Form {
-            Section("Input") {
-                Text("System audio is always captured via ScreenCaptureKit.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-
-                Text("Microphone uses your default input device.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Echo Cancellation") {
-                Toggle("Cancel speaker echo from the mic", isOn: $echoCancellation)
-                Text("When you're on speakers (no headphones), your mic also picks up the other person. This subtracts that echo so only your voice is recorded as \"Me\". Turn off if you always use headphones.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Storage") {
-                let path = AudioCaptureManager.storageDirectory().path
-                LabeledContent("Audio files") {
-                    Text(path)
-                        .font(.appCaption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Button("Show in Finder") {
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-                }
-            }
-        }
-        .padding()
-    }
-
-    // MARK: - Copilot Tab
-
-    private var copilotTab: some View {
+    private var copilotPage: some View {
         Form {
             Section("Live Call Copilot") {
                 Toggle("Enable Copilot during recordings", isOn: $copilotEnabled)
+                Hint("Suggests answers, flags blockers, and captures action items live — no button needed.")
 
-                Text("Watches the live transcript for the whole call and suggests answers, flags blockers, and captures action items in real time — no button needed.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Claude API Key") {
-                SecureField("sk-ant-...", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: apiKey) {
-                        keySaved = false
-                        keySaveFailed = false
-                    }
-
-                HStack {
-                    Button("Save Key") {
-                        keySaveFailed = !APIKeyStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-                        keySaved = !keySaveFailed
-                    }
-                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    if keySaved {
-                        Label("Saved", systemImage: "checkmark.circle")
-                            .foregroundStyle(.green)
-                            .font(.appCaption)
-                    } else if keySaveFailed {
-                        Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                            .font(.appCaption)
-                    }
+                HStack(spacing: 6) {
+                    Hint("Powered by Claude — needs a key.")
+                    Button("Open API Keys") { section = .apiKeys }
+                        .buttonStyle(.link)
+                        .font(Theme.Typography.secondary)
                 }
 
-                Text("Stored in your keychain. Copilot sends transcript text to Anthropic's API — your audio never leaves your Mac. Get a key at console.anthropic.com.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Hint("What it says and watches for is set per call profile.")
+                    Button("Open Profiles") { section = .profiles }
+                        .buttonStyle(.link)
+                        .font(Theme.Typography.secondary)
+                }
             }
         }
-        .padding()
     }
 
-    // MARK: - Knowledge Tab
+    // MARK: - API Keys
 
-    private var knowledgeTab: some View {
+    private var apiKeysPage: some View {
+        Form {
+            Section("Claude — powers the copilot") {
+                ProviderKeyField(
+                    label: "Claude API key",
+                    account: nil,
+                    placeholder: "sk-ant-…",
+                    hint: "Only transcript text is sent — audio never leaves your Mac. Keys: console.anthropic.com"
+                )
+            }
+
+            Section("Groq — cloud transcription & polish") {
+                ProviderKeyField(
+                    label: "Groq API key",
+                    account: TranscriptionBackend.groq.keychainAccount!,
+                    placeholder: "gsk_…",
+                    hint: "Used when the Groq engine or polish is on. Keys: console.groq.com"
+                )
+            }
+
+            Section("Deepgram — streaming transcription") {
+                ProviderKeyField(
+                    label: "Deepgram API key",
+                    account: TranscriptionBackend.deepgram.keychainAccount!,
+                    placeholder: "40-character hex key",
+                    hint: "Billed per audio track. New accounts include $200 credit. Keys: console.deepgram.com"
+                )
+            }
+
+            Section {
+                Hint("All keys are stored in your macOS keychain, never in the app's files.")
+            }
+        }
+    }
+
+    // MARK: - Knowledge
+
+    private var knowledgePage: some View {
         Form {
             Section("Documents") {
-                Text("Drop in pricing sheets, FAQs, playbooks — the copilot grounds its suggested answers in them and cites the source. Everything is indexed on this Mac; documents are never uploaded.")
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                Hint("The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded.")
 
                 if recordingManager.knowledgeBase.documents.isEmpty {
                     Text("No documents yet")
-                        .font(.appCaption)
-                        .foregroundStyle(.tertiary)
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink3)
                 } else {
                     ForEach(recordingManager.knowledgeBase.documents) { document in
                         KBDocumentRow(document: document, knowledgeBase: recordingManager.knowledgeBase)
@@ -342,19 +363,18 @@ struct SettingsView: View {
                         ProgressView()
                             .controlSize(.small)
                         Text("Indexing…")
-                            .font(.appCaption)
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
                     }
                 }
 
                 if let error = recordingManager.knowledgeBase.lastError {
                     Label(error, systemImage: "exclamationmark.triangle")
-                        .font(.appCaption)
-                        .foregroundStyle(.yellow)
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.warn)
                 }
             }
         }
-        .padding()
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.pdf, .plainText, .text],
@@ -367,26 +387,55 @@ struct SettingsView: View {
             }
         }
     }
-
-    // MARK: - Appearance Tab
-
-    private var appearanceTab: some View {
-        Form {
-            Section("Theme") {
-                Picker("Appearance", selection: $appearance) {
-                    Text("Follow System").tag(Appearance.system)
-                    Text("Light").tag(Appearance.light)
-                    Text("Dark").tag(Appearance.dark)
-                }
-                .pickerStyle(.radioGroup)
-            }
-        }
-        .padding()
-    }
 }
 
 enum Appearance: String, CaseIterable {
     case system, light, dark
+}
+
+// MARK: - Settings nav row
+
+private struct SettingsNavRow: View {
+    let section: SettingsSection
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 13))
+                    .frame(width: 18)
+                    .foregroundStyle(selected ? Theme.Colors.accent : Theme.Colors.ink2)
+                Text(section.title)
+                    .font(Theme.Typography.sans(13, .medium))
+                    .foregroundStyle(Theme.Colors.ink)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(selected ? Theme.Colors.selection : Color.clear,
+                        in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - One-line hint
+
+/// The ONE way explanatory text appears on a settings page: a single readable
+/// line at secondary size. Anything longer belongs in the control's own label.
+struct Hint: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.Typography.secondary)
+            .foregroundStyle(Theme.Colors.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 // MARK: - Knowledge Base Document Row
@@ -407,15 +456,15 @@ struct KBDocumentRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: document.name.lowercased().hasSuffix(".pdf") ? "doc.richtext" : "doc.text")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 Text(document.name)
-                    .font(.appCallout.weight(.medium))
+                    .font(Theme.Typography.sans(13, .medium))
                     .lineLimit(1)
 
                 Text("\(document.chunkCount) chunks")
-                    .font(.appCaption2)
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink3)
 
                 Spacer()
 
@@ -423,7 +472,7 @@ struct KBDocumentRow: View {
                     knowledgeBase.removeDocument(document)
                 } label: {
                     Image(systemName: "trash")
-                        .font(.appCaption)
+                        .font(Theme.Typography.caption)
                 }
                 .buttonStyle(.plain)
                 .help("Remove from knowledge base")
@@ -434,7 +483,7 @@ struct KBDocumentRow: View {
                 text: $note
             )
             .textFieldStyle(.roundedBorder)
-            .font(.appCaption)
+            .font(Theme.Typography.secondary)
             .onSubmit {
                 knowledgeBase.updateNote(note, for: document)
             }
@@ -445,11 +494,11 @@ struct KBDocumentRow: View {
 
 // MARK: - Provider API key field
 
-/// Reusable BYO-key field with the same save/verify UX as the Claude key:
-/// Keychain-backed, explicit Save, and a visible error when the write fails.
+/// Reusable BYO-key field: Keychain-backed, explicit Save, and a visible error
+/// when the write fails. `account: nil` targets the default (Claude) slot.
 struct ProviderKeyField: View {
     let label: String
-    let account: String
+    let account: String?
     let placeholder: String
     let hint: String
 
@@ -457,12 +506,13 @@ struct ProviderKeyField: View {
     @State private var saved = false
     @State private var failed = false
 
-    init(label: String, account: String, placeholder: String, hint: String) {
+    init(label: String, account: String?, placeholder: String, hint: String) {
         self.label = label
         self.account = account
         self.placeholder = placeholder
         self.hint = hint
-        _key = State(initialValue: APIKeyStore.load(account: account) ?? "")
+        let stored = account.map { APIKeyStore.load(account: $0) } ?? APIKeyStore.load()
+        _key = State(initialValue: stored ?? "")
     }
 
     var body: some View {
@@ -475,27 +525,27 @@ struct ProviderKeyField: View {
                 }
 
             HStack {
-                Button("Save \(label)") {
-                    failed = !APIKeyStore.save(key.trimmingCharacters(in: .whitespacesAndNewlines),
-                                               account: account)
-                    saved = !failed
+                Button("Save Key") {
+                    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let ok = account.map { APIKeyStore.save(trimmed, account: $0) }
+                        ?? APIKeyStore.save(trimmed)
+                    failed = !ok
+                    saved = ok
                 }
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 if saved {
                     Label("Saved", systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
-                        .font(.appCaption)
+                        .foregroundStyle(Theme.Colors.good)
+                        .font(Theme.Typography.secondary)
                 } else if failed {
                     Label("Keychain rejected the key — try again", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                        .font(.appCaption)
+                        .foregroundStyle(Theme.Colors.warn)
+                        .font(Theme.Typography.secondary)
                 }
             }
 
-            Text(hint)
-                .font(.appCaption)
-                .foregroundStyle(.secondary)
+            Hint(hint)
         }
     }
 }

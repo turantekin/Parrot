@@ -3,12 +3,15 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSession.self) private var appSession
     @Environment(\.modelContext) private var modelContext
     @State private var selectedMeeting: Meeting?
     @State private var showDashboard = true
     @State private var showSettings = false
     @State private var searchText = ""
     @State private var hasLoadedModel = false
+    /// File → Import Audio… (⌘O); the dashboard has its own importer button.
+    @State private var showMenuImporter = false
 
     var body: some View {
         NavigationSplitView {
@@ -58,6 +61,19 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: recordingManager.importProgress)
+        // Mirror the selection for the File → Export menu items.
+        .onChange(of: selectedMeeting) { _, meeting in
+            appSession.selectedMeeting = meeting
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotImportAudio)) { _ in
+            if !recordingManager.isRecording { showMenuImporter = true }
+        }
+        .fileImporter(
+            isPresented: $showMenuImporter,
+            allowedContentTypes: AudioImport.contentTypes
+        ) { result in
+            if case .success(let url) = result { startImport(url) }
+        }
         .task {
             guard !hasLoadedModel else { return }
             hasLoadedModel = true
@@ -76,19 +92,19 @@ struct ContentView: View {
     private var settingsPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Settings")
-                .font(Theme.Typography.title(24))
+                .font(Theme.Typography.title())
                 .foregroundStyle(Theme.Colors.ink)
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, Theme.Metrics.pad)
+                .padding(.bottom, 8)
 
             // Full bleed — no width cap, no centering. A wider window means a
-            // wider editor, period. Base font raised to the legend scale;
-            // controls without an explicit font inherit it.
+            // wider editor, period. Base font is the body scale; controls
+            // without an explicit font inherit it.
             SettingsView(isEmbedded: true)
                 .font(Theme.Typography.body)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.bottom, Theme.Metrics.pad)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Colors.canvas)
@@ -100,10 +116,10 @@ struct EmptyStateView: View {
         VStack(spacing: 12) {
             Image(systemName: "waveform")
                 .font(.system(size: 48))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.Colors.ink3)
             Text("Select a meeting or start recording")
                 .font(.appTitle3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

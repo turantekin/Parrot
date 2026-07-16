@@ -20,8 +20,8 @@ extension URL {
 
 // MARK: - Drag & drop
 
-/// Full-window drag-and-drop for audio import. Highlights with a terracotta drop
-/// overlay while a file hovers. `enabled` is false during a live recording (both
+/// Full-window drag-and-drop for audio import. Highlights with an accent-tinted
+/// drop overlay while a file hovers. `enabled` is false during a live recording (both
 /// share one WhisperKit) so we don't invite a drop we'd have to refuse.
 struct AudioImportDrop: ViewModifier {
     var enabled: Bool = true
@@ -52,12 +52,12 @@ private struct DropOverlay: View {
     var body: some View {
         ZStack {
             Theme.Colors.canvas.opacity(0.9)
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 Image(systemName: "waveform.badge.plus")
                     .font(.system(size: 52, weight: .light))
                     .foregroundStyle(Theme.Colors.accent)
                 Text("Drop to transcribe")
-                    .font(Theme.Typography.title(22))
+                    .font(Theme.Typography.title())
                     .foregroundStyle(Theme.Colors.ink)
                 Text("Turns an audio file into a new meeting, transcribed on-device")
                     .font(Theme.Typography.secondary)
@@ -91,7 +91,7 @@ struct ImportingBanner: View {
             ProgressView().controlSize(.small)
             VStack(alignment: .leading, spacing: 1) {
                 Text(progress.fileName)
-                    .font(Theme.Typography.sans(13, .semibold))
+                    .font(Theme.Typography.cardTitle)
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
                 Text(progress.phase.label)
@@ -99,11 +99,10 @@ struct ImportingBanner: View {
                     .foregroundStyle(Theme.Colors.ink2)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .frame(maxWidth: 320, alignment: .leading)
         .background(Theme.Colors.panel, in: Capsule())
         .overlay(Capsule().strokeBorder(Theme.Colors.line))
-        .shadow(color: .black.opacity(0.12), radius: 14, y: 5)
     }
 }

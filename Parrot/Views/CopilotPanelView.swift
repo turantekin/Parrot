@@ -3,10 +3,12 @@ import SwiftUI
 /// Live insight feed shown next to the transcript while recording.
 ///
 /// Layout ("glanceable copilot"): sentiment chips and unhandled blockers up top,
-/// then a fixed HERO slot that always shows the newest insight at glance scale
-/// (17.5pt payload, kind-tinted, brief glow on arrival), then older insights as
-/// compact one-line rows. The panel is read in 1-second glances mid-call, so
-/// there is exactly one place to look: the hero.
+/// then a fixed HERO slot that always shows the newest insight at glance scale,
+/// then older insights as compact one-line rows. Cards are monochrome (canvas
+/// fill, hairline border); color appears only in small signals — the kind icon
+/// chip, the score, the open-blocker flag, the live dot, and the meters. The
+/// panel is read in 1-second glances mid-call, so there is exactly one place to
+/// look: the hero.
 struct CopilotPanelView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(\.openSettings) private var openSettings
@@ -74,14 +76,14 @@ struct CopilotPanelView: View {
                 Text("You \(percent)%")
                     .font(.appCaption)
                     .monospacedDigit()
-                    .foregroundStyle(percent > 70 ? .orange : .secondary)
+                    .foregroundStyle(percent > 70 ? Theme.Colors.warn : Theme.Colors.ink2)
                     .help("Your share of the conversation so far")
             }
 
             statusBadge
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Theme.Metrics.pad)
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -89,17 +91,17 @@ struct CopilotPanelView: View {
         switch engine.status {
         case .listening:
             HStack(spacing: 5) {
-                Circle().fill(.green).frame(width: 7, height: 7)
-                Text("Listening").font(.appCaption).foregroundStyle(.secondary)
+                Circle().fill(Theme.Colors.good).frame(width: 7, height: 7)
+                Text("Listening").font(.appCaption).foregroundStyle(Theme.Colors.ink2)
             }
         case .analyzing:
             HStack(spacing: 5) {
                 ProgressView().controlSize(.mini)
-                Text("Thinking…").font(.appCaption).foregroundStyle(.secondary)
+                Text("Thinking…").font(.appCaption).foregroundStyle(Theme.Colors.ink2)
             }
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
+                .foregroundStyle(Theme.Colors.warn)
                 .font(.appCaption)
         default:
             EmptyView()
@@ -115,10 +117,10 @@ struct CopilotPanelView: View {
             VStack(spacing: 12) {
                 Image(systemName: "key.fill")
                     .font(.appTitle2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                 Text("Copilot needs a Claude API key to suggest answers in real time.")
                     .font(.appCallout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
                     .multilineTextAlignment(.center)
                 Button("Open Settings…") {
                     openSettings()
@@ -142,8 +144,8 @@ struct CopilotPanelView: View {
             // sentiment chips + open-blocker count. THE glanceable answer to
             // "how is it going and what should I do".
             coachCard
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, 12)
 
             if engine.insights.isEmpty && errorMessage == nil {
                 emptyState
@@ -156,9 +158,9 @@ struct CopilotPanelView: View {
     // MARK: - Coach card
 
     private func scoreColor(_ score: Int) -> Color {
-        score >= 70 ? Theme.Colors.action
-            : score >= 40 ? Theme.Colors.blocker
-            : Color(hex: "C0563B")
+        score >= 70 ? Theme.Colors.good
+            : score >= 40 ? Theme.Colors.warn
+            : Theme.Colors.stop
     }
 
     private var coachCard: some View {
@@ -166,7 +168,7 @@ struct CopilotPanelView: View {
             HStack(spacing: 10) {
                 if let score = engine.callScore {
                     Text("\(score)")
-                        .font(Theme.Typography.sans(24, .bold))
+                        .font(Theme.Typography.sans(20, .bold))
                         .monospacedDigit()
                         .foregroundStyle(scoreColor(score))
                         .contentTransition(.numericText())
@@ -175,7 +177,7 @@ struct CopilotPanelView: View {
                             .font(Theme.Typography.cap)
                             .foregroundStyle(Theme.Colors.ink3)
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Theme.Colors.line)
+                            Capsule().fill(Theme.Colors.chip)
                             Capsule().fill(scoreColor(score))
                                 .frame(width: 72 * CGFloat(score) / 100)
                         }
@@ -187,14 +189,14 @@ struct CopilotPanelView: View {
 
                 if !pinnedBlockers.isEmpty {
                     Label("\(pinnedBlockers.count) open", systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.Typography.sans(12, .semibold))
-                        .foregroundStyle(.orange)
+                        .font(Theme.Typography.sans(12, .medium))
+                        .foregroundStyle(Theme.Colors.warn)
                         .help("Unresolved blockers — they're at the top of the feed below")
                 }
             }
 
             Text(engine.coachLine ?? "Warming up — the coach reads the room after the first exchanges.")
-                .font(Theme.Typography.sans(15, .semibold))
+                .font(Theme.Typography.body)
                 .foregroundStyle(engine.coachLine == nil ? Theme.Colors.ink3 : Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -206,8 +208,8 @@ struct CopilotPanelView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.Colors.line))
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
         .animation(.easeOut(duration: 0.3), value: engine.coachLine)
         .animation(.easeOut(duration: 0.3), value: engine.callScore)
     }
@@ -216,10 +218,10 @@ struct CopilotPanelView: View {
         VStack(spacing: 10) {
             Image(systemName: "ear.badge.waveform")
                 .font(.appTitle2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.Colors.ink3)
             Text("Listening to the call.\nSuggestions, blockers and action items will appear here as the conversation unfolds.")
-                .font(Theme.Typography.sans(15))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.ink3)
                 .multilineTextAlignment(.center)
         }
         .padding()
@@ -233,9 +235,9 @@ struct CopilotPanelView: View {
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.appCaption)
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Theme.Colors.warn)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Theme.Metrics.pad)
                     .padding(.top, 8)
             }
 
@@ -253,8 +255,8 @@ struct CopilotPanelView: View {
                 )
                 .id(hero.id)  // fresh identity per insight so the arrival transition fires
                 .transition(.move(edge: .top).combined(with: .opacity))
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, 12)
             }
 
             // Everything below the hero scrolls together: open blockers first
@@ -302,8 +304,8 @@ struct CopilotPanelView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.vertical, 12)
             }
         }
         .animation(.spring(duration: 0.3), value: engine.insights)
@@ -323,6 +325,22 @@ struct CopilotPanelView: View {
         } else {
             expanded.insert(insight.id)
         }
+    }
+}
+
+// MARK: - Icon Chip
+
+/// 20×20 kind-colored icon chip — the one place a card shows its kind color.
+private struct IconChip: View {
+    let systemName: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: 20, height: 20)
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
     }
 }
 
@@ -346,9 +364,7 @@ struct PinnedBlockerRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.system(size: 13))
+            IconChip(systemName: "exclamationmark.triangle.fill", color: Theme.Colors.warn)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(insight.title)
@@ -360,7 +376,7 @@ struct PinnedBlockerRow: View {
 
                     Text(insight.detail)
                         .font(Theme.Typography.secondary)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
                         .lineLimit(expanded ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -376,7 +392,7 @@ struct PinnedBlockerRow: View {
                 if !expanded && insight.detail.count > 120 {
                     Text("show more")
                         .font(Theme.Typography.sans(11, .medium))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Colors.warn)
                 }
             }
 
@@ -384,17 +400,17 @@ struct PinnedBlockerRow: View {
 
             Button(action: onHandled) {
                 Image(systemName: "checkmark.circle")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.orange)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.Colors.warn)
             }
             .buttonStyle(.plain)
             .help("Mark as handled")
         }
-        .padding(10)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(.orange.opacity(0.35))
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .strokeBorder(Theme.Colors.line)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -406,10 +422,11 @@ struct PinnedBlockerRow: View {
 // MARK: - Hero Insight Card
 
 /// The focal slot at the top of the copilot panel: the newest insight rendered
-/// at glance scale, strongly kind-tinted, glowing briefly when it arrives.
+/// at glance scale on a monochrome card — the kind color lives in the icon chip.
 struct HeroInsightCard: View {
     let insight: Insight
     let kindStyle: KindStyle
+    /// Kept for API compatibility; the arrival glow was dropped with the native restyle.
     let isGlowing: Bool
     let onJump: () -> Void
     let onDismiss: () -> Void
@@ -425,16 +442,16 @@ struct HeroInsightCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: kindStyle.iconSystemName)
-                    .font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 8) {
+                IconChip(systemName: kindStyle.iconSystemName, color: kindStyle.color)
                 Text(kindStyle.label)
-                    .font(Theme.Typography.sans(13, .semibold))
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 if kindStyle.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
                         .font(.appCaption2)
-                        .foregroundStyle(Theme.Colors.action)
+                        .foregroundStyle(Theme.Colors.good)
                 }
 
                 Spacer()
@@ -449,7 +466,6 @@ struct HeroInsightCard: View {
                 .buttonStyle(.plain)
                 .help("Dismiss — the previous insight moves up")
             }
-            .foregroundStyle(kindStyle.color)
 
             Text(insight.title)
                 .font(Theme.Typography.heroTitle)
@@ -478,11 +494,11 @@ struct HeroInsightCard: View {
                         }
                     } label: {
                         Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                            .font(Theme.Typography.sans(12, .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(kindStyle.color.opacity(0.18), in: Capsule())
-                            .foregroundStyle(kindStyle.color)
+                            .font(Theme.Typography.sans(12, .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.Colors.accent.opacity(0.14), in: Capsule())
+                            .foregroundStyle(Theme.Colors.accent)
                     }
                     .buttonStyle(.plain)
                     .help("Copy this line")
@@ -496,16 +512,13 @@ struct HeroInsightCard: View {
                 }
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(kindStyle.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(kindStyle.color.opacity(0.35), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .strokeBorder(Theme.Colors.line)
         )
-        .shadow(color: isGlowing ? kindStyle.color.opacity(0.55) : .clear,
-                radius: isGlowing ? 10 : 0)
-        .animation(.easeOut(duration: 1.2), value: isGlowing)
         .contextMenu {
             Button("Jump to transcript") { onJump() }
             Button("Dismiss", role: .destructive) { onDismiss() }
@@ -543,14 +556,12 @@ struct InsightCard: View {
 
     private var collapsedRow: some View {
         Button(action: onToggleCollapse) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "chevron.right")
                     .font(.appCaption2)
                     .foregroundStyle(Theme.Colors.ink3)
 
-                Image(systemName: kindStyle.iconSystemName)
-                    .font(.appCaption)
-                    .foregroundStyle(kindStyle.color)
+                IconChip(systemName: kindStyle.iconSystemName, color: kindStyle.color)
 
                 Text(insight.title)
                     .font(Theme.Typography.rowTitle)
@@ -560,36 +571,40 @@ struct InsightCard: View {
                 if kindStyle.isPinned && insight.isHandled {
                     Image(systemName: "checkmark")
                         .font(.appCaption2)
-                        .foregroundStyle(Theme.Colors.action)
+                        .foregroundStyle(Theme.Colors.good)
                 }
 
                 Spacer()
 
                 Text(insight.formattedCallTime)
-                    .font(.appCaption2)
-                    .monospacedDigit()
+                    .font(Theme.Typography.mono(11))
                     .foregroundStyle(Theme.Colors.ink3)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .strokeBorder(Theme.Colors.line)
+        )
     }
 
     private var expandedCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: kindStyle.iconSystemName)
+            HStack(spacing: 8) {
+                IconChip(systemName: kindStyle.iconSystemName, color: kindStyle.color)
                 Text(kindStyle.label)
-                    .font(.appCaption.weight(.semibold))
+                    .font(Theme.Typography.sans(11, .semibold))
+                    .foregroundStyle(Theme.Colors.ink2)
 
                 if kindStyle.isPinned && insight.isHandled {
                     Label("Handled", systemImage: "checkmark")
                         .font(.appCaption2)
-                        .foregroundStyle(Theme.Colors.action)
+                        .foregroundStyle(Theme.Colors.good)
                 }
 
                 Spacer()
@@ -608,12 +623,12 @@ struct InsightCard: View {
                     } label: {
                         Image(systemName: copied ? "checkmark" : "doc.on.doc")
                             .font(.appCaption)
+                            .foregroundStyle(Theme.Colors.ink2)
                     }
                     .buttonStyle(.plain)
                     .help("Copy suggested answer")
                 }
             }
-            .foregroundStyle(kindStyle.color)
 
             Text(insight.title)
                 .font(Theme.Typography.cardTitle)
@@ -634,33 +649,22 @@ struct InsightCard: View {
                     .foregroundStyle(Theme.Colors.ink3)
             }
         }
-        .padding(.vertical, 11)
-        .padding(.leading, 14)
-        .padding(.trailing, 12)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            kindStyle.isPinned ? Theme.Colors.blocker.opacity(0.10) : Theme.Colors.canvas,
-            in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
-        )
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.radius)
                 .strokeBorder(Theme.Colors.line)
         )
-        // Colored accent stripe on the leading edge, in place of a tinted fill.
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(kindStyle.color)
-                .frame(width: 3)
-                .padding(.vertical, 9)
-        }
         .onTapGesture(count: 2) {
             onToggleCollapse()
         }
     }
 }
 
-/// The copilot's suggested line to address an unresolved item — green "here's
-/// what to say" block with a copy button. KB-grounded when documents cover it.
+/// The copilot's suggested line to address an unresolved item — a bordered
+/// "here's what to say" block with a copy button; the quote mark and copy
+/// button carry the accent ("say this"). KB-grounded when documents cover it.
 struct SuggestedReplyBox: View {
     let reply: String
 
@@ -670,11 +674,11 @@ struct SuggestedReplyBox: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "quote.opening")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.Colors.action)
-                .padding(.top, 3)
+                .foregroundStyle(Theme.Colors.accent)
+                .padding(.top, 4)
 
             Text(reply)
-                .font(Theme.Typography.sans(14, .medium))
+                .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -692,14 +696,18 @@ struct SuggestedReplyBox: View {
             } label: {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.Colors.action)
+                    .foregroundStyle(Theme.Colors.accent)
             }
             .buttonStyle(.plain)
             .help("Copy this line")
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.action.opacity(0.10), in: RoundedRectangle(cornerRadius: 7))
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .strokeBorder(Theme.Colors.line)
+        )
     }
 }
 
@@ -711,10 +719,9 @@ struct TimestampButton: View {
     var body: some View {
         Button(action: action) {
             Text(insight.formattedCallTime)
-                .font(.appCaption2)
-                .monospacedDigit()
+                .font(Theme.Typography.mono(11))
                 .underline()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
         }
         .buttonStyle(.plain)
         .help("Jump to this moment in the transcript")
