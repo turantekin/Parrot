@@ -168,9 +168,13 @@ private struct ProfileDetailView: View {
                 FieldRow(label: "Name") {
                     TextField("", text: $profile.name, prompt: Text("Name"))
                 }
-                FieldRow(label: "Icon (SF Symbol)") {
-                    TextField("", text: $profile.iconSystemName, prompt: Text("e.g. person.crop.circle"))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Icon")
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    IconSwatchGrid(icon: $profile.iconSystemName, palette: IconSwatchGrid.profileIcons)
                 }
+                .padding(.vertical, 2)
                 FieldRow(label: "Summary") {
                     TextField("", text: $profile.summary, prompt: Text("One-line description"))
                 }
@@ -440,6 +444,62 @@ private struct ColorSwatchRow: View {
     }
 }
 
+/// Click-to-pick SF Symbol grid — a small curated set instead of typing symbol
+/// names. A custom symbol from presets/older builds shows as an extra cell so
+/// nothing silently changes.
+struct IconSwatchGrid: View {
+    @Binding var icon: String
+    var palette: [String] = IconSwatchGrid.kindIcons
+
+    /// Card-kind icons: every symbol the built-in presets use, plus common
+    /// call-moment metaphors. 3 rows of 8.
+    static let kindIcons = [
+        "lightbulb.fill", "questionmark.circle.fill", "questionmark.bubble.fill", "quote.bubble.fill",
+        "exclamationmark.triangle.fill", "hand.raised.fill", "checkmark.circle.fill", "flag.fill",
+        "star.fill", "arrow.up.right.circle.fill", "chart.line.uptrend.xyaxis", "magnifyingglass",
+        "bolt.fill", "target", "clock.fill", "calendar",
+        "pin.fill", "dollarsign.circle.fill", "person.fill.questionmark", "bubble.left.fill",
+        "shield.fill", "book.fill", "heart.fill", "sparkles",
+    ]
+
+    /// Profile icons: what a call *type* looks like. 2 rows of 8.
+    static let profileIcons = [
+        "person.wave.2", "person.crop.circle", "person.2.fill", "dollarsign.circle",
+        "graduationcap.fill", "person.crop.rectangle.stack", "lifepreserver", "bubble.left.and.bubble.right",
+        "heart.text.square", "briefcase.fill", "phone.fill", "video.fill",
+        "mic.fill", "building.2.fill", "stethoscope", "globe",
+    ]
+
+    private let columns = Array(repeating: GridItem(.fixed(26), spacing: 6), count: 8)
+
+    var body: some View {
+        let all = palette.contains(icon) || icon.isEmpty ? palette : palette + [icon]
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            ForEach(all, id: \.self) { symbol in
+                let selected = symbol == icon
+                Button {
+                    icon = symbol
+                } label: {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(selected ? Theme.Colors.selection : Theme.Colors.chip)
+                        .frame(width: 26, height: 26)
+                        .overlay(
+                            Image(systemName: symbol)
+                                .font(.system(size: 12))
+                                .foregroundStyle(selected ? Theme.Colors.accent : Theme.Colors.ink2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .strokeBorder(selected ? Theme.Colors.accent : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(symbol)
+            }
+        }
+    }
+}
+
 // MARK: - Kind Editor Row
 
 private struct KindEditorRow: View {
@@ -501,19 +561,23 @@ private struct KindEditorRow: View {
                         prompt: "e.g. They asked something that hasn't been answered yet",
                         text: $draft.triggerDescription, focused: $focused) { onUpdate(draft) }
 
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Color")
                         .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.ink2)
                     ColorSwatchRow(hex: $draft.colorHex)
                 }
-                EditorField(label: "Icon (SF Symbol)", prompt: "e.g. lightbulb.fill",
-                            text: $draft.iconSystemName, focused: $focused, mono: true) { onUpdate(draft) }
-                    .frame(width: 180)
                 EditorField(label: "Internal key", prompt: "e.g. suggestion",
                             text: $draft.key, focused: $focused, mono: true) { onUpdate(draft) }
-                    .frame(width: 150)
+                    .frame(width: 160)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Icon")
+                    .font(Theme.Typography.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
+                IconSwatchGrid(icon: $draft.iconSystemName)
             }
 
             HStack(spacing: 16) {
@@ -532,6 +596,7 @@ private struct KindEditorRow: View {
         .onChange(of: draft.isPinned) { onUpdate(draft) }
         .onChange(of: draft.priority) { onUpdate(draft) }
         .onChange(of: draft.colorHex) { onUpdate(draft) }
+        .onChange(of: draft.iconSystemName) { onUpdate(draft) }
         // Commit on focus loss, not just Return — otherwise clicking another
         // control (or closing Settings) reverts the draft via the resync below.
         .onChange(of: focused) { _, isFocused in
