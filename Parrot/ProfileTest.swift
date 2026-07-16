@@ -29,6 +29,7 @@ enum ProfileTest {
         testHallucinationFilter()
         testWAVEncoder()
         testAIUsageCost()
+        testPermissionFlow()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -320,5 +321,19 @@ enum ProfileTest {
         // All channels should be in the neutral midrange [0.4, 0.8] for a gray-like fallback.
         let grayOK = (0.4...0.8).contains(r) && (0.4...0.8).contains(g) && (0.4...0.8).contains(b)
         check("malformed hex falls back to gray", grayOK)
+    }
+
+    static func testPermissionFlow() {
+        // The screen-capture ask must be exactly one of: nothing (granted),
+        // the single OS prompt (first ask), or a Settings deep-link (re-ask).
+        // The old code showed the prompt AND opened Settings on a first ask.
+        check("perm: granted wins",
+              PermissionFlow.nextScreenCaptureStep(preflightGranted: true, askedBefore: true) == .granted)
+        check("perm: granted ignores asked flag",
+              PermissionFlow.nextScreenCaptureStep(preflightGranted: true, askedBefore: false) == .granted)
+        check("perm: first ask posts the one OS prompt",
+              PermissionFlow.nextScreenCaptureStep(preflightGranted: false, askedBefore: false) == .promptShown)
+        check("perm: re-ask deep-links to Settings",
+              PermissionFlow.nextScreenCaptureStep(preflightGranted: false, askedBefore: true) == .openSettings)
     }
 }

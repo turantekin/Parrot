@@ -4,7 +4,9 @@ import AVFoundation
 struct OnboardingView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Binding var isPresented: Bool
-    @State private var currentStep = 0
+    // Persisted so the flow survives the quit-and-reopen macOS may require
+    // after granting Screen Recording — the user lands back on this step.
+    @AppStorage("onboardingStep") private var currentStep = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,6 +92,15 @@ struct OnboardingView: View {
 
     @State private var micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     @State private var screenGranted = false
+    @State private var screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
+
+    // CGPreflight is side-effect-free — querying SCShareableContent instead
+    // triggered the macOS permission prompt before the user hit Grant.
+    private func refreshPermissions() {
+        micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        screenGranted = CGPreflightScreenCaptureAccess()
+        screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
+    }
 
     private var permissionsStep: some View {
         VStack(spacing: 24) {
@@ -106,15 +117,19 @@ struct OnboardingView: View {
                     description: "Required to capture system audio from meetings. Parrot only records audio — never your screen content.",
                     isGranted: screenGranted,
                     action: {
-                        // Single official prompt if never asked; if previously
-                        // denied macOS won't re-prompt, so open Settings instead.
-                        if CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() {
+                        if PermissionFlow.requestScreenCapture() == .granted {
                             screenGranted = true
-                        } else {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
                         }
+                        screenAsked = true
                     }
                 )
+
+                if screenAsked && !screenGranted {
+                    Text("Already flipped the switch? macOS applies Screen Recording when Parrot restarts — quit and reopen Parrot, and this page will pick up right here.")
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 44) // align under the row's text column
+                }
 
                 PermissionRow(
                     icon: "mic",
@@ -122,14 +137,8 @@ struct OnboardingView: View {
                     description: "Captures your voice for better speaker identification. Your audio stays on this Mac.",
                     isGranted: micGranted,
                     action: {
-                        // Trigger system permission dialog
-                        AVCaptureDevice.requestAccess(for: .audio) { granted in
-                            Task { @MainActor in
-                                micGranted = granted
-                                if !granted {
-                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                                }
-                            }
+                        Task { @MainActor in
+                            micGranted = await PermissionFlow.requestMicrophone()
                         }
                     }
                 )
@@ -143,12 +152,18 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding()
-        .onAppear {
-            // Check current permission status. CGPreflight is side-effect-free —
-            // querying SCShareableContent here triggered the macOS permission
-            // prompt the moment the step appeared, before the user hit Grant.
-            micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-            screenGranted = CGPreflightScreenCaptureAccess()
+        .onAppear(perform: refreshPermissions)
+        // Rows flip green on their own: returning from System Settings fires
+        // didBecomeActive, and the 1 s poll catches grants made while the OS
+        // dialog (a separate process) had focus.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissions()
+        }
+        .task {
+            while !Task.isCancelled {
+                refreshPermissions()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 
