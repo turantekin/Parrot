@@ -22,8 +22,12 @@ struct ProfilesSettingsView: View {
                     ProfileRow(profile: profile)
                         .tag(profile.id)
                 }
-                .listStyle(.sidebar)
-                .frame(width: 200)
+                // Plain list on the panel color — .sidebar here rendered the
+                // translucent sidebar material, which tinted the whole column.
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(Theme.Colors.panel)
+                .frame(width: 220)
 
                 Divider()
 
@@ -36,7 +40,7 @@ struct ProfilesSettingsView: View {
                         }
                     } label: {
                         Image(systemName: "plus.square.on.square")
-                            .font(.appCaption)
+                            .font(Theme.Typography.secondary)
                     }
                     .buttonStyle(.plain)
                     .disabled(selectedProfile == nil)
@@ -50,7 +54,7 @@ struct ProfilesSettingsView: View {
                         }
                     } label: {
                         Image(systemName: "trash")
-                            .font(.appCaption)
+                            .font(Theme.Typography.secondary)
                     }
                     .buttonStyle(.plain)
                     .disabled(selectedProfile == nil || selectedProfile?.isBuiltIn == true)
@@ -62,7 +66,7 @@ struct ProfilesSettingsView: View {
                 .padding(.vertical, 4)
                 .background(Theme.Colors.panel)
             }
-            .frame(width: 200)
+            .frame(width: 220)
 
             Divider()
 
@@ -95,6 +99,34 @@ struct ProfilesSettingsView: View {
     }
 }
 
+// MARK: - Field row (label above, full-width field, optional hint below)
+
+struct FieldRow<Field: View>: View {
+    let label: String
+    var hint: String?
+    @ViewBuilder let field: () -> Field
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
+            // Grouped Forms render a TextField's title as a leading label with a
+            // right-aligned value — hide it (the row label above does that job)
+            // and keep the text left-aligned like a normal field.
+            field()
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: 400)
+            if let hint {
+                Hint(hint)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 // MARK: - Profile Master Row
 
 private struct ProfileRow: View {
@@ -107,11 +139,11 @@ private struct ProfileRow: View {
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(profile.name)
-                    .font(.appCallout)
+                    .font(Theme.Typography.body)
                     .lineLimit(1)
                 if profile.isBuiltIn {
                     Text("Built-in")
-                        .font(.appCaption2)
+                        .font(Theme.Typography.caption)
                         .foregroundStyle(Theme.Colors.ink3)
                 }
             }
@@ -130,31 +162,21 @@ private struct ProfileDetailView: View {
     var body: some View {
         Form {
             // MARK: Profile section
+            // Labels sit ABOVE full-width fields (side labels squeezed the
+            // fields and wrapped badly); hints go under the field at 12pt.
             Section("Profile") {
-                LabeledContent("Name") {
-                    TextField("Name", text: $profile.name)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 240)
+                FieldRow(label: "Name") {
+                    TextField("", text: $profile.name, prompt: Text("Name"))
                 }
-                LabeledContent("Icon (SF Symbol)") {
-                    TextField("e.g. person.crop.circle", text: $profile.iconSystemName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 240)
+                FieldRow(label: "Icon (SF Symbol)") {
+                    TextField("", text: $profile.iconSystemName, prompt: Text("e.g. person.crop.circle"))
                 }
-                LabeledContent("Summary") {
-                    TextField("One-line description", text: $profile.summary)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 240)
+                FieldRow(label: "Summary") {
+                    TextField("", text: $profile.summary, prompt: Text("One-line description"))
                 }
-                LabeledContent("Call the other party") {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        TextField("e.g. the prospect", text: $profile.counterpart)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 240)
-                        Text("What the copilot calls them in cards & notes.")
-                            .font(.appCaption2)
-                            .foregroundStyle(Theme.Colors.ink2)
-                    }
+                FieldRow(label: "Call the other party",
+                         hint: "What the copilot calls them in cards & notes.") {
+                    TextField("", text: $profile.counterpart, prompt: Text("e.g. the prospect"))
                 }
             }
 
@@ -162,28 +184,23 @@ private struct ProfileDetailView: View {
             Section("Persona & Tone") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Persona")
-                        .font(.appCaption)
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.ink2)
                     TextEditor(text: $profile.persona)
-                        .font(.appCallout)
+                        .font(Theme.Typography.body)
                         .frame(minHeight: 90)
                         .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Custom rules")
-                        .font(.appCaption)
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.ink2)
                     TextEditor(text: $profile.tone)
-                        .font(.appCallout)
+                        .font(Theme.Typography.body)
                         .frame(height: 80)
                         .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
-                    Text("Standing house rules the copilot follows on every call with this profile — one per line. "
-                        + "e.g. \"Alert me if I leave a question unanswered.\" · "
-                        + "\"If they mention a pain point, suggest how we can solve it.\" · "
-                        + "\"Always confirm budget before discussing timeline.\"")
-                        .font(.appCaption)
-                        .foregroundStyle(Theme.Colors.ink2)
+                    Hint("House rules the copilot follows on every call — one per line, e.g. \"Always confirm budget before timeline.\"")
                 }
 
                 Toggle("Answer from general knowledge when documents don't cover it",
@@ -193,9 +210,7 @@ private struct ProfileDetailView: View {
             // MARK: Knowledge Documents section
             Section("Knowledge Documents") {
                 if knowledgeBase.documents.isEmpty {
-                    Text("No documents yet — add them in the Knowledge tab, then tag them here.")
-                        .font(.appCaption)
-                        .foregroundStyle(Theme.Colors.ink2)
+                    Hint("No documents yet — add them on the Knowledge page, then tag them here.")
                 } else {
                     ForEach(knowledgeBase.documents) { doc in
                         DocTagToggle(doc: doc, profileID: profile.id, knowledgeBase: knowledgeBase)
@@ -205,7 +220,7 @@ private struct ProfileDetailView: View {
 
             // MARK: Edit Advanced
             Section {
-                DisclosureGroup("Edit Advanced") {
+                DisclosureGroup("Advanced — card kinds & gauges") {
                     // Kinds subsection
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Call Kinds")
@@ -223,7 +238,7 @@ private struct ProfileDetailView: View {
                         Button("+ Add Kind") {
                             addKind(to: profile)
                         }
-                        .font(.appCaption)
+                        .font(Theme.Typography.secondary)
                     }
                     .padding(.top, 4)
 
@@ -247,7 +262,7 @@ private struct ProfileDetailView: View {
                         Button("+ Add Gauge") {
                             addGauge(to: profile)
                         }
-                        .font(.appCaption)
+                        .font(Theme.Typography.secondary)
                     }
                 }
             }
@@ -347,10 +362,10 @@ private struct DocTagToggle: View {
         )) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(doc.name)
-                    .font(.appCallout)
+                    .font(Theme.Typography.body)
                     .lineLimit(1)
                 Text("\(doc.chunkCount) chunks")
-                    .font(.appCaption2)
+                    .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink3)
             }
         }
@@ -383,13 +398,13 @@ private struct KindEditorRow: View {
             HStack(spacing: 6) {
                 TextField("Key", text: $draft.key)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("Label", text: $draft.label)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
@@ -398,14 +413,14 @@ private struct KindEditorRow: View {
             HStack(spacing: 6) {
                 TextField("#hex", text: $draft.colorHex)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .frame(maxWidth: 80)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("SF Symbol", text: $draft.iconSystemName)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
@@ -413,25 +428,25 @@ private struct KindEditorRow: View {
             // Row 3: Trigger description
             TextField("Trigger description", text: $draft.triggerDescription)
                 .textFieldStyle(.roundedBorder)
-                .font(.appCaption)
+                .font(Theme.Typography.secondary)
                 .focused($focused)
                 .onSubmit { onUpdate(draft) }
 
             // Row 4: Pinned toggle + Priority stepper + Remove button
             HStack(spacing: 8) {
                 Toggle("Pinned", isOn: $draft.isPinned)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .onChange(of: draft.isPinned) { onUpdate(draft) }
 
                 Stepper("Priority: \(draft.priority)", value: $draft.priority, in: 0...99)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .onChange(of: draft.priority) { onUpdate(draft) }
 
                 Spacer()
 
                 Button(role: .destructive) { onDelete() } label: {
                     Label("Remove", systemImage: "minus.circle")
-                        .font(.appCaption)
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.stop)
                 }
                 .buttonStyle(.plain)
@@ -478,13 +493,13 @@ private struct GaugeEditorRow: View {
             HStack(spacing: 6) {
                 TextField("Key", text: $draft.key)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("Label", text: $draft.label)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
             }
@@ -493,19 +508,19 @@ private struct GaugeEditorRow: View {
             HStack(spacing: 6) {
                 TextField("Low label", text: $draft.lowLabel)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("High label", text: $draft.highLabel)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
 
                 TextField("#hex", text: $draft.colorHex)
                     .textFieldStyle(.roundedBorder)
-                    .font(.appCaption)
+                    .font(Theme.Typography.secondary)
                     .frame(maxWidth: 80)
                     .focused($focused)
                     .onSubmit { onUpdate(draft) }
