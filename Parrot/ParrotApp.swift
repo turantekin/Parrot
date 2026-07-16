@@ -34,6 +34,7 @@ struct ParrotMain {
 
 struct ParrotApp: App {
     @State private var recordingManager = RecordingManager()
+    @State private var appSession = AppSession()
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
     /// Same key/enum as SettingsView's Appearance picker.
     @AppStorage("appearance") private var appearance = Appearance.system
@@ -56,6 +57,7 @@ struct ParrotApp: App {
             ContentView()
                 .environment(recordingManager)
                 .environment(recordingManager.profileStore)
+                .environment(appSession)
                 .sheet(isPresented: $showOnboarding) {
                     OnboardingView(isPresented: $showOnboarding)
                         .environment(recordingManager)
@@ -67,36 +69,14 @@ struct ParrotApp: App {
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 900, height: 600)
         .commands {
-            CommandMenu("Recording") {
-                Button("Start Recording") {
-                    Task { @MainActor in
-                        do {
-                            // Same preflight as the menu bar / dashboard buttons.
-                            try await recordingManager.preflightPermissionsAndStart(
-                                modelContext: sharedModelContainer.mainContext
-                            )
-                        } catch {
-                            NSApp.activate(ignoringOtherApps: true)
-                            let alert = NSAlert()
-                            alert.messageText = "Couldn't start recording"
-                            alert.informativeText = error.localizedDescription
-                            alert.runModal()
-                        }
-                    }
-                }
-                .keyboardShortcut("r")
-                .disabled(recordingManager.isRecording || !recordingManager.transcriptionEngine.isReady)
-
-                Button("Stop Recording") {
-                    Task { @MainActor in
-                        await recordingManager.stopRecording()
-                    }
-                }
-                .keyboardShortcut(".")
-                .disabled(!recordingManager.isRecording || recordingManager.isStopping)
-            }
+            ParrotCommands(
+                session: appSession,
+                recordingManager: recordingManager,
+                modelContext: sharedModelContainer.mainContext
+            )
         }
 
+        // A real menu, not a floating panel: instant, keyboard-navigable, native.
         MenuBarExtra {
             MenuBarView()
                 .environment(recordingManager)
@@ -105,6 +85,7 @@ struct ParrotApp: App {
         } label: {
             Image(systemName: recordingManager.isRecording ? "waveform.circle.fill" : "waveform")
         }
+        .menuBarExtraStyle(.menu)
 
         Settings {
             SettingsView()

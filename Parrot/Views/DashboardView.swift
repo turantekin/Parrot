@@ -252,6 +252,9 @@ struct DashboardView: View {
                     DashboardMeetingRow(meeting: meeting)
                 }
                 .buttonStyle(.plain)
+                .meetingContextMenu(meeting, onDeleted: {
+                    if selectedMeeting?.id == meeting.id { selectedMeeting = nil }
+                })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

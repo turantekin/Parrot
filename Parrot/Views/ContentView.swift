@@ -3,12 +3,15 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSession.self) private var appSession
     @Environment(\.modelContext) private var modelContext
     @State private var selectedMeeting: Meeting?
     @State private var showDashboard = true
     @State private var showSettings = false
     @State private var searchText = ""
     @State private var hasLoadedModel = false
+    /// File → Import Audio… (⌘O); the dashboard has its own importer button.
+    @State private var showMenuImporter = false
 
     var body: some View {
         NavigationSplitView {
@@ -58,6 +61,19 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: recordingManager.importProgress)
+        // Mirror the selection for the File → Export menu items.
+        .onChange(of: selectedMeeting) { _, meeting in
+            appSession.selectedMeeting = meeting
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotImportAudio)) { _ in
+            if !recordingManager.isRecording { showMenuImporter = true }
+        }
+        .fileImporter(
+            isPresented: $showMenuImporter,
+            allowedContentTypes: AudioImport.contentTypes
+        ) { result in
+            if case .success(let url) = result { startImport(url) }
+        }
         .task {
             guard !hasLoadedModel else { return }
             hasLoadedModel = true

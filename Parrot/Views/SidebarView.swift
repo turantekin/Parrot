@@ -11,7 +11,8 @@ struct SidebarView: View {
 
     @Environment(RecordingManager.self) private var recordingManager
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
-    @State private var deleteTarget: Meeting?
+    /// Edit → Find (⌘F) lands here.
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,7 @@ struct SidebarView: View {
                 TextField("Search meetings", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(Theme.Typography.secondary)
+                    .focused($searchFocused)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -74,13 +76,12 @@ struct SidebarView: View {
                                         showDashboard = false
                                         showSettings = false
                                     }
-                                    .contextMenu {
-                                        Button("Delete Meeting", role: .destructive) {
-                                            deleteTarget = meeting
+                                    .meetingContextMenu(meeting, onDeleted: {
+                                        if selectedMeeting?.id == meeting.id {
+                                            selectedMeeting = nil
+                                            showDashboard = true
                                         }
-                                        .disabled(recordingManager.isRecording
-                                            && recordingManager.currentMeeting?.id == meeting.id)
-                                    }
+                                    })
                             }
                         }
                     }
@@ -102,24 +103,8 @@ struct SidebarView: View {
             .padding(.bottom, 8)
         }
         .background(Theme.Colors.panel)
-        .confirmationDialog(
-            "Delete \"\(deleteTarget?.title ?? "meeting")\"?",
-            isPresented: Binding(
-                get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } }
-            )
-        ) {
-            Button("Delete", role: .destructive) {
-                guard let meeting = deleteTarget else { return }
-                if selectedMeeting?.id == meeting.id {
-                    selectedMeeting = nil
-                    showDashboard = true
-                }
-                recordingManager.delete(meeting)
-                deleteTarget = nil
-            }
-        } message: {
-            Text("The recording, transcript, and insights will be permanently removed.")
+        .onReceive(NotificationCenter.default.publisher(for: .parrotFocusSearch)) { _ in
+            searchFocused = true
         }
     }
 

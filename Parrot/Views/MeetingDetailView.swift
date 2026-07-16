@@ -93,8 +93,8 @@ struct MeetingDetailView: View {
         .toolbar {
             ToolbarItemGroup {
                 Menu {
-                    Button("Export as TXT") { exportTXT() }
-                    Button("Export as SRT") { exportSRT() }
+                    Button("Export as TXT") { MeetingActions.exportTXT(meeting) }
+                    Button("Export as SRT") { MeetingActions.exportSRT(meeting) }
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -537,23 +537,6 @@ struct MeetingDetailView: View {
         return String(format: "%02d:%02d", m, s)
     }
 
-    // MARK: - Export
-
-    private func exportTXT() {
-        let content = ExportService.exportToTXT(meeting: meeting)
-        let filename = meeting.title.replacingOccurrences(of: " ", with: "_")
-        if let url = try? ExportService.save(content: content, filename: filename, extension: "txt") {
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-        }
-    }
-
-    private func exportSRT() {
-        let content = ExportService.exportToSRT(meeting: meeting)
-        let filename = meeting.title.replacingOccurrences(of: " ", with: "_")
-        if let url = try? ExportService.save(content: content, filename: filename, extension: "srt") {
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-        }
-    }
 }
 
 // MARK: - Transcript Segment Row
