@@ -372,6 +372,74 @@ private struct DocTagToggle: View {
     }
 }
 
+// MARK: - Editor building blocks
+
+/// Label-above text field for the kind/gauge editors: left-aligned, prompt as
+/// example text, commits on Return (focus-loss commit lives on the row).
+private struct EditorField: View {
+    let label: String
+    let prompt: String
+    @Binding var text: String
+    var focused: FocusState<Bool>.Binding
+    var mono = false
+    let commit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
+            TextField("", text: $text, prompt: Text(prompt))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .multilineTextAlignment(.leading)
+                .font(mono ? Theme.Typography.mono(12) : Theme.Typography.secondary)
+                .focused(focused)
+                .onSubmit(commit)
+        }
+    }
+}
+
+/// Click-to-pick color swatches instead of typing hex codes. The palette is
+/// exactly the set KindResolver maps to dark-mode-adaptive pairs, so every
+/// pickable color is guaranteed to adapt. A custom hex from an older build
+/// shows as an extra swatch so nothing silently changes.
+private struct ColorSwatchRow: View {
+    @Binding var hex: String
+
+    private static let palette = ["4F6FB0", "2F7E96", "3F9168", "C29218",
+                                  "E8943A", "C0563B", "7A5FB0", "5F6470"]
+
+    private func normalized(_ h: String) -> String {
+        (h.hasPrefix("#") ? String(h.dropFirst()) : h).uppercased()
+    }
+
+    var body: some View {
+        let current = normalized(hex)
+        let swatches = Self.palette.contains(current) || current.count != 6
+            ? Self.palette
+            : Self.palette + [current]
+        HStack(spacing: 6) {
+            ForEach(swatches, id: \.self) { swatch in
+                Button {
+                    hex = swatch
+                } label: {
+                    Circle()
+                        .fill(KindResolver.adaptiveColor(forHex: swatch))
+                        .frame(width: 18, height: 18)
+                        .overlay(
+                            Circle().strokeBorder(
+                                normalized(swatch) == current ? Theme.Colors.ink : .clear,
+                                lineWidth: 2)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("#\(swatch)")
+            }
+        }
+    }
+}
+
 // MARK: - Kind Editor Row
 
 private struct KindEditorRow: View {
@@ -393,74 +461,83 @@ private struct KindEditorRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Row 1: Key + Label
-            HStack(spacing: 6) {
-                TextField("Key", text: $draft.key)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
-                TextField("Label", text: $draft.label)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-            }
-
-            // Row 2: Color + Icon
-            HStack(spacing: 6) {
-                TextField("#hex", text: $draft.colorHex)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .frame(maxWidth: 80)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
-                TextField("SF Symbol", text: $draft.iconSystemName)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-            }
-
-            // Row 3: Trigger description
-            TextField("Trigger description", text: $draft.triggerDescription)
-                .textFieldStyle(.roundedBorder)
-                .font(Theme.Typography.secondary)
-                .focused($focused)
-                .onSubmit { onUpdate(draft) }
-
-            // Row 4: Pinned toggle + Priority stepper + Remove button
+        let color = KindResolver.adaptiveColor(forHex: draft.colorHex)
+        VStack(alignment: .leading, spacing: 10) {
+            // Live preview: this is exactly the chip the copilot card will show,
+            // so color/icon/name edits give immediate feedback here.
             HStack(spacing: 8) {
-                Toggle("Pinned", isOn: $draft.isPinned)
-                    .font(Theme.Typography.secondary)
-                    .onChange(of: draft.isPinned) { onUpdate(draft) }
-
-                Stepper("Priority: \(draft.priority)", value: $draft.priority, in: 0...99)
-                    .font(Theme.Typography.secondary)
-                    .onChange(of: draft.priority) { onUpdate(draft) }
-
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(color.opacity(0.14))
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        Image(systemName: draft.iconSystemName.isEmpty ? "sparkle" : draft.iconSystemName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(color)
+                    )
+                Text(draft.label.isEmpty ? "New card" : draft.label)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                if draft.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Colors.warn)
+                        .help("Stays on screen until handled")
+                }
                 Spacer()
-
                 Button(role: .destructive) { onDelete() } label: {
-                    Label("Remove", systemImage: "minus.circle")
+                    Image(systemName: "trash")
                         .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.stop)
                 }
                 .buttonStyle(.plain)
+                .help("Remove this card kind")
+            }
+
+            EditorField(label: "Card name", prompt: "e.g. Suggested answer",
+                        text: $draft.label, focused: $focused) { onUpdate(draft) }
+                .frame(maxWidth: 400)
+
+            EditorField(label: "Show this card when…",
+                        prompt: "e.g. They asked something that hasn't been answered yet",
+                        text: $draft.triggerDescription, focused: $focused) { onUpdate(draft) }
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Color")
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    ColorSwatchRow(hex: $draft.colorHex)
+                }
+                EditorField(label: "Icon (SF Symbol)", prompt: "e.g. lightbulb.fill",
+                            text: $draft.iconSystemName, focused: $focused, mono: true) { onUpdate(draft) }
+                    .frame(width: 180)
+                EditorField(label: "Internal key", prompt: "e.g. suggestion",
+                            text: $draft.key, focused: $focused, mono: true) { onUpdate(draft) }
+                    .frame(width: 150)
+            }
+
+            HStack(spacing: 16) {
+                Toggle("Keep on screen until handled", isOn: $draft.isPinned)
+                    .font(Theme.Typography.secondary)
+                Spacer()
+                Stepper("Priority: \(draft.priority)", value: $draft.priority, in: 0...99)
+                    .font(Theme.Typography.secondary)
+                    .help("Higher-priority cards win when space is tight")
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 8)
-        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .padding(12)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+        // Non-text controls commit immediately; onChange sees the fresh draft.
+        .onChange(of: draft.isPinned) { onUpdate(draft) }
+        .onChange(of: draft.priority) { onUpdate(draft) }
+        .onChange(of: draft.colorHex) { onUpdate(draft) }
         // Commit on focus loss, not just Return — otherwise clicking another
         // control (or closing Settings) reverts the draft via the resync below.
         .onChange(of: focused) { _, isFocused in
             if !isFocused { onUpdate(draft) }
         }
-        // Fix 2: re-sync draft when the element is externally mutated
+        // Re-sync draft when the element is externally mutated.
         .onChange(of: element) { _, newElement in
             draft = newElement
         }
@@ -488,59 +565,58 @@ private struct GaugeEditorRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Row 1: Key + Label
-            HStack(spacing: 6) {
-                TextField("Key", text: $draft.key)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
-                TextField("Label", text: $draft.label)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-            }
-
-            // Row 2: Low label + High label + Color hex + Remove button
-            HStack(spacing: 6) {
-                TextField("Low label", text: $draft.lowLabel)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
-                TextField("High label", text: $draft.highLabel)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
-                TextField("#hex", text: $draft.colorHex)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.Typography.secondary)
-                    .frame(maxWidth: 80)
-                    .focused($focused)
-                    .onSubmit { onUpdate(draft) }
-
+        let color = KindResolver.adaptiveColor(forHex: draft.colorHex)
+        VStack(alignment: .leading, spacing: 10) {
+            // Live preview mirrors the sentiment strip: dot + name + meter.
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(draft.label.isEmpty ? "New gauge" : draft.label)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                Capsule().fill(color).frame(width: 36, height: 4)
+                Spacer()
                 Button(role: .destructive) { onDelete() } label: {
-                    Image(systemName: "minus.circle")
+                    Image(systemName: "trash")
+                        .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.stop)
                 }
                 .buttonStyle(.plain)
+                .help("Remove this gauge")
+            }
+
+            EditorField(label: "Gauge name", prompt: "e.g. Buying temperature",
+                        text: $draft.label, focused: $focused) { onUpdate(draft) }
+                .frame(maxWidth: 400)
+
+            HStack(spacing: 16) {
+                EditorField(label: "Low end means…", prompt: "e.g. Cold",
+                            text: $draft.lowLabel, focused: $focused) { onUpdate(draft) }
+                EditorField(label: "High end means…", prompt: "e.g. Ready to buy",
+                            text: $draft.highLabel, focused: $focused) { onUpdate(draft) }
+            }
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Color")
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    ColorSwatchRow(hex: $draft.colorHex)
+                }
+                EditorField(label: "Internal key", prompt: "e.g. buying_temperature",
+                            text: $draft.key, focused: $focused, mono: true) { onUpdate(draft) }
+                    .frame(width: 180)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 8)
-        .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .padding(12)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+        .onChange(of: draft.colorHex) { onUpdate(draft) }
         // Commit on focus loss, not just Return — otherwise clicking another
         // control (or closing Settings) reverts the draft via the resync below.
         .onChange(of: focused) { _, isFocused in
             if !isFocused { onUpdate(draft) }
         }
-        // Fix 2: re-sync draft when the element is externally mutated
+        // Re-sync draft when the element is externally mutated.
         .onChange(of: element) { _, newElement in
             draft = newElement
         }
