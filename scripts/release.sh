@@ -10,7 +10,7 @@
 #      (Sign-In & Security -> App-Specific Passwords).
 #   2. Store it for notarytool (prompts for the password, never lands in shell history):
 #        xcrun notarytool store-credentials parrot-notary \
-#          --apple-id uygar.turantekin@gmail.com --team-id 5D8KQ6NJGF
+#          --apple-id <your-apple-id-email> --team-id 5D8KQ6NJGF
 #
 # Why not xcodebuild: Xcode 26.5's explicit-modules build races on WhisperKit's
 # transitive deps in worktrees (see docs/IMPROVEMENT-ROADMAP.md, Build notes).
