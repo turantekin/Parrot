@@ -313,19 +313,24 @@ struct SettingsView: View {
                     }
                 case .ollama:
                     LabeledContent("Model") {
-                        TextField("llama3.2:3b", text: $copilotOllamaModel)
+                        // Empty title + prompt: a titled TextField in a Form
+                        // renders its title as a second trailing label.
+                        TextField("", text: $copilotOllamaModel, prompt: Text("llama3.2:3b"))
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 220)
                     }
                     Hint("Runs entirely on this Mac — free, private, no key, works offline. Needs Ollama (ollama.com), then: ollama pull \(copilotOllamaModel.nilIfEmpty ?? "llama3.2:3b"). Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
                 case .custom:
                     LabeledContent("Server URL") {
-                        TextField("https://api.openai.com/v1", text: $copilotCustomBaseURL)
+                        TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 280)
                     }
                     LabeledContent("Model") {
-                        TextField("gpt-5-mini", text: $copilotCustomModel)
+                        TextField("", text: $copilotCustomModel, prompt: Text("gpt-5-mini"))
+                            .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 220)
                     }
