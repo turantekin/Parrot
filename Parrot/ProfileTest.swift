@@ -277,6 +277,13 @@ enum ProfileTest {
         check("split reports line free + local", splitItems[1].label.hasPrefix("Reports") && splitItems[1].label.contains("local") && splitItems[1].usd == 0)
         let splitDecoded = (try? JSONEncoder().encode(split)).flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
         check("split round-trips", splitDecoded?.reports == split.reports && splitDecoded?.reportsProvider == "ollama")
+
+        // Update check version compare.
+        check("newer patch wins", UpdateChecker.isNewer("0.11.1", than: "0.11.0"))
+        check("newer minor beats higher patch", UpdateChecker.isNewer("0.12.0", than: "0.11.9"))
+        check("equal is not newer", !UpdateChecker.isNewer("0.11.0", than: "0.11.0"))
+        check("older is not newer", !UpdateChecker.isNewer("0.10.9", than: "0.11.0"))
+        check("dev builds never update", !UpdateChecker.isNewer("9.9.9", than: "dev"))
     }
 
     static func testStableHash() {

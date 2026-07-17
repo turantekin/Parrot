@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var hasLoadedModel = false
     /// File → Import Audio… (⌘O); the dashboard has its own importer button.
     @State private var showMenuImporter = false
+    private let updateChecker = UpdateChecker.shared
 
     var body: some View {
         NavigationSplitView {
@@ -54,11 +55,17 @@ struct ContentView: View {
             startImport(url)
         }
         .overlay(alignment: .top) {
-            if let progress = recordingManager.importProgress {
-                ImportingBanner(progress: progress)
-                    .padding(.top, 12)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 8) {
+                if let progress = recordingManager.importProgress {
+                    ImportingBanner(progress: progress)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if let release = updateChecker.available, !recordingManager.isRecording {
+                    UpdateBanner(release: release)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.top, 12)
         }
         .animation(.easeInOut(duration: 0.2), value: recordingManager.importProgress)
         // Mirror the selection for the File → Export menu items.
@@ -75,6 +82,7 @@ struct ContentView: View {
             if case .success(let url) = result { startImport(url) }
         }
         .task {
+            updateChecker.checkIfDue()
             guard !hasLoadedModel else { return }
             hasLoadedModel = true
             await recordingManager.prepare(modelContext: modelContext)
@@ -108,6 +116,45 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Colors.canvas)
+    }
+}
+
+/// "A newer Parrot exists" — one line, one Download click, dismissible.
+/// Hidden during recording; the update will still be there after the call.
+private struct UpdateBanner: View {
+    let release: UpdateChecker.Release
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(Theme.Colors.accent)
+            Text("Parrot \(release.version) is available")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.ink)
+            Button("Download") {
+                MeetingActions.open(release.dmgURL ?? release.pageURL)
+            }
+            .controlSize(.small)
+            Button("What's New") {
+                MeetingActions.open(release.pageURL)
+            }
+            .buttonStyle(.link)
+            .font(Theme.Typography.secondary)
+            Button {
+                UpdateChecker.shared.skipAvailable()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.ink3)
+            }
+            .buttonStyle(.plain)
+            .help("Skip this version")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
     }
 }
 

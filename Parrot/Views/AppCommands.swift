@@ -82,7 +82,17 @@ struct ParrotCommands: Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Parrot") { MeetingActions.showAbout() }
             Button("Check for Updates…") {
-                MeetingActions.open("\(MeetingActions.repoURL)/releases")
+                Task { @MainActor in
+                    if let release = await UpdateChecker.shared.check() {
+                        MeetingActions.open(release.pageURL)
+                    } else {
+                        NSApp.activate(ignoringOtherApps: true)
+                        let alert = NSAlert()
+                        alert.messageText = "You're up to date"
+                        alert.informativeText = "Parrot \(UpdateChecker.currentVersion) is the newest version."
+                        alert.runModal()
+                    }
+                }
             }
         }
 
