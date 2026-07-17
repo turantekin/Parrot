@@ -44,6 +44,15 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("copilotEnabled") private var copilotEnabled = false
+    @AppStorage("copilotProvider") private var copilotProvider = CopilotProviderKind.claude.rawValue
+    /// "" = same backend as live cards.
+    @AppStorage("reportsProvider") private var reportsProvider = ""
+    @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
+    @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
+    @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
+    /// True after picking "Custom…" in the Ollama model dropdown, so the free
+    /// text field stays visible even while the typed name matches nothing.
+    @State private var ollamaCustomModelEditing = false
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
@@ -284,20 +293,121 @@ struct SettingsView: View {
                 Hint("Suggests answers, flags blockers, and captures action items live — no button needed.")
 
                 HStack(spacing: 6) {
-                    Hint("Powered by Claude — needs a key.")
-                    Button("Open API Keys") { section = .apiKeys }
-                        .buttonStyle(.link)
-                        .font(Theme.Typography.secondary)
-                }
-
-                HStack(spacing: 6) {
                     Hint("What it says and watches for is set per call profile.")
                     Button("Open Profiles") { section = .profiles }
                         .buttonStyle(.link)
                         .font(Theme.Typography.secondary)
                 }
             }
+
+            Section("Model") {
+                // Two jobs, two backends: live cards need speed and sharpness;
+                // reports run after the call where a slow local model costs nothing.
+                Picker("Live cards", selection: $copilotProvider) {
+                    ForEach(CopilotProviderKind.allCases) { kind in
+                        Text(kind.label).tag(kind.rawValue)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                providerConfig(for: CopilotProviderKind(rawValue: copilotProvider) ?? .claude)
+
+                Picker("Post-call reports", selection: $reportsProvider) {
+                    Text("Same as live cards").tag("")
+                    ForEach(CopilotProviderKind.allCases) { kind in
+                        Text(kind.label).tag(kind.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if let reportsKind = CopilotProviderKind(rawValue: reportsProvider),
+                   reportsKind != (CopilotProviderKind(rawValue: copilotProvider) ?? .claude) {
+                    providerConfig(for: reportsKind)
+                }
+                Hint("Reports generate after the call, so a local model keeps them free and private without slowing live cards. If the reports backend isn't set up, reports fall back to the live one.")
+            }
         }
+    }
+
+    /// Per-backend configuration rows, shared by the live and reports pickers.
+    @ViewBuilder
+    private func providerConfig(for kind: CopilotProviderKind) -> some View {
+                switch kind {
+                case .claude:
+                    HStack(spacing: 6) {
+                        Hint("Best quality. Needs a key — transcript text is sent, audio never.")
+                        Button("Open API Keys") { section = .apiKeys }
+                            .buttonStyle(.link)
+                            .font(Theme.Typography.secondary)
+                    }
+                case .ollama:
+                    Picker("Model", selection: ollamaModelSelection) {
+                        ForEach(OllamaCatalog.models, id: \.id) { entry in
+                            Text(entry.label).tag(entry.id)
+                        }
+                        Divider()
+                        Text("Custom…").tag("custom")
+                    }
+                    .pickerStyle(.menu)
+
+                    if showsOllamaCustomField {
+                        LabeledContent("Model name") {
+                            // Empty title + prompt: a titled TextField in a Form
+                            // renders its title as a second trailing label.
+                            TextField("", text: $copilotOllamaModel, prompt: Text("model:tag"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 220)
+                        }
+                        Hint("Any model from ollama.com/library — prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards.")
+                    }
+
+                    OllamaModelStatusView(model: copilotOllamaModel)
+
+                    Hint("Runs entirely on this Mac — free, private, no key, works offline. Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
+                case .custom:
+                    LabeledContent("Server URL") {
+                        TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
+                    }
+                    LabeledContent("Model") {
+                        TextField("", text: $copilotCustomModel, prompt: Text("gpt-5-mini"))
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 220)
+                    }
+                    ProviderKeyField(
+                        label: "API key",
+                        account: "custom-llm-api-key",
+                        placeholder: "optional — not needed for local servers",
+                        hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
+                    )
+                }
+    }
+
+    /// Dropdown selection for the Ollama model: catalog id, or "custom" when the
+    /// stored model isn't in the catalog (or the user picked Custom…).
+    private var ollamaModelSelection: Binding<String> {
+        Binding(
+            get: {
+                if ollamaCustomModelEditing { return "custom" }
+                return OllamaCatalog.ids.contains(copilotOllamaModel) ? copilotOllamaModel : "custom"
+            },
+            set: { picked in
+                if picked == "custom" {
+                    ollamaCustomModelEditing = true
+                } else {
+                    ollamaCustomModelEditing = false
+                    copilotOllamaModel = picked
+                }
+            }
+        )
+    }
+
+    private var showsOllamaCustomField: Bool {
+        ollamaCustomModelEditing || !OllamaCatalog.ids.contains(copilotOllamaModel)
     }
 
     // MARK: - API Keys

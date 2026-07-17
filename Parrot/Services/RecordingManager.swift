@@ -10,7 +10,8 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
-    let callAnalysisEngine = CallAnalysisEngine()
+    // Routes to Claude / Ollama / a custom server per Settings → Copilot.
+    let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
     let profileStore = ProfileStore()
 
@@ -520,8 +521,24 @@ final class RecordingManager {
     private func writeAIUsage(meeting: Meeting, polishSeconds: Double,
                               backendOverride: TranscriptionBackend? = nil) {
         var usage = AIUsage()
-        usage.copilotModel = ClaudeAnalysisProvider.model
-        usage.copilot = callAnalysisEngine.provider.usageTotals
+        // ponytail: reads the copilot provider/model at stop time, same accepted
+        // mid-call-switch edge as the transcription backend below.
+        if let switching = callAnalysisEngine.provider as? SwitchingAnalysisProvider {
+            let live = switching.liveUsage
+            usage.copilotModel = live.model
+            usage.copilotProvider = live.provider
+            usage.copilot = live.totals
+            // Second bucket only when reports ran on a different backend.
+            if let reports = switching.reportsUsage {
+                usage.reportsModel = reports.model
+                usage.reportsProvider = reports.provider
+                usage.reports = reports.totals
+            }
+        } else {
+            usage.copilotModel = CopilotProviderKind.activeModelName
+            usage.copilotProvider = CopilotProviderKind.selected.rawValue
+            usage.copilot = callAnalysisEngine.provider.usageTotals
+        }
         // ponytail: reads the backend setting at stop time; a mid-call engine
         // switch or cloud→local fallback mislabels one estimated row. Import
         // passes an override since it's always on-device regardless of the setting.

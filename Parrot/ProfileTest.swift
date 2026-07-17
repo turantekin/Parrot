@@ -260,6 +260,23 @@ enum ProfileTest {
         check("formatUSD cents", AIUsage.formatUSD(0.154) == "$0.15")
         check("formatUSD sub-cent shows 3 decimals", AIUsage.formatUSD(0.0013) == "$0.001")
         check("formatUSD zero", AIUsage.formatUSD(0) == "$0.00")
+
+        // Live/reports split: Claude live cards priced at Haiku rates, local
+        // reports free — two separately-priced buckets plus transcription.
+        var split = AIUsage()
+        split.copilotModel = "claude-haiku-4-5"
+        split.copilotProvider = "claude"
+        split.copilot = AITokenTotals(inputTokens: 1_000_000, outputTokens: 200_000, calls: 10)
+        split.reportsModel = "gemma3:4b"
+        split.reportsProvider = "ollama"
+        split.reports = AITokenTotals(inputTokens: 50_000, outputTokens: 5_000, calls: 2)
+        split.transcriptionSeconds = 600
+        let splitItems = split.costBreakdown()
+        check("split has 3 lines", splitItems.count == 3)
+        check("split live line priced", splitItems[0].label.hasPrefix("Live cards") && abs(splitItems[0].usd - 2.00) < 0.0001)
+        check("split reports line free + local", splitItems[1].label.hasPrefix("Reports") && splitItems[1].label.contains("local") && splitItems[1].usd == 0)
+        let splitDecoded = (try? JSONEncoder().encode(split)).flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
+        check("split round-trips", splitDecoded?.reports == split.reports && splitDecoded?.reportsProvider == "ollama")
     }
 
     static func testStableHash() {

@@ -306,6 +306,9 @@ final class TranscriptionEngine {
                             // "Okay.") flooded real transcripts — drop them
                             // when the chunk was near-silent.
                             guard !Self.isLikelyHallucination(text, energy: energy) else { continue }
+                            // Prompt leak: quiet chunks echo the glossary prompt
+                            // back as "transcription".
+                            guard !(self.glossaryActive && Self.isGlossaryEcho(text)) else { continue }
 
                             await MainActor.run {
                                 // Clear the interim line — the text lives in the
@@ -395,10 +398,14 @@ final class TranscriptionEngine {
         }
     }
 
+    /// True while a glossary prompt is active — gates the echo filter below.
+    private var glossaryActive = false
+
     /// Prime Whisper with the user's custom glossary so proper nouns aren't
     /// mangled — shared by the live loop and file import. Fed as an initial
     /// prompt, the standard Whisper mechanism for biasing spelling.
     private func primeGlossary(into options: inout DecodingOptions) {
+        glossaryActive = false
         let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer else { return }
@@ -412,6 +419,18 @@ final class TranscriptionEngine {
             .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
         options.promptTokens = tokens
         options.usePrefillPrompt = true
+        glossaryActive = true
+    }
+
+    /// Whisper leaks the initial prompt back as fake transcription on silent or
+    /// noisy chunks — the live view showed "Glossary, Launchese, Uygar." bubbles
+    /// during quiet stretches. Drop any segment that STARTS with "glossary":
+    /// spoken vocab terms mid-sentence stay (only the structural echo matches).
+    static func isGlossaryEcho(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .punctuationCharacters)
+            .lowercased()
+            .hasPrefix("glossary")
     }
 
     // MARK: - File Import (whole-file, on-device)
@@ -449,6 +468,8 @@ final class TranscriptionEngine {
         return results.flatMap(\.segments).compactMap { segment in
             let text = Self.cleaned(segment.text)
             guard !text.isEmpty else { return nil }
+            // Same glossary-prompt echo filter as the live loop.
+            guard !(glossaryActive && Self.isGlossaryEcho(text)) else { return nil }
             return TranscriptionResult(
                 text: text,
                 source: .them,
