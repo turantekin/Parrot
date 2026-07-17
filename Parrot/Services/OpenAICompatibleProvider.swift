@@ -287,8 +287,13 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         // the reply + template. Clamped: 32k ctx on a 3-4B model is ~2 GB of
         // KV cache — fine on Apple Silicon, and calls longer than that get the
         // most-recent-first truncation Ollama applies at the cap.
+        // ROUNDED TO POWER-OF-TWO BUCKETS: Ollama reloads the whole model when
+        // num_ctx changes between requests, and the summary + coaching calls
+        // are seconds apart with slightly different prompt sizes — exact
+        // sizing forced a ~30s reload in the middle of every report.
         let estimated = (system.count + user.count) / 3 + maxTokens + 512
-        let numCtx = min(32768, max(4096, estimated))
+        var numCtx = 4096
+        while numCtx < estimated && numCtx < 32768 { numCtx *= 2 }
 
         var body: [String: Any] = [
             "model": config.model,

@@ -123,6 +123,8 @@ final class RecordingManager {
             await generateSummary(meeting: meeting)
         }
         writeAIUsage(meeting: meeting, polishSeconds: 0)
+        meeting.status = .done
+        try? modelContext?.save()
     }
 
     // MARK: - Recording Control
@@ -273,6 +275,8 @@ final class RecordingManager {
                 }
                 // Last in the chain so the meter has seen the summary/coaching calls too.
                 self.writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
+                meetingRef.status = .done
+                try? self.modelContext?.save()
             }
         }
 
@@ -374,6 +378,8 @@ final class RecordingManager {
             await generateSummary(meeting: meeting, includeCoaching: false)
         }
         writeAIUsage(meeting: meeting, polishSeconds: 0, backendOverride: .local)
+        meeting.status = .done
+        try? modelContext?.save()
     }
 
     // MARK: - Deletion
@@ -553,12 +559,11 @@ final class RecordingManager {
     // MARK: - Post-Processing
 
     private func postProcess(meeting: Meeting) async {
+        // Status stays .processing here — the calling chain flips .done after
+        // the post-call REPORT finishes, so the UI can say "writing report…"
+        // instead of the misleading "no report was generated".
         guard let audioPath = meeting.systemAudioPath.nilIfEmpty,
-              FileManager.default.fileExists(atPath: audioPath) else {
-            meeting.status = .done
-            try? modelContext?.save()
-            return
-        }
+              FileManager.default.fileExists(atPath: audioPath) else { return }
 
         do {
             let audioURL = URL(fileURLWithPath: audioPath)
@@ -576,14 +581,12 @@ final class RecordingManager {
                     transcriptSegment.speakerLabel = match.speakerLabel
                 }
             }
-            meeting.status = .done
             try? modelContext?.save()
         } catch {
             // Diarization is a refinement pass; the audio and transcript are
             // already saved. Keep the generic "Them" labels rather than showing
             // a perfectly good meeting as failed.
             NSLog("Parrot: diarization failed — \(error.localizedDescription)")
-            meeting.status = .done
             try? modelContext?.save()
         }
     }

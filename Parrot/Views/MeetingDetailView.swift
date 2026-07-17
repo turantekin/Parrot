@@ -319,21 +319,48 @@ struct MeetingDetailView: View {
         ScrollView {
             Group {
                 if meeting.summary == nil && meeting.coaching == nil {
-                    emptyTabState(meeting.status == .processing
-                        ? "The report is being generated…"
-                        : "No report was generated for this meeting.")
+                    if meeting.status == .processing {
+                        reportGeneratingRow("Writing your report…")
+                    } else {
+                        emptyTabState("No report was generated for this meeting.")
+                    }
                 } else {
-                    ReportContentView(
-                        summary: meeting.summary,
-                        coaching: meeting.coaching,
-                        talkPercentMe: talkPercentMe
-                    )
+                    VStack(alignment: .leading, spacing: 16) {
+                        ReportContentView(
+                            summary: meeting.summary,
+                            coaching: meeting.coaching,
+                            talkPercentMe: talkPercentMe
+                        )
+                        // Summary is in; the coaching pass is still running.
+                        if meeting.status == .processing, meeting.coaching == nil {
+                            reportGeneratingRow("Analyzing your coaching report…")
+                        }
+                    }
                 }
             }
             .padding(Theme.Metrics.pad)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// Spinner + honest expectation while a report pass runs in the background.
+    private func reportGeneratingRow(_ title: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                Text("Local models can take a few minutes — it appears here the moment it's ready.")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
     }
 
     /// Me's share of the words, for the talk-balance bar.

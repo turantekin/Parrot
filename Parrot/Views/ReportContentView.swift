@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Renders the AI's plain-text summary / coaching reports as structured, styled
-/// content — section labels with icons, bulleted lists, and a talk-ratio bar —
-/// instead of dumping the raw string into one `Text`, all styled with the
-/// native design system (Theme.swift).
+/// content: an opening overview paragraph, then one CARD per section — icon in
+/// the section's semantic color, a readable 15pt title, and the section's
+/// bullets — instead of a flat run of tiny gray labels.
 struct ReportContentView: View {
     let summary: String?
     let coaching: String?
@@ -11,15 +11,12 @@ struct ReportContentView: View {
     var talkPercentMe: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap) {
+        VStack(alignment: .leading, spacing: 12) {
             if let summary, !summary.isEmpty {
                 ReportProse(text: summary)
             }
 
             if let coaching, !coaching.isEmpty {
-                if summary?.isEmpty == false {
-                    Divider().overlay(Theme.Colors.line)
-                }
                 if let pct = talkPercentMe {
                     TalkRatioBar(percentMe: pct)
                 }
@@ -30,19 +27,46 @@ struct ReportContentView: View {
     }
 }
 
+// MARK: - Section chrome shared by cards + talk bar
+
+/// One report section as a card: tinted icon chip + title header, content below.
+struct ReportSectionCard<Content: View>: View {
+    let title: String
+    let icon: String
+    let tint: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(tint.opacity(0.14))
+                    .frame(width: 22, height: 22)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(tint)
+                    )
+                Text(title)
+                    .font(Theme.Typography.sans(15, .semibold))
+                    .foregroundStyle(Theme.Colors.ink)
+            }
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+    }
+}
+
 // MARK: - Talk-ratio bar
 
 struct TalkRatioBar: View {
     let percentMe: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Talk balance", systemImage: "chart.bar")
-                .font(Theme.Typography.sectionLabel)
-                .textCase(.uppercase)
-                .kerning(0.5)
-                .foregroundStyle(Theme.Colors.ink3)
-
+        ReportSectionCard(title: "Talk balance", icon: "chart.bar", tint: Theme.Colors.accent) {
             GeometryReader { geo in
                 HStack(spacing: 2) {
                     Capsule().fill(Theme.Colors.accent)
@@ -65,48 +89,49 @@ struct TalkRatioBar: View {
 
 // MARK: - Prose parser + renderer
 
-/// Parses the AI's plain text into headings / bullets / paragraphs and renders
-/// each with the design-system styles.
+/// Parses the AI's plain text into an overview + sections and renders each
+/// section as a card.
 struct ReportProse: View {
     let text: String
 
-    private enum Block: Identifiable {
-        case heading(String)
+    enum Block {
         case bullet(String, level: Int)
         case paragraph(String, lede: Bool)
-        var id: String {
-            switch self {
-            case .heading(let s): "h:\(s)"
-            case .bullet(let s, let l): "b\(l):\(s)"
-            case .paragraph(let s, _): "p:\(s)"
-            }
-        }
+    }
+
+    struct Section {
+        let title: String?   // nil = preamble before the first heading
+        var blocks: [Block]
     }
 
     var body: some View {
-        let blocks = Self.parse(text)
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                row(block)
+        let sections = Self.sections(from: text)
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                if let title = section.title {
+                    ReportSectionCard(title: title,
+                                      icon: Self.icon(for: title),
+                                      tint: Self.tint(for: title)) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
+                                row(block)
+                            }
+                        }
+                    }
+                } else {
+                    // Overview/preamble — breathes outside any card.
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
+                            row(block)
+                        }
+                    }
+                }
             }
         }
     }
 
     @ViewBuilder private func row(_ block: Block) -> some View {
         switch block {
-        case .heading(let title):
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: Self.icon(for: title))
-            }
-            .font(Theme.Typography.sectionLabel)
-            .textCase(.uppercase)
-            .kerning(0.5)
-            .foregroundStyle(Theme.Colors.ink3)
-            .padding(.top, 8)
-            .padding(.bottom, 1)
-
         case .bullet(let text, let level):
             HStack(alignment: .top, spacing: 8) {
                 Circle()
@@ -117,6 +142,7 @@ struct ReportProse: View {
                 Self.styled(text)
                     .font(Theme.Typography.body)
                     .foregroundStyle(level > 0 ? Theme.Colors.subtle : Theme.Colors.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -132,9 +158,13 @@ struct ReportProse: View {
 
     // MARK: parsing
 
-    private static func parse(_ text: String) -> [Block] {
-        var blocks: [Block] = []
+    static func sections(from text: String) -> [Section] {
+        var sections: [Section] = [Section(title: nil, blocks: [])]
         var sawParagraph = false
+
+        func append(_ block: Block) {
+            sections[sections.count - 1].blocks.append(block)
+        }
 
         for rawLine in text.components(separatedBy: "\n") {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -143,13 +173,12 @@ struct ReportProse: View {
             // Markdown header ("# Heading", "## Heading")
             if line.hasPrefix("#") {
                 let title = line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
-                if !title.isEmpty { blocks.append(.heading(title)) }
+                if !title.isEmpty { sections.append(Section(title: title, blocks: [])) }
                 continue
             }
 
-            // Bullet ("- ", "* ", "• ", "– "); leading whitespace → sub-level
             if let bullet = bulletMatch(rawLine) {
-                blocks.append(.bullet(bullet.text, level: bullet.level))
+                append(.bullet(bullet.text, level: bullet.level))
                 continue
             }
 
@@ -157,27 +186,37 @@ struct ReportProse: View {
 
             // Short label line ending in ":" → section heading
             if line.hasSuffix(":") && words.count <= 7 {
-                blocks.append(.heading(String(line.dropLast())))
+                sections.append(Section(title: String(line.dropLast()), blocks: []))
                 continue
             }
 
             // Bold-only short line "**Heading**" → heading
             if line.hasPrefix("**"), line.hasSuffix("**"), words.count <= 8 {
-                blocks.append(.heading(String(line.dropFirst(2).dropLast(2))))
+                sections.append(Section(title: String(line.dropFirst(2).dropLast(2)), blocks: []))
                 continue
             }
 
-            blocks.append(.paragraph(line, lede: !sawParagraph))
+            append(.paragraph(line, lede: !sawParagraph))
             sawParagraph = true
         }
-        return blocks
+        // An empty preamble (text that starts straight at a heading) renders as
+        // a stray gap — drop it.
+        return sections.filter { $0.title != nil || !$0.blocks.isEmpty }
     }
 
-    private static func bulletMatch(_ raw: String) -> (text: String, level: Int)? {
+    static func bulletMatch(_ raw: String) -> (text: String, level: Int)? {
         let leading = raw.prefix { $0 == " " || $0 == "\t" }.count
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         for marker in ["- ", "* ", "• ", "– ", "·  "] where trimmed.hasPrefix(marker) {
             return (String(trimmed.dropFirst(marker.count)), leading >= 2 ? 1 : 0)
+        }
+        // Models sometimes emit "-Prospect asked…" with no space — still a
+        // bullet, previously rendered as a paragraph with a stray dash.
+        if let first = trimmed.first, "-–•*".contains(first), trimmed.count > 2 {
+            let rest = trimmed.dropFirst()
+            if let next = rest.first, next != " ", !next.isNumber, !"-–•*".contains(next) {
+                return (rest.trimmingCharacters(in: .whitespaces), leading >= 2 ? 1 : 0)
+            }
         }
         return nil
     }
@@ -193,7 +232,7 @@ struct ReportProse: View {
         return Text(s)
     }
 
-    private static func icon(for title: String) -> String {
+    static func icon(for title: String) -> String {
         let t = title.lowercased()
         switch true {
         case t.contains("pain"), t.contains("struggl"): return "exclamationmark.bubble"
@@ -206,6 +245,23 @@ struct ReportProse: View {
         case t.contains("snapshot"), t.contains("balance"), t.contains("overview"): return "chart.bar"
         case t.contains("summary"), t.contains("report"): return "text.alignleft"
         default: return "circle.grid.2x1"
+        }
+    }
+
+    /// Semantic tint per section — color as a signal, consistent with the
+    /// copilot cards: warn = needs attention, good = positive/committed,
+    /// accent = informational.
+    static func tint(for title: String) -> Color {
+        let t = title.lowercased()
+        switch true {
+        case t.contains("pain"), t.contains("struggl"), t.contains("improve"),
+             t.contains("work on"), t.contains("objection"):
+            return Theme.Colors.warn
+        case t.contains("went well"), t.contains("strength"),
+             t.contains("commit"), t.contains("follow"):
+            return Theme.Colors.good
+        default:
+            return Theme.Colors.accent
         }
     }
 }
