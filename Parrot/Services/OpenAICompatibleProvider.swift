@@ -135,9 +135,13 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     }
 
     private func recordUsage(_ usage: ChatResponse.Usage?) {
+        recordNativeUsage(prompt: usage?.promptTokens, completion: usage?.completionTokens)
+    }
+
+    private func recordNativeUsage(prompt: Int?, completion: Int?) {
         usageLock.lock(); defer { usageLock.unlock() }
-        meteredUsage.inputTokens += usage?.promptTokens ?? 0
-        meteredUsage.outputTokens += usage?.completionTokens ?? 0
+        meteredUsage.inputTokens += prompt ?? 0
+        meteredUsage.outputTokens += completion ?? 0
         meteredUsage.calls += 1
     }
 
@@ -207,10 +211,14 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     // MARK: - Chat plumbing
 
-    /// Structured-output call. Tries strict `json_schema` first (OpenAI, Ollama,
-    /// OpenRouter, LM Studio all support it); if the server rejects the request,
-    /// falls back once to loose `json_object` mode with the schema inlined in the
-    /// prompt — the parse + validation layer catches drift either way.
+    /// Structured-output call — stays on the OpenAI-compat endpoint for EVERY
+    /// kind, including Ollama: analysis prompts are small (rolling window,
+    /// ~1-2k tokens — no truncation risk), and Ollama's native "format" param
+    /// enforces the schema with grammar-constrained decoding that crawled at
+    /// ~0.35 tok/s on gemma3:4b (measured 2026-07-17: 599s vs 28s for the same
+    /// request). Loose schema + the validation layer is the right trade here.
+    /// Tries strict `json_schema` first; falls back once to `json_object` with
+    /// the schema inlined in the prompt.
     private func structuredChat(system: String, user: String, schema: [String: Any],
                                 maxTokens: Int, config: Config) async throws -> String {
         let strictBody: [String: Any] = [
@@ -246,6 +254,11 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     private func plainChat(system: String, user: String, maxTokens: Int,
                            config: Config) async throws -> String {
+        if kindSource() == .ollama {
+            return try await sendOllamaNative(system: system, user: user, schema: nil,
+                                              maxTokens: maxTokens, config: config)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let body: [String: Any] = [
             "model": config.model,
             "max_tokens": maxTokens,
@@ -256,6 +269,86 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         ]
         return try await send(body: body, config: config)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Ollama native endpoint
+
+    /// Ollama's OpenAI-compat endpoint silently TRUNCATES prompts to the model's
+    /// default context (4096 tokens) and ignores num_ctx overrides — measured
+    /// 2026-07-17: a 9k-token transcript came back as prompt_tokens: 2050. An
+    /// hour-long call's report would quietly read only a slice of the call.
+    /// The native /api/chat endpoint honors options.num_ctx, so REPORT calls
+    /// (long transcript, plain text) go through it with the context sized to
+    /// the prompt. Live analysis stays on the compat endpoint — see
+    /// structuredChat for why (schema-grammar decoding is unusably slow).
+    private func sendOllamaNative(system: String, user: String, schema: [String: Any]?,
+                                  maxTokens: Int, config: Config) async throws -> String {
+        // ~3 chars/token is conservative for mixed-language text; headroom for
+        // the reply + template. Clamped: 32k ctx on a 3-4B model is ~2 GB of
+        // KV cache — fine on Apple Silicon, and calls longer than that get the
+        // most-recent-first truncation Ollama applies at the cap.
+        let estimated = (system.count + user.count) / 3 + maxTokens + 512
+        let numCtx = min(32768, max(4096, estimated))
+
+        var body: [String: Any] = [
+            "model": config.model,
+            "stream": false,
+            "messages": [
+                ["role": "system", "content": system],
+                ["role": "user", "content": user],
+            ],
+            "options": ["num_ctx": numCtx, "num_predict": maxTokens],
+        ]
+        if let schema { body["format"] = schema }
+
+        // Native root = base URL without the /v1 suffix.
+        var root = config.baseURL
+        if root.lastPathComponent == "v1" { root.deleteLastPathComponent() }
+        var request = URLRequest(url: root.appendingPathComponent("api/chat"))
+        request.httpMethod = "POST"
+        // Prompt evaluation on a long transcript is minutes, not seconds, on
+        // some machines — reports aren't latency-critical.
+        request.timeoutInterval = 600
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        struct NativeResponse: Decodable {
+            struct Message: Decodable { let content: String? }
+            let message: Message
+            let promptEvalCount: Int?
+            let evalCount: Int?
+            let doneReason: String?
+            enum CodingKeys: String, CodingKey {
+                case message
+                case promptEvalCount = "prompt_eval_count"
+                case evalCount = "eval_count"
+                case doneReason = "done_reason"
+            }
+        }
+
+        for attempt in 0..<2 {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw AnalysisError.badResponse("No HTTP response")
+            }
+            if attempt == 0, http.statusCode >= 500 {
+                try await Task.sleep(for: .seconds(2))
+                continue
+            }
+            guard http.statusCode == 200 else {
+                throw AnalysisError.badResponse(Self.errorMessage(from: data) ?? "HTTP \(http.statusCode)")
+            }
+            let decoded = try JSONDecoder().decode(NativeResponse.self, from: data)
+            recordNativeUsage(prompt: decoded.promptEvalCount, completion: decoded.evalCount)
+            guard decoded.doneReason != "length" else {
+                throw AnalysisError.badResponse("Response truncated (hit max_tokens)")
+            }
+            guard let content = decoded.message.content?.nilIfEmpty else {
+                throw AnalysisError.badResponse("Empty model response")
+            }
+            return Self.stripCodeFence(content)
+        }
+        throw AnalysisError.badResponse("Unreachable")
     }
 
     private struct ChatResponse: Decodable {
