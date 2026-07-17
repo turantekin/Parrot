@@ -19,19 +19,29 @@ enum CopilotProviderKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The LIVE-cards provider ("copilotProvider" — pre-split installs carry
+    /// their choice into the live role, which is the main experience).
     static var selected: CopilotProviderKind {
         CopilotProviderKind(rawValue: UserDefaults.standard.string(forKey: "copilotProvider") ?? "") ?? .claude
     }
 
-    /// Model identifier the active backend will use — recorded per meeting for
-    /// the cost row.
-    static var activeModelName: String {
-        switch selected {
+    /// The post-call reports provider ("reportsProvider"); nil = same as live.
+    static var reportsSelected: CopilotProviderKind? {
+        let raw = UserDefaults.standard.string(forKey: "reportsProvider") ?? ""
+        return raw.isEmpty ? nil : CopilotProviderKind(rawValue: raw)
+    }
+
+    static func modelName(for kind: CopilotProviderKind) -> String {
+        switch kind {
         case .claude: ClaudeAnalysisProvider.model
         case .ollama: OpenAICompatibleProvider.ollamaModel
         case .custom: OpenAICompatibleProvider.customModel
         }
     }
+
+    /// Model identifier the live backend will use — recorded per meeting for
+    /// the cost row.
+    static var activeModelName: String { modelName(for: selected) }
 }
 
 // MARK: - Ollama model catalog
@@ -77,6 +87,14 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         UserDefaults.standard.string(forKey: "copilotCustomBaseURL") ?? ""
     }
 
+    /// Which kind this instance serves — a closure so the live/reports split can
+    /// hand one instance per role and Settings changes apply on the next call.
+    private let kindSource: () -> CopilotProviderKind
+
+    init(kindSource: @escaping () -> CopilotProviderKind = { CopilotProviderKind.selected }) {
+        self.kindSource = kindSource
+    }
+
     private struct Config {
         let baseURL: URL
         let model: String
@@ -84,22 +102,22 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     }
 
     /// Resolved fresh on every call so Settings changes apply immediately.
-    private static func currentConfig() -> Config? {
-        switch CopilotProviderKind.selected {
+    private func currentConfig() -> Config? {
+        switch kindSource() {
         case .claude:
             return nil
         case .ollama:
             return Config(baseURL: URL(string: "http://localhost:11434/v1")!,
-                          model: ollamaModel, apiKey: nil)
+                          model: Self.ollamaModel, apiKey: nil)
         case .custom:
-            let base = customBaseURL.trimmingCharacters(in: .whitespaces)
-            guard let url = URL(string: base), !base.isEmpty, !customModel.isEmpty else { return nil }
-            return Config(baseURL: url, model: customModel,
+            let base = Self.customBaseURL.trimmingCharacters(in: .whitespaces)
+            guard let url = URL(string: base), !base.isEmpty, !Self.customModel.isEmpty else { return nil }
+            return Config(baseURL: url, model: Self.customModel,
                           apiKey: APIKeyStore.load(account: "custom-llm-api-key"))
         }
     }
 
-    var isConfigured: Bool { Self.currentConfig() != nil }
+    var isConfigured: Bool { currentConfig() != nil }
 
     // MARK: - Usage metering (same pattern as ClaudeAnalysisProvider)
 
@@ -126,7 +144,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     // MARK: - AnalysisProvider
 
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
-        guard let config = Self.currentConfig() else {
+        guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
 
@@ -149,7 +167,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     func summarize(transcript: String, insightTitles: [String], instructions: String,
                    counterpart: String = "the other person") async throws -> String {
-        guard let config = Self.currentConfig() else {
+        guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
         var sections: [String] = []
@@ -170,7 +188,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String = "the other person") async throws -> String {
-        guard let config = Self.currentConfig() else {
+        guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
         var sections: [String] = []
@@ -320,46 +338,93 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
 // MARK: - Switching provider
 
-/// Routes every call to the provider selected in Settings → Copilot. Both
-/// concrete providers stay alive so token meters survive a mid-call settings
-/// change; usage totals are the sum of both (same accepted edge case as the
-/// transcription-backend note in RecordingManager.writeAIUsage).
+/// Routes each call by JOB: live analysis passes go to the "Live cards"
+/// provider, post-call summaries/coaching go to the "Post-call reports"
+/// provider (Settings → Copilot). One compat instance per role keeps the token
+/// meters separable so the cost row can price each bucket correctly. All
+/// instances stay alive across settings changes; a mid-call switch mislabels
+/// at most one meeting's rows (same accepted edge as the transcription-backend
+/// note in RecordingManager.writeAIUsage).
 final class SwitchingAnalysisProvider: AnalysisProvider {
     private let claude = ClaudeAnalysisProvider()
-    private let compat = OpenAICompatibleProvider()
+    private let liveCompat = OpenAICompatibleProvider { CopilotProviderKind.selected }
+    private let reportsCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.reportsKind }
 
-    private var active: AnalysisProvider {
-        CopilotProviderKind.selected == .claude ? claude : compat
+    static var liveKind: CopilotProviderKind { CopilotProviderKind.selected }
+
+    /// Reports kind; "same as live" resolves to the live kind.
+    static var reportsKind: CopilotProviderKind {
+        CopilotProviderKind.reportsSelected ?? liveKind
     }
 
-    var isConfigured: Bool { active.isConfigured }
+    private var liveProvider: AnalysisProvider {
+        Self.liveKind == .claude ? claude : liveCompat
+    }
+
+    /// The reports provider, falling back to the live provider when the chosen
+    /// one isn't configured — a report must never be lost to a half-set-up
+    /// secondary backend.
+    private var reportsProvider: AnalysisProvider {
+        let kind = Self.reportsKind
+        let candidate: AnalysisProvider = kind == .claude ? claude : reportsCompat
+        return candidate.isConfigured ? candidate : liveProvider
+    }
+
+    /// Whether live and reports currently share one provider instance (single
+    /// cost bucket in that case).
+    private var rolesShareInstance: Bool {
+        (liveProvider as AnyObject) === (reportsProvider as AnyObject)
+    }
+
+    var isConfigured: Bool { liveProvider.isConfigured }
 
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
-        try await active.analyze(request)
+        try await liveProvider.analyze(request)
     }
 
     func summarize(transcript: String, insightTitles: [String], instructions: String,
                    counterpart: String) async throws -> String {
-        try await active.summarize(transcript: transcript, insightTitles: insightTitles,
-                                   instructions: instructions, counterpart: counterpart)
+        try await reportsProvider.summarize(transcript: transcript, insightTitles: insightTitles,
+                                            instructions: instructions, counterpart: counterpart)
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String) async throws -> String {
-        try await active.coachingReport(transcript: transcript, talkPercentMe: talkPercentMe,
-                                        instructions: instructions, counterpart: counterpart)
+        try await reportsProvider.coachingReport(transcript: transcript, talkPercentMe: talkPercentMe,
+                                                 instructions: instructions, counterpart: counterpart)
+    }
+
+    // MARK: Role-split metering for the cost row
+
+    /// Live bucket: model/provider label + tokens. When both roles share one
+    /// instance this is the COMBINED bucket and `reportsUsage` is nil.
+    var liveUsage: (model: String, provider: String, totals: AITokenTotals) {
+        (CopilotProviderKind.modelName(for: Self.liveKind),
+         Self.liveKind.rawValue,
+         liveProvider.usageTotals)
+    }
+
+    /// Reports bucket, nil when reports ran on the live instance.
+    var reportsUsage: (model: String, provider: String, totals: AITokenTotals)? {
+        guard !rolesShareInstance else { return nil }
+        let kind = Self.reportsKind
+        return (CopilotProviderKind.modelName(for: kind),
+                kind.rawValue,
+                reportsProvider.usageTotals)
     }
 
     var usageTotals: AITokenTotals {
-        let a = claude.usageTotals
-        let b = compat.usageTotals
-        return AITokenTotals(inputTokens: a.inputTokens + b.inputTokens,
-                             outputTokens: a.outputTokens + b.outputTokens,
-                             calls: a.calls + b.calls)
+        [claude.usageTotals, liveCompat.usageTotals, reportsCompat.usageTotals]
+            .reduce(AITokenTotals()) { acc, u in
+                AITokenTotals(inputTokens: acc.inputTokens + u.inputTokens,
+                              outputTokens: acc.outputTokens + u.outputTokens,
+                              calls: acc.calls + u.calls)
+            }
     }
 
     func resetUsage() {
         claude.resetUsage()
-        compat.resetUsage()
+        liveCompat.resetUsage()
+        reportsCompat.resetUsage()
     }
 }

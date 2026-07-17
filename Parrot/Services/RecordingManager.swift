@@ -523,9 +523,22 @@ final class RecordingManager {
         var usage = AIUsage()
         // ponytail: reads the copilot provider/model at stop time, same accepted
         // mid-call-switch edge as the transcription backend below.
-        usage.copilotModel = CopilotProviderKind.activeModelName
-        usage.copilotProvider = CopilotProviderKind.selected.rawValue
-        usage.copilot = callAnalysisEngine.provider.usageTotals
+        if let switching = callAnalysisEngine.provider as? SwitchingAnalysisProvider {
+            let live = switching.liveUsage
+            usage.copilotModel = live.model
+            usage.copilotProvider = live.provider
+            usage.copilot = live.totals
+            // Second bucket only when reports ran on a different backend.
+            if let reports = switching.reportsUsage {
+                usage.reportsModel = reports.model
+                usage.reportsProvider = reports.provider
+                usage.reports = reports.totals
+            }
+        } else {
+            usage.copilotModel = CopilotProviderKind.activeModelName
+            usage.copilotProvider = CopilotProviderKind.selected.rawValue
+            usage.copilot = callAnalysisEngine.provider.usageTotals
+        }
         // ponytail: reads the backend setting at stop time; a mid-call engine
         // switch or cloud→local fallback mislabels one estimated row. Import
         // passes an override since it's always on-device regardless of the setting.

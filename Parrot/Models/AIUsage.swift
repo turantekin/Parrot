@@ -25,12 +25,20 @@ enum AIPricing {
 /// (same JSON pattern as profileSnapshotData). All dollar figures are estimates
 /// from the AIPricing table — the UI labels them "estimated".
 struct AIUsage: Codable {
-    /// Model used for the live copilot + post-call reports.
+    /// Model used for the live copilot (and reports too, unless the reports
+    /// bucket below is set).
     var copilotModel = ""
     /// CopilotProviderKind rawValue ("claude"/"ollama"/"custom"); nil on
     /// meetings recorded before provider selection existed (= claude).
     var copilotProvider: String?
     var copilot = AITokenTotals()
+
+    /// Post-call reports bucket — set only when reports ran on a DIFFERENT
+    /// provider than live cards (the live/reports split). nil on older
+    /// meetings and whenever both jobs share one backend.
+    var reportsModel: String?
+    var reportsProvider: String?
+    var reports: AITokenTotals?
     /// Live transcription engine (TranscriptionBackend rawValue).
     var transcriptionBackend = TranscriptionBackend.local.rawValue
     /// Audio duration per track, seconds.
@@ -50,24 +58,18 @@ struct AIUsage: Codable {
     /// Pure cost math — harness-tested in ProfileTest.
     func costBreakdown() -> [LineItem] {
         var items: [LineItem] = []
+        // Live cards bucket (also carries reports unless split below). The
+        // plain "Copilot" prefix is kept when there's a single bucket so
+        // pre-split meetings read unchanged.
         if copilot.calls > 0 {
-            let tokens = "\(copilot.calls) calls · \(Self.compactTokens(copilot.inputTokens)) in / \(Self.compactTokens(copilot.outputTokens)) out"
-            switch copilotProvider {
-            case "ollama":
-                // Runs on this Mac — the whole point.
-                items.append(LineItem(label: "Copilot \(copilotModel) — local",
-                                      detail: tokens, usd: 0))
-            case "custom":
-                // Rates for arbitrary servers aren't tracked; show tokens, claim $0.
-                items.append(LineItem(label: "Copilot \(copilotModel)",
-                                      detail: tokens + " · rates not tracked", usd: 0))
-            default:
-                // Claude (nil = meetings recorded before provider selection).
-                let usd = Double(copilot.inputTokens) / 1_000_000 * AIPricing.haikuInputUSDPerMTok
-                    + Double(copilot.outputTokens) / 1_000_000 * AIPricing.haikuOutputUSDPerMTok
-                items.append(LineItem(label: "Copilot \(copilotModel)",
-                                      detail: tokens, usd: usd))
-            }
+            items.append(Self.modelLine(
+                prefix: reports == nil ? "Copilot" : "Live cards",
+                model: copilotModel, provider: copilotProvider, totals: copilot))
+        }
+        if let reports, reports.calls > 0 {
+            items.append(Self.modelLine(
+                prefix: "Reports",
+                model: reportsModel ?? "", provider: reportsProvider, totals: reports))
         }
         let backend = TranscriptionBackend(rawValue: transcriptionBackend) ?? .local
         let billedSeconds = transcriptionSeconds * Double(transcriptionTracks)
@@ -87,6 +89,26 @@ struct AIUsage: Codable {
                 usd: polishSeconds / 3600 * AIPricing.groqUSDPerAudioHour))
         }
         return items
+    }
+
+    /// One priced line per model bucket, by provider kind.
+    private static func modelLine(prefix: String, model: String,
+                                  provider: String?, totals: AITokenTotals) -> LineItem {
+        let tokens = "\(totals.calls) calls · \(compactTokens(totals.inputTokens)) in / \(compactTokens(totals.outputTokens)) out"
+        switch provider {
+        case "ollama":
+            // Runs on this Mac — the whole point.
+            return LineItem(label: "\(prefix) \(model) — local", detail: tokens, usd: 0)
+        case "custom":
+            // Rates for arbitrary servers aren't tracked; show tokens, claim $0.
+            return LineItem(label: "\(prefix) \(model)",
+                            detail: tokens + " · rates not tracked", usd: 0)
+        default:
+            // Claude (nil = meetings recorded before provider selection).
+            let usd = Double(totals.inputTokens) / 1_000_000 * AIPricing.haikuInputUSDPerMTok
+                + Double(totals.outputTokens) / 1_000_000 * AIPricing.haikuOutputUSDPerMTok
+            return LineItem(label: "\(prefix) \(model)", detail: tokens, usd: usd)
+        }
     }
 
     var totalUSD: Double {

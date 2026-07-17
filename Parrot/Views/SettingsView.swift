@@ -45,6 +45,8 @@ struct SettingsView: View {
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("copilotProvider") private var copilotProvider = CopilotProviderKind.claude.rawValue
+    /// "" = same backend as live cards.
+    @AppStorage("reportsProvider") private var reportsProvider = ""
     @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
     @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
     @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
@@ -299,14 +301,38 @@ struct SettingsView: View {
             }
 
             Section("Model") {
-                Picker("Provider", selection: $copilotProvider) {
+                // Two jobs, two backends: live cards need speed and sharpness;
+                // reports run after the call where a slow local model costs nothing.
+                Picker("Live cards", selection: $copilotProvider) {
                     ForEach(CopilotProviderKind.allCases) { kind in
                         Text(kind.label).tag(kind.rawValue)
                     }
                 }
                 .pickerStyle(.radioGroup)
 
-                switch CopilotProviderKind(rawValue: copilotProvider) ?? .claude {
+                providerConfig(for: CopilotProviderKind(rawValue: copilotProvider) ?? .claude)
+
+                Picker("Post-call reports", selection: $reportsProvider) {
+                    Text("Same as live cards").tag("")
+                    ForEach(CopilotProviderKind.allCases) { kind in
+                        Text(kind.label).tag(kind.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if let reportsKind = CopilotProviderKind(rawValue: reportsProvider),
+                   reportsKind != (CopilotProviderKind(rawValue: copilotProvider) ?? .claude) {
+                    providerConfig(for: reportsKind)
+                }
+                Hint("Reports generate after the call, so a local model keeps them free and private without slowing live cards. If the reports backend isn't set up, reports fall back to the live one.")
+            }
+        }
+    }
+
+    /// Per-backend configuration rows, shared by the live and reports pickers.
+    @ViewBuilder
+    private func providerConfig(for kind: CopilotProviderKind) -> some View {
+                switch kind {
                 case .claude:
                     HStack(spacing: 6) {
                         Hint("Best quality. Needs a key — transcript text is sent, audio never.")
@@ -359,8 +385,6 @@ struct SettingsView: View {
                         hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
                     )
                 }
-            }
-        }
     }
 
     /// Dropdown selection for the Ollama model: catalog id, or "custom" when the
