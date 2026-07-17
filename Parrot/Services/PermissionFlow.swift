@@ -39,7 +39,18 @@ enum PermissionFlow {
             UserDefaults.standard.set(true, forKey: screenAskedKey)
             _ = CGRequestScreenCaptureAccess()
         case .openSettings:
-            openSettings(pane: "Privacy_ScreenCapture")
+            // ALWAYS re-request before deep-linking. If the user (or a TCC
+            // reset) wiped the grant back to not-determined, this posts the
+            // official prompt again instead of stranding them in a Settings
+            // pane; and in the genuinely-denied case it is a silent no-op that
+            // still (re)registers Parrot's row in the Settings list — without
+            // it, the pane we open may not even show the app. Worst case
+            // (reset + this flag still set) the prompt and Settings both
+            // appear; that beats the dead-end loop it replaces.
+            _ = CGRequestScreenCaptureAccess()
+            if !CGPreflightScreenCaptureAccess() {
+                openSettings(pane: "Privacy_ScreenCapture")
+            }
         }
         return step
     }
