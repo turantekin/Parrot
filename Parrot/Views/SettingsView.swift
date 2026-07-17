@@ -165,6 +165,18 @@ struct SettingsView: View {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
                 }
             }
+
+            Section("About") {
+                LabeledContent("Version", value: "Parrot \(UpdateChecker.currentVersion)")
+                HStack(spacing: 6) {
+                    Hint("Checks GitHub once a day and offers new versions with a banner.")
+                    Button("Check Now") {
+                        Task { await UpdateChecker.shared.check() }
+                    }
+                    .buttonStyle(.link)
+                    .font(Theme.Typography.secondary)
+                }
+            }
         }
     }
 

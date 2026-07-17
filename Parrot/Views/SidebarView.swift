@@ -336,7 +336,9 @@ private struct AccountChip: View {
                     .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1)
-                Text("On-device · Private")
+                // Version up front so "which build am I running?" never needs
+                // a trip to the About panel.
+                Text("v\(UpdateChecker.currentVersion) · On-device · Private")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink2)
             }
