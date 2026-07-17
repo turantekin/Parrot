@@ -291,7 +291,8 @@ struct MeetingDetailView: View {
                 .foregroundStyle(Theme.Colors.ink2)
                 .frame(width: 100)
 
-            // Speed selector
+            // Speed selector — label hidden: outside a Form, macOS renders it as
+            // a squeezed vertical "S p e e d" column; the segments self-describe.
             Picker("Speed", selection: $playbackSpeed) {
                 Text("0.5x").tag(Float(0.5))
                 Text("1x").tag(Float(1.0))
@@ -299,6 +300,8 @@ struct MeetingDetailView: View {
                 Text("2x").tag(Float(2.0))
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Playback speed")
             .frame(width: 160)
             .onChange(of: playbackSpeed) { _, newValue in
                 audioPlayer?.rate = newValue
