@@ -10,7 +10,8 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
-    let callAnalysisEngine = CallAnalysisEngine()
+    // Routes to Claude / Ollama / a custom server per Settings → Copilot.
+    let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
     let profileStore = ProfileStore()
 
@@ -520,7 +521,10 @@ final class RecordingManager {
     private func writeAIUsage(meeting: Meeting, polishSeconds: Double,
                               backendOverride: TranscriptionBackend? = nil) {
         var usage = AIUsage()
-        usage.copilotModel = ClaudeAnalysisProvider.model
+        // ponytail: reads the copilot provider/model at stop time, same accepted
+        // mid-call-switch edge as the transcription backend below.
+        usage.copilotModel = CopilotProviderKind.activeModelName
+        usage.copilotProvider = CopilotProviderKind.selected.rawValue
         usage.copilot = callAnalysisEngine.provider.usageTotals
         // ponytail: reads the backend setting at stop time; a mid-call engine
         // switch or cloud→local fallback mislabels one estimated row. Import

@@ -273,6 +273,81 @@ enum SnapshotIO {
     }
 }
 
+/// Dev-only: one real analysis pass through the selected copilot provider.
+///   Parrot --analyze-test [claude|ollama|custom] [model]
+/// Fixture sales transcript + the Sales discovery preset profile; prints the
+/// parsed cards, sentiment, and token usage so structured-output quality of a
+/// backend can be judged without a live call. Exits non-zero on failure.
+enum AnalyzeTest {
+    static func run(provider: String?, model: String?) {
+        // register(defaults:) supplies values without persisting anything —
+        // the app's real settings are untouched.
+        if let provider {
+            UserDefaults.standard.register(defaults: ["copilotProvider": provider])
+        }
+        if let model {
+            UserDefaults.standard.register(defaults: [
+                "copilotOllamaModel": model,
+                "copilotCustomModel": model,
+            ])
+        }
+
+        let profile = ProfilePresets.all().first { $0.name == "Sales discovery" }
+        let transcript = """
+        [00:12] Them: So walk me through how the migration from our current tool would work.
+        [00:31] Me: Great question — we handle the export and import for you, usually within a week.
+        [01:02] Them: Okay. And honestly the price feels steep compared to what we pay now.
+        [01:18] Me: Understood — can I ask what you're comparing against?
+        [01:25] Them: We pay about half of your quote today. Also, is the data stored in the EU?
+        [01:40] Me: Let me get back to you on hosting regions.
+        [02:05] Them: Alright. We'd want to start with the five-person sales pod if we do this.
+        """
+        let request = AnalysisRequest(
+            transcript: transcript,
+            knownInsightTitles: [],
+            references: [],
+            instructions: "",
+            callBrief: "",
+            allowGeneralKnowledge: true,
+            knownDocumentNames: [],
+            persona: profile?.persona ?? "You assist a sales professional during live calls.",
+            counterpart: "the prospect",
+            kinds: profile?.kinds ?? [],
+            gauges: profile?.gauges ?? []
+        )
+
+        var exitCode: Int32 = 1
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            let analysisProvider = SwitchingAnalysisProvider()
+            let start = Date()
+            do {
+                let result = try await analysisProvider.analyze(request)
+                let secs = String(format: "%.1f", Date().timeIntervalSince(start))
+                print("=== analyze-test (\(CopilotProviderKind.selected.rawValue) · \(CopilotProviderKind.activeModelName)) — \(secs)s")
+                print("coach: \(result.coach ?? "-")")
+                print("score: \(result.sentiment["score"].map(String.init) ?? "MISSING") · read: \(result.read ?? "-")")
+                print("gauges: \(result.sentiment.filter { $0.key != "score" })")
+                for insight in result.insights {
+                    var line = "- [\(insight.kindKey)] \(insight.title) — \(insight.detail)"
+                    if let reply = insight.reply { line += " | say: \(reply)" }
+                    if let source = insight.source { line += " | src: \(source)" }
+                    print(line)
+                }
+                let usage = analysisProvider.usageTotals
+                print("usage: \(usage.calls) call(s), \(usage.inputTokens) in / \(usage.outputTokens) out")
+                // Schema honored = the always-required sentiment.score came back.
+                exitCode = result.sentiment["score"] != nil ? 0 : 1
+            } catch {
+                print("analyze-test FAILED: \(error.localizedDescription)")
+            }
+            sem.signal()
+        }
+        sem.wait()
+        exit(exitCode)
+    }
+}
+
 /// Offscreen renderer for the sidebar's waveform meeting rows. Run with:
 ///   Parrot --sidebar-snapshot /tmp/sidebar.png
 /// Seeds an in-memory store with meetings whose transcripts have distinct talk

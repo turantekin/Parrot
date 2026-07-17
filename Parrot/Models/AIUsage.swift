@@ -27,6 +27,9 @@ enum AIPricing {
 struct AIUsage: Codable {
     /// Model used for the live copilot + post-call reports.
     var copilotModel = ""
+    /// CopilotProviderKind rawValue ("claude"/"ollama"/"custom"); nil on
+    /// meetings recorded before provider selection existed (= claude).
+    var copilotProvider: String?
     var copilot = AITokenTotals()
     /// Live transcription engine (TranscriptionBackend rawValue).
     var transcriptionBackend = TranscriptionBackend.local.rawValue
@@ -48,14 +51,23 @@ struct AIUsage: Codable {
     func costBreakdown() -> [LineItem] {
         var items: [LineItem] = []
         if copilot.calls > 0 {
-            // ponytail: haiku rates only — the app pins one copilot model; add
-            // a per-model table when a model picker exists.
-            let usd = Double(copilot.inputTokens) / 1_000_000 * AIPricing.haikuInputUSDPerMTok
-                + Double(copilot.outputTokens) / 1_000_000 * AIPricing.haikuOutputUSDPerMTok
-            items.append(LineItem(
-                label: "Copilot \(copilotModel)",
-                detail: "\(copilot.calls) calls · \(Self.compactTokens(copilot.inputTokens)) in / \(Self.compactTokens(copilot.outputTokens)) out",
-                usd: usd))
+            let tokens = "\(copilot.calls) calls · \(Self.compactTokens(copilot.inputTokens)) in / \(Self.compactTokens(copilot.outputTokens)) out"
+            switch copilotProvider {
+            case "ollama":
+                // Runs on this Mac — the whole point.
+                items.append(LineItem(label: "Copilot \(copilotModel) — local",
+                                      detail: tokens, usd: 0))
+            case "custom":
+                // Rates for arbitrary servers aren't tracked; show tokens, claim $0.
+                items.append(LineItem(label: "Copilot \(copilotModel)",
+                                      detail: tokens + " · rates not tracked", usd: 0))
+            default:
+                // Claude (nil = meetings recorded before provider selection).
+                let usd = Double(copilot.inputTokens) / 1_000_000 * AIPricing.haikuInputUSDPerMTok
+                    + Double(copilot.outputTokens) / 1_000_000 * AIPricing.haikuOutputUSDPerMTok
+                items.append(LineItem(label: "Copilot \(copilotModel)",
+                                      detail: tokens, usd: usd))
+            }
         }
         let backend = TranscriptionBackend(rawValue: transcriptionBackend) ?? .local
         let billedSeconds = transcriptionSeconds * Double(transcriptionTracks)

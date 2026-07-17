@@ -44,6 +44,10 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("copilotEnabled") private var copilotEnabled = false
+    @AppStorage("copilotProvider") private var copilotProvider = CopilotProviderKind.claude.rawValue
+    @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
+    @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
+    @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
@@ -284,17 +288,53 @@ struct SettingsView: View {
                 Hint("Suggests answers, flags blockers, and captures action items live — no button needed.")
 
                 HStack(spacing: 6) {
-                    Hint("Powered by Claude — needs a key.")
-                    Button("Open API Keys") { section = .apiKeys }
-                        .buttonStyle(.link)
-                        .font(Theme.Typography.secondary)
-                }
-
-                HStack(spacing: 6) {
                     Hint("What it says and watches for is set per call profile.")
                     Button("Open Profiles") { section = .profiles }
                         .buttonStyle(.link)
                         .font(Theme.Typography.secondary)
+                }
+            }
+
+            Section("Model") {
+                Picker("Provider", selection: $copilotProvider) {
+                    ForEach(CopilotProviderKind.allCases) { kind in
+                        Text(kind.label).tag(kind.rawValue)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+
+                switch CopilotProviderKind(rawValue: copilotProvider) ?? .claude {
+                case .claude:
+                    HStack(spacing: 6) {
+                        Hint("Best quality. Needs a key — transcript text is sent, audio never.")
+                        Button("Open API Keys") { section = .apiKeys }
+                            .buttonStyle(.link)
+                            .font(Theme.Typography.secondary)
+                    }
+                case .ollama:
+                    LabeledContent("Model") {
+                        TextField("llama3.2:3b", text: $copilotOllamaModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 220)
+                    }
+                    Hint("Runs entirely on this Mac — free, private, no key, works offline. Needs Ollama (ollama.com), then: ollama pull \(copilotOllamaModel.nilIfEmpty ?? "llama3.2:3b"). Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
+                case .custom:
+                    LabeledContent("Server URL") {
+                        TextField("https://api.openai.com/v1", text: $copilotCustomBaseURL)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
+                    }
+                    LabeledContent("Model") {
+                        TextField("gpt-5-mini", text: $copilotCustomModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 220)
+                    }
+                    ProviderKeyField(
+                        label: "API key",
+                        account: "custom-llm-api-key",
+                        placeholder: "optional — not needed for local servers",
+                        hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
+                    )
                 }
             }
         }

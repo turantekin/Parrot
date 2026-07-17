@@ -250,11 +250,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Live Analysis
 
-    func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
-        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
-            throw AnalysisError.missingAPIKey
-        }
-
+    /// Assembles the analysis user turn — shared verbatim by every provider so
+    /// all backends receive identical grounding/instructions.
+    static func analysisUserContent(_ request: AnalysisRequest) -> String {
         let knownList = request.knownInsightTitles.isEmpty
             ? "(none)"
             : request.knownInsightTitles.map { "- \($0)" }.joined(separator: "\n")
@@ -294,7 +292,15 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         sections.append("Already shown insights (do not repeat):\n\(knownList)")
         sections.append("Rolling transcript (oldest to newest):\n<transcript>\n\(request.transcript)\n</transcript>")
 
-        let userContent = sections.joined(separator: "\n\n---\n\n")
+        return sections.joined(separator: "\n\n---\n\n")
+    }
+
+    func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
+        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
+            throw AnalysisError.missingAPIKey
+        }
+
+        let userContent = Self.analysisUserContent(request)
 
         let sys = Self.systemPrompt(persona: request.persona, kinds: request.kinds,
                                     gauges: request.gauges, counterpart: request.counterpart)
@@ -318,7 +324,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Post-Call Summary
 
-    private static func summarySystemPrompt(counterpart: String) -> String {
+    static func summarySystemPrompt(counterpart: String) -> String {
         """
         You write concise post-call reports from meeting transcripts. Transcription is \
         automatic, so expect minor errors and missing punctuation. Transcript lines tagged \
@@ -371,7 +377,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Post-Call Coaching & Follow-ups
 
-    private static func coachingSystemPrompt(counterpart: String) -> String {
+    static func coachingSystemPrompt(counterpart: String) -> String {
         """
         You are a sales/meeting coach reviewing a call transcript. Transcript lines tagged \
         "Me" are the person you coach; lines tagged "Them" are \(counterpart). Address the \
@@ -477,7 +483,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
     /// ("call transcript", "rolling transcript", "conversation with coach"). Keep
     /// "source" only when it's a real KB document name or the literal "general
     /// knowledge"; otherwise drop it so the UI never shows a bogus provenance.
-    private static func validatingSources(
+    static func validatingSources(
         _ drafts: [InsightDraft],
         knownDocuments: [String]
     ) -> [InsightDraft] {
@@ -501,8 +507,16 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         guard response.stopReason != "max_tokens" else {
             throw AnalysisError.badResponse("Response truncated (hit max_tokens)")
         }
-        guard let text = response.content.first(where: { $0.type == "text" })?.text,
-              let jsonData = text.data(using: .utf8) else {
+        guard let text = response.content.first(where: { $0.type == "text" })?.text else {
+            throw AnalysisError.badResponse("Empty model response")
+        }
+        return try parseAnalysisPayload(text)
+    }
+
+    /// Parses the model's JSON payload (the schema-shaped text every backend
+    /// returns) — shared by Claude and OpenAI-compatible providers.
+    static func parseAnalysisPayload(_ text: String) throws -> (insights: [InsightDraft], sentiment: [String: Int], read: String?, coach: String?, resolved: [String]) {
+        guard let jsonData = text.data(using: .utf8) else {
             throw AnalysisError.badResponse("Empty model response")
         }
         guard let obj = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] else {
