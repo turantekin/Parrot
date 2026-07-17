@@ -48,6 +48,9 @@ struct SettingsView: View {
     @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
     @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
     @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
+    /// True after picking "Custom…" in the Ollama model dropdown, so the free
+    /// text field stays visible even while the typed name matches nothing.
+    @State private var ollamaCustomModelEditing = false
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
@@ -312,15 +315,30 @@ struct SettingsView: View {
                             .font(Theme.Typography.secondary)
                     }
                 case .ollama:
-                    LabeledContent("Model") {
-                        // Empty title + prompt: a titled TextField in a Form
-                        // renders its title as a second trailing label.
-                        TextField("", text: $copilotOllamaModel, prompt: Text("llama3.2:3b"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 220)
+                    Picker("Model", selection: ollamaModelSelection) {
+                        ForEach(OllamaCatalog.models, id: \.id) { entry in
+                            Text(entry.label).tag(entry.id)
+                        }
+                        Divider()
+                        Text("Custom…").tag("custom")
                     }
-                    Hint("Runs entirely on this Mac — free, private, no key, works offline. Needs Ollama (ollama.com), then: ollama pull \(copilotOllamaModel.nilIfEmpty ?? "llama3.2:3b"). Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
+                    .pickerStyle(.menu)
+
+                    if showsOllamaCustomField {
+                        LabeledContent("Model name") {
+                            // Empty title + prompt: a titled TextField in a Form
+                            // renders its title as a second trailing label.
+                            TextField("", text: $copilotOllamaModel, prompt: Text("model:tag"))
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 220)
+                        }
+                        Hint("Any model from ollama.com/library — prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards.")
+                    }
+
+                    OllamaModelStatusView(model: copilotOllamaModel)
+
+                    Hint("Runs entirely on this Mac — free, private, no key, works offline. Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
                 case .custom:
                     LabeledContent("Server URL") {
                         TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
@@ -343,6 +361,29 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// Dropdown selection for the Ollama model: catalog id, or "custom" when the
+    /// stored model isn't in the catalog (or the user picked Custom…).
+    private var ollamaModelSelection: Binding<String> {
+        Binding(
+            get: {
+                if ollamaCustomModelEditing { return "custom" }
+                return OllamaCatalog.ids.contains(copilotOllamaModel) ? copilotOllamaModel : "custom"
+            },
+            set: { picked in
+                if picked == "custom" {
+                    ollamaCustomModelEditing = true
+                } else {
+                    ollamaCustomModelEditing = false
+                    copilotOllamaModel = picked
+                }
+            }
+        )
+    }
+
+    private var showsOllamaCustomField: Bool {
+        ollamaCustomModelEditing || !OllamaCatalog.ids.contains(copilotOllamaModel)
     }
 
     // MARK: - API Keys

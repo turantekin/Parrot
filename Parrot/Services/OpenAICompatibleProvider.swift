@@ -34,6 +34,30 @@ enum CopilotProviderKind: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Ollama model catalog
+
+/// Curated local models for the Settings dropdown — small, non-"thinking"
+/// instruct models only (reasoning models like qwen3/deepseek-r1 spend minutes
+/// on hidden chain-of-thought and time out the live loop; measured 2026-07-17).
+enum OllamaCatalog {
+    struct Model {
+        let id: String
+        let label: String
+        let sizeLabel: String
+    }
+
+    static let models: [Model] = [
+        Model(id: "llama3.2:3b", label: "llama3.2:3b — fastest, good default", sizeLabel: "2.0 GB"),
+        Model(id: "gemma3:4b", label: "gemma3:4b — better writing & languages", sizeLabel: "3.3 GB"),
+    ]
+
+    static var ids: [String] { models.map(\.id) }
+
+    static func sizeLabel(for id: String) -> String? {
+        models.first { $0.id == id }?.sizeLabel
+    }
+}
+
 // MARK: - OpenAI-compatible provider
 
 /// Talks to any OpenAI-compatible chat-completions server: Ollama on this Mac
