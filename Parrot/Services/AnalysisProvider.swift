@@ -341,6 +341,11 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         then "Key points:" as short bullets, then "Next steps:" as bullets if any \
         commitments were made. Use plain text with simple "-" bullets, no markdown \
         headers. Write in the same language as the conversation.
+
+        The list of live insights (if provided) is the copilot's own NOTES — its \
+        suggestions and questions are NOT things that happened on the call. Every \
+        commitment or next step you report must be something a person actually SAID \
+        in the transcript; if unsure, leave it out.
         """
     }
 
@@ -396,7 +401,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         Objections & questions: list any objection or direct question \(counterpart) raised \
         and whether you actually addressed it (Handled / Missed).
         Commitments & follow-ups: every concrete next step either side committed to, with \
-        any date/time mentioned. If none, write "- None".
+        any date/time mentioned. If none, write "- None". A commitment must be something \
+        a person actually SAID in the transcript — never infer or invent one; when \
+        unsure, leave it out.
 
         Keep the whole thing tight — a busy person should read it in 30 seconds.
         """
