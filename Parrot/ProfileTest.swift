@@ -284,6 +284,9 @@ enum ProfileTest {
         check("equal is not newer", !UpdateChecker.isNewer("0.11.0", than: "0.11.0"))
         check("older is not newer", !UpdateChecker.isNewer("0.10.9", than: "0.11.0"))
         check("dev builds never update", !UpdateChecker.isNewer("9.9.9", than: "dev"))
+        check("make's 0.0.0-dev never updates", !UpdateChecker.isNewer("9.9.9", than: "0.0.0-dev"))
+        check("empty version never updates", !UpdateChecker.isNewer("9.9.9", than: ""))
+        check("unparseable candidate is not newer", !UpdateChecker.isNewer("v1.2.3", than: "0.11.0"))
     }
 
     static func testStableHash() {

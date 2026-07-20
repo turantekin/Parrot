@@ -88,16 +88,25 @@ final class UpdateChecker {
         available = nil
     }
 
-    /// Numeric dotted compare ("0.11.2" style). Dev builds never update.
+    /// Numeric dotted compare ("0.11.2" style). Dev builds never update — and
+    /// "dev" is only one spelling of those. `make` stamps "0.0.0-dev", an
+    /// unbundled binary has no plist at all, so anything that isn't purely
+    /// numeric-dotted counts as a dev build and is left alone. Parsing those
+    /// leniently would read "0.0.0-dev" as 0.0.0 and nag on every release.
     nonisolated static func isNewer(_ candidate: String, than current: String) -> Bool {
-        guard current != "dev" else { return false }
-        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
-        let b = current.split(separator: ".").map { Int($0) ?? 0 }
+        guard let b = parse(current), let a = parse(candidate) else { return false }
         for i in 0..<max(a.count, b.count) {
             let x = i < a.count ? a[i] : 0
             let y = i < b.count ? b[i] : 0
             if x != y { return x > y }
         }
         return false
+    }
+
+    /// Dotted numeric components, or nil if any component isn't a plain number.
+    private nonisolated static func parse(_ version: String) -> [Int]? {
+        let parts = version.split(separator: ".").map { Int($0) }
+        guard !parts.isEmpty, !parts.contains(nil) else { return nil }
+        return parts.compactMap { $0 }
     }
 }
