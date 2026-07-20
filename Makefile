@@ -14,13 +14,41 @@ BINDIR      := .build/$(CONFIG)
 VERSION     ?= 0.0.0-dev
 BUILD_NUM   := $(shell date +%Y%m%d%H%M)
 
-# Ad-hoc by default so a fresh clone builds with no Apple developer account.
-# macOS keys Screen Recording / microphone grants to the signing identity, and
-# ad-hoc re-signs with a new hash on every build — so you re-grant permissions
-# after each rebuild. To keep grants sticky, sign with your own identity:
-#   make run SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)"
-# List candidates with: security find-identity -v -p codesigning
-SIGN_IDENTITY ?= -
+# macOS keys Screen Recording and microphone grants to the app's *designated
+# requirement*, not to its path or bundle ID. Signed with a real certificate
+# that requirement is "bundle ID + this certificate", which survives rebuilds.
+# Ad-hoc signing has no certificate, so it degrades to a cdhash of the binary —
+# every rebuild is a different app to macOS, and every permission has to be
+# granted again. Compare:
+#
+#   ad-hoc  designated => cdhash H"4666a893..."
+#   signed  designated => identifier "com.uygar.parrot" and anchor apple generic
+#                         and certificate leaf[subject.CN] = "Apple Development: ..."
+#
+# So: use whatever valid codesigning identity you already have, automatically.
+# Most contributors with Xcode and an Apple ID have one and need to do nothing.
+# We never create a certificate for you — see `make signing-help`.
+#
+# NB: no literal ")" anywhere in these $(shell ...) bodies — make balances
+# parens itself, before the shell ever sees them, so a ")" inside even a quoted
+# awk pattern ends the expression early and silently corrupts the value.
+SIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | \
+                          awk '$$2 ~ /^[0-9A-F]{40}$$/ { print $$2; exit }')
+
+# Human-readable name of the same identity, for the status line.
+SIGN_NAME := $(shell security find-identity -v -p codesigning 2>/dev/null | \
+                       grep -m1 '"' | cut -d'"' -f2)
+
+# Certs present but rejected as invalid — almost always expired. Worth calling
+# out by name: an expired cert is skipped silently by every tool that filters on
+# validity, so the symptom is "I have a certificate and permissions still reset",
+# which is a genuinely confusing place to end up.
+EXPIRED_IDS := $(shell security find-identity -p codesigning 2>/dev/null | \
+                         grep -c CSSMERR_TP_CERT_EXPIRED)
+
+ifeq ($(strip $(SIGN_IDENTITY)),)
+SIGN_IDENTITY := -
+endif
 
 .DEFAULT_GOAL := app
 
@@ -36,6 +64,8 @@ help:
 	@echo '  make test      run the bundled logic harness (--profile-test)'
 	@echo '  make xcode     regenerate Parrot.xcodeproj from project.yml (needs xcodegen)'
 	@echo '  make clean     remove .build/ and $(DIST)/'
+	@echo
+	@echo '  make signing-help   how to stop macOS permissions resetting every build'
 	@echo
 	@echo 'Vars: CONFIG=$(CONFIG) VERSION=$(VERSION) SIGN_IDENTITY=$(SIGN_IDENTITY)'
 
@@ -101,6 +131,72 @@ bundle: build
 	codesign --force --options runtime --timestamp=none \
 		--entitlements Parrot/Parrot.entitlements \
 		--sign "$(SIGN_IDENTITY)" $(APP)
+	@$(MAKE) --no-print-directory signing-status
+
+# Say which identity was used and, when that's ad-hoc, why it matters. Printed
+# on every bundle so the ad-hoc case can never fail silently.
+.PHONY: signing-status
+signing-status:
+ifeq ($(SIGN_IDENTITY),-)
+	@echo
+	@echo 'Signed ad-hoc — macOS permissions will reset on every rebuild.'
+ifneq ($(EXPIRED_IDS),0)
+	@echo
+	@echo "  Found $(EXPIRED_IDS) code-signing certificate(s), but they are EXPIRED,"
+	@echo '  which is why they were not used. Renew in Xcode:'
+	@echo '    Settings > Accounts > (your team) > Manage Certificates > + > Apple Development'
+else
+	@echo '  No code-signing certificate found.'
+endif
+	@echo
+	@echo '  Run `make signing-help` for how to fix this permanently.'
+	@echo
+else
+	@echo
+	@echo 'Signed with: $(SIGN_NAME)'
+	@echo 'macOS permissions will persist across rebuilds.'
+	@echo
+endif
+
+# Deliberately instructions, not automation: creating a certificate writes to
+# your login keychain, and doing that as a side effect of `make run` would be a
+# hostile surprise. You run these steps, or you don't.
+.PHONY: signing-help
+signing-help:
+	@echo 'Making macOS permissions stick across rebuilds'
+	@echo
+	@echo 'Parrot needs Screen Recording (this is how macOS exposes system audio)'
+	@echo 'and microphone access. macOS ties those grants to the signing identity,'
+	@echo 'so without a stable one you re-grant them after every single build.'
+	@echo
+	@echo 'Either option below fixes that permanently. Pick one.'
+	@echo
+	@echo '1. Apple Development certificate — if you have Xcode and any Apple ID'
+	@echo '   (a free one works; no paid membership needed):'
+	@echo
+	@echo '     Xcode > Settings > Accounts > add/select your Apple ID'
+	@echo '            > select your team > Manage Certificates'
+	@echo '            > + > Apple Development'
+	@echo
+	@echo '2. Self-signed certificate — no Apple account, no Xcode required.'
+	@echo '   It never leaves your Mac and nobody else has to trust it; it only'
+	@echo '   has to be the same certificate on your next rebuild:'
+	@echo
+	@echo '     Keychain Access > Certificate Assistant > Create a Certificate...'
+	@echo '       Name:             Parrot Dev'
+	@echo '       Identity Type:    Self Signed Root'
+	@echo '       Certificate Type: Code Signing'
+	@echo
+	@echo 'Then just `make run` — the Makefile finds it on its own. Confirm with:'
+	@echo
+	@echo '    security find-identity -v -p codesigning'
+	@echo
+	@echo 'Already-granted permissions are bound to the old ad-hoc build, so clear'
+	@echo 'them once after switching, then quit and relaunch Parrot:'
+	@echo
+	@echo '    tccutil reset ScreenCapture com.uygar.parrot'
+	@echo '    tccutil reset Microphone com.uygar.parrot'
+	@echo
 
 .PHONY: run
 run: bundle
