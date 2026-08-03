@@ -177,21 +177,18 @@ struct DashboardView: View {
                 .foregroundStyle(Theme.Colors.warn)
                 .font(.appCaption)
         case .loading:
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Loading WhisperKit model...")
-                    .font(.appCaption)
-                    .foregroundStyle(Theme.Colors.ink2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preparing WhisperKit model…")
+                    Text("The first load can take a few minutes.")
+                }
+                .font(.appCaption)
+                .foregroundStyle(Theme.Colors.ink2)
             }
         case .downloading(let progress):
-            VStack(spacing: 4) {
-                ProgressView(value: progress)
-                    .frame(width: 200)
-                Text("Downloading model... \(Int(progress * 100))%")
-                    .font(.appCaption)
-                    .foregroundStyle(Theme.Colors.ink2)
-            }
+            ModelDownloadProgressView(progress: progress)
         case .ready:
             Label("Ready to record", systemImage: "checkmark.circle")
                 .foregroundStyle(Theme.Colors.good)

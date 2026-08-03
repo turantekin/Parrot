@@ -109,15 +109,34 @@ final class TranscriptionEngine {
     /// never blocked. Same rule for start/stopTranscribing below.
     @MainActor
     func loadModel(_ modelName: String = "base") async {
-        modelState = .loading
+        isReady = false
         do {
+            let resolvedModelName = Self.whisperKitModelName(for: modelName)
+            let modelFolder: URL
+            if let localFolder = Self.localModelFolder(for: modelName) {
+                modelFolder = localFolder
+            } else {
+                modelState = .downloading(progress: 0)
+                modelFolder = try await Self.withTimeout(seconds: 300) { [self] in
+                    try await WhisperKit.download(variant: resolvedModelName) { progress in
+                        let fraction = min(max(progress.fractionCompleted, 0), 1)
+                        Task { @MainActor [weak self] in
+                            guard let self, case .downloading(let current) = self.modelState else { return }
+                            self.modelState = .downloading(progress: max(current, fraction))
+                        }
+                    }
+                }
+            }
+
+            modelState = .loading
             let config = WhisperKitConfig(
-                model: modelName,
-                modelFolder: Self.localModelFolder(for: modelName)?.path,
+                model: resolvedModelName,
+                modelFolder: modelFolder.path,
                 verbose: false,
                 logLevel: .none,
                 prewarm: true,
-                load: true
+                load: true,
+                download: false
             )
             whisperKit = try await Self.withTimeout(seconds: 300) { try await WhisperKit(config) }
             modelState = .ready
@@ -128,25 +147,70 @@ final class TranscriptionEngine {
         }
     }
 
+    /// Stable names stored by Parrot do not always match WhisperKit's current
+    /// Hub artifact names. Keep the UI/user default stable while resolving the
+    /// versioned artifact explicitly so WhisperKit does not fuzzy-match a name
+    /// that no longer exists in the repository index.
+    nonisolated static func whisperKitModelName(for modelName: String) -> String {
+        switch modelName {
+        case "large-v3-turbo": "large-v3-v20240930_turbo"
+        default: modelName
+        }
+    }
+
     /// The on-disk folder for a model, if already downloaded. WhisperKit's repo
-    /// spells variants inconsistently ("large-v3-turbo" lives in
-    /// "openai_whisper-large-v3_turbo"), hence the normalized matcher below.
+    /// spells variants inconsistently, and the Turbo model was renamed with a
+    /// version suffix, hence the normalized matcher below. A matching folder is
+    /// not enough: Hub creates the destination before every file arrives, so an
+    /// interrupted download must be rejected and resumed instead of loaded.
     nonisolated static func localModelFolder(for modelName: String) -> URL? {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
-        return matchModelFolder(modelName, in: names)
-            .map { base.appendingPathComponent($0, isDirectory: true) }
+        guard let name = matchModelFolder(modelName, in: names) else { return nil }
+        let folder = base.appendingPathComponent(name, isDirectory: true)
+        return isCompleteModelFolder(folder) ? folder : nil
+    }
+
+    /// WhisperKit requires these three compiled pipelines. Checking files inside
+    /// each bundle (rather than only the bundle directory) catches interrupted
+    /// Hugging Face snapshots such as issue #30's partial Turbo download.
+    nonisolated static var requiredModelFiles: [String] {
+        [
+            "MelSpectrogram.mlmodelc/model.mil",
+            "MelSpectrogram.mlmodelc/coremldata.bin",
+            "MelSpectrogram.mlmodelc/weights/weight.bin",
+            "AudioEncoder.mlmodelc/model.mil",
+            "AudioEncoder.mlmodelc/coremldata.bin",
+            "AudioEncoder.mlmodelc/weights/weight.bin",
+            "TextDecoder.mlmodelc/model.mil",
+            "TextDecoder.mlmodelc/coremldata.bin",
+            "TextDecoder.mlmodelc/weights/weight.bin",
+            "config.json",
+            "generation_config.json",
+        ]
+    }
+
+    nonisolated static func isCompleteModelFolder(_ folder: URL) -> Bool {
+        requiredModelFiles.allSatisfy {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
     }
 
     /// Pure matcher (so --profile-test can drive it): compares case-insensitively
-    /// with '_' and '-' unified. Exactly one hit counts — none or ambiguity falls
-    /// back to WhisperKit's own hub resolution.
+    /// with '_' and '-' unified. The current artifact wins over a legacy copy;
+    /// ambiguity within either name falls back to WhisperKit's hub resolution.
     nonisolated static func matchModelFolder(_ modelName: String, in folderNames: [String]) -> String? {
         func norm(_ s: String) -> String { s.lowercased().replacingOccurrences(of: "_", with: "-") }
-        let want = "openai-whisper-" + norm(modelName)
-        let hits = folderNames.filter { norm($0) == want }
-        return hits.count == 1 ? hits.first : nil
+        let resolvedName = whisperKitModelName(for: modelName)
+        let names = resolvedName == modelName ? [modelName] : [resolvedName, modelName]
+        for name in names {
+            let wanted = "openai-whisper-" + norm(name)
+            let hits = folderNames.filter { norm($0) == wanted }
+            if hits.count > 1 { return nil }
+            if let hit = hits.first { return hit }
+        }
+        return nil
     }
 
     private struct ModelLoadTimeout: LocalizedError {

@@ -289,12 +289,18 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Colors.good)
                 .font(Theme.Typography.secondary)
         case .loading:
-            HStack {
+            HStack(alignment: .top) {
                 ProgressView().controlSize(.small)
-                Text("Loading model...")
-                    .font(Theme.Typography.secondary)
-                    .foregroundStyle(Theme.Colors.ink2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preparing model…")
+                    Text("The first load can take a few minutes.")
+                        .font(Theme.Typography.caption)
+                }
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
             }
+        case .downloading(let progress):
+            ModelDownloadProgressView(progress: progress)
         case .error(let msg):
             Label(msg, systemImage: "xmark.circle")
                 .foregroundStyle(Theme.Colors.stop)

@@ -410,13 +410,47 @@ enum ProfileTest {
     // Local model folder matching (the hub-resolution bypass in loadModel).
     static func testModelFolderMatch() {
         let disk = ["openai_whisper-base", "openai_whisper-small",
-                    "openai_whisper-large-v3_turbo", "distil-whisper_distil-large-v3"]
+                    "openai_whisper-large-v3-v20240930_turbo", "distil-whisper_distil-large-v3"]
+        check("turbo resolves to current Hub artifact",
+              TranscriptionEngine.whisperKitModelName(for: "large-v3-turbo") == "large-v3-v20240930_turbo")
+        check("ordinary model names stay unchanged",
+              TranscriptionEngine.whisperKitModelName(for: "base") == "base")
         check("folder match base", TranscriptionEngine.matchModelFolder("base", in: disk) == "openai_whisper-base")
-        check("folder match turbo across separators",
-              TranscriptionEngine.matchModelFolder("large-v3-turbo", in: disk) == "openai_whisper-large-v3_turbo")
+        check("folder match versioned turbo across separators",
+              TranscriptionEngine.matchModelFolder("large-v3-turbo", in: disk) == "openai_whisper-large-v3-v20240930_turbo")
+        check("folder match supports legacy turbo download",
+              TranscriptionEngine.matchModelFolder("large-v3-turbo", in: ["openai_whisper-large-v3_turbo"])
+                == "openai_whisper-large-v3_turbo")
+        check("folder match prefers current turbo download",
+              TranscriptionEngine.matchModelFolder(
+                "large-v3-turbo",
+                in: ["openai_whisper-large-v3_turbo", "openai_whisper-large-v3-v20240930_turbo"]
+              ) == "openai_whisper-large-v3-v20240930_turbo")
         check("folder match misses absent model", TranscriptionEngine.matchModelFolder("tiny", in: disk) == nil)
         check("folder match rejects ambiguity",
               TranscriptionEngine.matchModelFolder("base", in: ["openai_whisper-base", "openai-whisper_base"]) == nil)
+
+        let partial = FileManager.default.temporaryDirectory
+            .appendingPathComponent("parrot-partial-model-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: partial.appendingPathComponent("TextDecoder.mlmodelc", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        FileManager.default.createFile(
+            atPath: partial.appendingPathComponent("TextDecoder.mlmodelc/model.mil").path,
+            contents: Data()
+        )
+        check("partial model folder is rejected", !TranscriptionEngine.isCompleteModelFolder(partial))
+
+        for file in TranscriptionEngine.requiredModelFiles {
+            let url = partial.appendingPathComponent(file)
+            try? FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            FileManager.default.createFile(atPath: url.path, contents: Data())
+        }
+        check("complete model folder is accepted", TranscriptionEngine.isCompleteModelFolder(partial))
+        try? FileManager.default.removeItem(at: partial)
     }
 
     // The live-loop utterance segmenter that replaced fixed 2 s chunks.

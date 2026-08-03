@@ -236,10 +236,12 @@ struct OnboardingView: View {
         case .loading:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Downloading and loading model...")
+                Text("Preparing model...")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink2)
             }
+        case .downloading(let progress):
+            ModelDownloadProgressView(progress: progress)
         case .ready:
             Label("Model ready!", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(Theme.Colors.good)
