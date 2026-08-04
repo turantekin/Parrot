@@ -75,6 +75,7 @@ struct SettingsView: View {
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
     @AppStorage(RecordingManager.globalMarkHotKeyDefaultsKey) private var globalMarkHotKey = true
+    @AppStorage("liveSpeakerLabels") private var liveSpeakerLabels = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
     @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
@@ -389,6 +390,11 @@ struct SettingsView: View {
                         .disabled(diarizerDownloading)
                     }
                 }
+                SettingsToggleRow(
+                    title: "Live speaker labels",
+                    detail: "Experimental. During a call, tells the other people apart every 30 seconds instead of waiting for the end. The final pass when the call ends is still the accurate one.",
+                    isOn: $liveSpeakerLabels
+                )
                 SettingsToggleRow(
                     title: "Remember voices",
                     detail: "When on, naming a speaker saves their voiceprint on this Mac so future calls can suggest who's talking. Never leaves your Mac; delete anytime.",
