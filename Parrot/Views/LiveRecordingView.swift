@@ -287,7 +287,8 @@ struct LiveRecordingView: View {
                             ChatBubbleRow(
                                 segment: segment,
                                 isFirstOfGroup: index == 0
-                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel
+                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel,
+                                speakerSuggestions: recordingManager.liveSpeakerSuggestions
                             )
                             .id(segment.id)
                         }
@@ -420,14 +421,24 @@ private struct BottomDistancePreferenceKey: PreferenceKey {
 struct ChatBubbleRow: View {
     let segment: TranscriptSegment
     let isFirstOfGroup: Bool
+    /// Live voiceprint suggestions (label → known name) from the sweep. The
+    /// "?" suffix keeps it a suggestion — the stored label stays neutral until
+    /// the user confirms in the post-call naming flow (confirm-first rule).
+    var speakerSuggestions: [String: String] = [:]
 
     private var isMe: Bool { segment.speakerLabel == "Me" }
+
+    private var displayLabel: String {
+        guard let label = segment.speakerLabel else { return "Speaker" }
+        if let known = speakerSuggestions[label] { return "\(known)?" }
+        return label
+    }
 
     var body: some View {
         VStack(alignment: isMe ? .trailing : .leading, spacing: 3) {
             if isFirstOfGroup {
                 HStack(spacing: 6) {
-                    Text(segment.speakerLabel ?? "Speaker")
+                    Text(displayLabel)
                         .font(.appCaption.weight(.medium))
                         .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
                     Text(segment.formattedTimestamp)

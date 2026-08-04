@@ -14,6 +14,10 @@ final class RecordingManager {
     /// repeating task and the previous run's label→embedding identities.
     private var liveSweepTask: Task<Void, Never>?
     private var liveAnchors: [String: [Float]] = [:]
+    /// Live voiceprint matches (label → remembered name), display-only —
+    /// bubbles show "Gürkan?" while the stored label stays Speaker N until
+    /// the user confirms post-call.
+    private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
     let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
@@ -234,6 +238,7 @@ final class RecordingManager {
         // engine runs ~380× realtime, so each sweep costs seconds; the final
         // post-call pass stays authoritative.
         liveAnchors = [:]
+        liveSpeakerSuggestions = [:]
         if UserDefaults.standard.bool(forKey: "liveSpeakerLabels") {
             liveSweepTask = Task { [weak self] in
                 while !Task.isCancelled {
@@ -646,6 +651,18 @@ final class RecordingManager {
             }
             liveAnchors = Dictionary(uniqueKeysWithValues:
                 output.embeddings.map { (mapping[$0.key] ?? $0.key, $0.value) })
+
+            // Name matching in live: consult remembered voices (opt-in) so the
+            // bubbles can show "Gürkan?" instead of Speaker 2. Suggestion only.
+            if UserDefaults.standard.bool(forKey: "rememberVoices"), let context = modelContext {
+                var suggestions: [String: String] = [:]
+                for (label, embedding) in liveAnchors {
+                    if let match = SpeakerProfileStore.match(embedding, in: context) {
+                        suggestions[label] = match.name
+                    }
+                }
+                liveSpeakerSuggestions = suggestions
+            }
             try? modelContext?.save()
         } catch {
             NSLog("Parrot: live speaker sweep skipped — \(error.localizedDescription)")
