@@ -298,7 +298,8 @@ struct LiveRecordingView: View {
                         // Groq have no interims, so dots carry the liveness).
                         if !recordingManager.transcriptionEngine.currentText.isEmpty
                             || recordingManager.transcriptionEngine.isHearingSpeech {
-                            TypingBubble(text: recordingManager.transcriptionEngine.currentText)
+                            TypingBubble(text: recordingManager.transcriptionEngine.currentText,
+                                         speaker: recordingManager.transcriptionEngine.currentSpeaker)
                                 .id("currentText")
                                 .padding(.top, 8)
                         }
@@ -457,9 +458,15 @@ struct ChatBubbleRow: View {
 // MARK: - Typing Bubble
 
 /// The in-progress transcription: interim text in a soft bubble with three
-/// pulsing dots — speech is landing right now.
+/// pulsing dots — speech is landing right now. Hangs under whichever speaker
+/// the preview came from (Me right in a faint accent wash, Them left in
+/// dimmed chip gray — the committed bubbles' sides, at lower opacity), and is
+/// replaced by the real bubble when the segment commits.
 struct TypingBubble: View {
     let text: String
+    var speaker: AudioSource?
+
+    private var isMe: Bool { speaker == .me }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 7) {
@@ -474,8 +481,11 @@ struct TypingBubble: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Theme.Colors.chip.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isMe ? Theme.Colors.accent.opacity(0.07) : Theme.Colors.chip.opacity(0.7),
+            in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+        )
+        .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
     }
 }
 

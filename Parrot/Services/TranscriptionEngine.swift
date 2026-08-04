@@ -57,6 +57,10 @@ final class TranscriptionEngine {
     private(set) var isReady = false
     private(set) var isTranscribing = false
     private(set) var currentText = ""
+    /// Which stream `currentText` came from, so the live view can hang the
+    /// preview bubble under the right speaker (Me right, Them left). nil
+    /// whenever `currentText` is empty.
+    private(set) var currentSpeaker: AudioSource?
     /// True while live audio carries speech-level energy. Drives the typing
     /// bubble on chunked backends (Groq, local Whisper) that have no interim
     /// stream — the bubble shows dots while someone talks, text when interims
@@ -470,11 +474,16 @@ final class TranscriptionEngine {
         transcriptionTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
-            // Rolling-preview throttle, per source. ponytail: 2s cadence —
-            // lower feels livelier but each preview re-decodes the utterance,
-            // stealing Whisper time from the commit that makes cards land.
-            let previewEvery: TimeInterval = 2.0
-            var lastPreview: [AudioSource: Date] = [:]
+            // Rolling-preview pacing, per source. 1s base reads as "words as
+            // you speak"; each preview re-decodes the open utterance, so the
+            // next one isn't scheduled until 2× the last decode's duration has
+            // passed — a fast Mac previews every second, a busy one (copilot +
+            // diarization sharing the die) backs off automatically instead of
+            // starving the commit decodes. Toggleable in Settings; read once
+            // per session like the language setting.
+            let previewBase: TimeInterval = 1.0
+            let previewEnabled = UserDefaults.standard.object(forKey: "livePreview") as? Bool ?? true
+            var nextPreviewAt: [AudioSource: Date] = [:]
 
             while !Task.isCancelled {
                 // isTranscribing == false flips the loop into drain mode: keep
@@ -515,8 +524,8 @@ final class TranscriptionEngine {
                         // ponytail: a preview of source A delays a pending cut
                         // of source B by one decode; parallelize if dual-speech
                         // latency reports come in.
-                        if backend == .local, !draining,
-                           Date().timeIntervalSince(lastPreview[source] ?? .distantPast) >= previewEvery {
+                        if previewEnabled, backend == .local, !draining,
+                           Date() >= nextPreviewAt[source] ?? .distantPast {
                             let pending: [Float] = self.bufferLock.withLock {
                                 let buffered = self.audioBuffers[source] ?? []
                                 return buffered.count >= Segmenter.minSpeechSamples ? buffered : []
@@ -524,7 +533,6 @@ final class TranscriptionEngine {
                             let energy = pending.isEmpty ? 0
                                 : pending.reduce(into: Float(0)) { $0 += abs($1) } / Float(pending.count)
                             if energy > Segmenter.silenceFloor, let whisperKit = self.whisperKit {
-                                lastPreview[source] = Date()
                                 // No interim callback here on purpose: each preview
                                 // re-decodes from the utterance's start, so streaming
                                 // its words made the bubble restart the same sentence
@@ -532,13 +540,24 @@ final class TranscriptionEngine {
                                 // bubble now updates once per preview with the fuller
                                 // text; word-by-word streaming stays on the commit
                                 // decode where it reads forward, not in circles.
+                                let decodeStarted = Date()
                                 let result = (try? await whisperKit.transcribe(
                                     audioArray: pending, decodeOptions: decodeOptions)) ?? []
+                                nextPreviewAt[source] = Date().addingTimeInterval(
+                                    max(previewBase, Date().timeIntervalSince(decodeStarted) * 2))
                                 let raw = Self.cleaned(result.map(\.text).joined(separator: " "))
                                 let display = self.glossaryActive ? (Self.strippingGlossaryEcho(raw) ?? "") : raw
                                 if !display.isEmpty {
-                                    if Self.loopTrace { print("TRACE \(source.label) preview: \(display)") }
-                                    await MainActor.run { self.currentText = display }
+                                    if Self.loopTrace {
+                                        print(String(format: "TRACE %@ preview +%.1fs (decode %.2fs): %@",
+                                                     source.label,
+                                                     Date().timeIntervalSince(self.meetingStartTime),
+                                                     Date().timeIntervalSince(decodeStarted), display))
+                                    }
+                                    await MainActor.run {
+                                        self.currentText = display
+                                        self.currentSpeaker = source
+                                    }
                                 }
                             }
                         }
@@ -643,6 +662,7 @@ final class TranscriptionEngine {
                                 // committed segment now; leaving it here kept a
                                 // duplicate "typing" bubble on screen.
                                 self.currentText = ""
+                                self.currentSpeaker = nil
                                 self.onSegment?(TranscriptionResult(
                                     text: text,
                                     source: source,
@@ -680,7 +700,10 @@ final class TranscriptionEngine {
             streamer.onInterim = { [weak self] text in
                 let partial = Self.cleaned(text)
                 guard !partial.isEmpty else { return }
-                Task { @MainActor in self?.currentText = partial }
+                Task { @MainActor in
+                    self?.currentText = partial
+                    self?.currentSpeaker = source
+                }
             }
             streamer.onFinal = { [weak self] text, start, end in
                 guard let self else { return }
@@ -693,6 +716,7 @@ final class TranscriptionEngine {
                     // Same as the Whisper path: the final belongs to the committed
                     // segment; the interim line must clear or it duplicates.
                     self.currentText = ""
+                    self.currentSpeaker = nil
                     self.onSegment?(TranscriptionResult(
                         text: cleanedText, source: source,
                         startTime: start, endTime: end, confidence: nil))
@@ -860,6 +884,7 @@ final class TranscriptionEngine {
         }
 
         currentText = ""
+        currentSpeaker = nil
         isHearingSpeech = false
     }
 
