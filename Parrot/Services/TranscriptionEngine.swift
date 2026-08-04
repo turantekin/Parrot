@@ -279,12 +279,16 @@ final class TranscriptionEngine {
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameCount))
 
         // Speech-presence for the typing bubble: mark speech on energetic
-        // buffers (same 0.002 floor as the chunk loop), release after 1 s of
-        // silence — capture keeps feeding silent buffers, so the flip-off is
-        // driven from here too.
+        // buffers (same adaptive floor as the chunk loop, so the dots fire at
+        // any input gain), release after 1 s of silence — capture keeps
+        // feeding silent buffers, so the flip-off is driven from here too.
+        // The floor comes from the accumulated backlog, not this tiny buffer:
+        // the backlog carries enough context to tell quiet speech (floor
+        // drops) from steady room tone (stays flat-silence, dots stay off).
         if isTranscribing, frameCount > 0 {
             let energy = samples.reduce(into: Float(0)) { $0 += abs($1) } / Float(frameCount)
-            if energy > 0.002 { lastSpeechAt = Date() }
+            let floor = bufferLock.withLock { Segmenter.adaptiveFloor(for: audioBuffers[source] ?? []) }
+            if energy > floor { lastSpeechAt = Date() }
             let hearing = Date().timeIntervalSince(lastSpeechAt) < 1.0
             if hearing != isHearingSpeech {
                 Task { @MainActor in self.isHearingSpeech = hearing }
@@ -319,8 +323,57 @@ final class TranscriptionEngine {
     enum Segmenter {
         /// Energy-frame size: 100 ms at 16 kHz. Pause detection resolution.
         static let frame = 1600
-        /// Same mean-abs floor the loop has always used for "this is speech".
+        /// The legacy fixed mean-abs floor for "this is speech" — now the
+        /// adaptive floor's CEILING and the fallback where no audio exists to
+        /// estimate from. It is only correct near default input gain: a real
+        /// session at 49% input volume measured speech at ~0.0014 mean-abs
+        /// (2026-08-04 live trace), below this value, so the segmenter ate
+        /// continuous speech as "leading silence" and the preview gate never
+        /// passed. `adaptiveFloor(for:)` below fixes that.
         static let silenceFloor: Float = 0.002
+        /// Digital dither / AEC-residue ceiling: content below this can never
+        /// be speech; content above it always might be.
+        static let ditherFloor: Float = 0.0004
+
+        static func frameEnergy(_ buffer: [Float], _ i: Int) -> Float {
+            var sum: Float = 0
+            for j in (i * frame)..<((i + 1) * frame) { sum += abs(buffer[j]) }
+            return sum / Float(frame)
+        }
+
+        /// Adaptive speech/silence threshold for a buffered window, derived
+        /// from the window's own quietest 100 ms frame — the rolling noise
+        /// estimate is the backlog itself, so it needs no cross-poll state and
+        /// cannot start wrong. noise × 4 headroom, clamped to
+        /// [ditherFloor, silenceFloor] so no environment behaves worse than
+        /// the shipped fixed floor.
+        ///
+        /// A window with no frame above the derived floor is all one thing:
+        /// true silence when even its loudest frame sits at dither level,
+        /// otherwise quiet speech that hasn't reached its bounding pause yet
+        /// (the un-paused head of an utterance — exactly what the fixed floor
+        /// used to discard). For speech the floor drops to `ditherFloor` so
+        /// every frame reads as speech and nothing is lost; the eventual pause
+        /// makes the window bimodal and the real threshold takes over.
+        static func adaptiveFloor(for buffer: [Float]) -> Float {
+            let frames = buffer.count / frame
+            guard frames > 0 else {
+                // Sub-frame tail: its mean decides silence vs maybe-speech.
+                let mean = buffer.isEmpty ? 0
+                    : buffer.reduce(into: Float(0)) { $0 += abs($1) } / Float(buffer.count)
+                return mean >= ditherFloor ? ditherFloor : silenceFloor
+            }
+            var minE = Float.greatestFiniteMagnitude
+            var maxE: Float = 0
+            for i in 0..<frames {
+                let e = frameEnergy(buffer, i)
+                minE = min(minE, e)
+                maxE = max(maxE, e)
+            }
+            let floor = min(max(minE * 4, ditherFloor), silenceFloor)
+            if maxE >= floor { return floor }
+            return maxE >= ditherFloor ? ditherFloor : silenceFloor
+        }
         /// 600 ms of continuous silence ends an utterance. Intra-word and
         /// clause gaps run shorter; sentence gaps run longer.
         // ponytail: fixed threshold — adaptive (speaker-rate) pausing if
@@ -346,18 +399,13 @@ final class TranscriptionEngine {
             var take: Int?
         }
 
-        static func nextCut(in buffer: [Float], draining: Bool) -> Cut {
+        static func nextCut(in buffer: [Float], draining: Bool, floor: Float = silenceFloor) -> Cut {
             let n = buffer.count
             let frames = n / frame
-            func frameEnergy(_ i: Int) -> Float {
-                var sum: Float = 0
-                for j in (i * frame)..<((i + 1) * frame) { sum += abs(buffer[j]) }
-                return sum / Float(frame)
-            }
 
             // Leading silence: whole silent frames before the first speech frame.
             var speechFrame: Int?
-            for i in 0..<frames where frameEnergy(i) >= silenceFloor { speechFrame = i; break }
+            for i in 0..<frames where frameEnergy(buffer, i) >= floor { speechFrame = i; break }
             guard let s = speechFrame else {
                 // All silence so far. Keep the partial tail frame while live (it
                 // may be the onset of a word); draining consumes everything so
@@ -369,7 +417,7 @@ final class TranscriptionEngine {
             // Scan for the first sustained pause after speech starts.
             var silentRun = 0
             for i in s..<frames {
-                if frameEnergy(i) < silenceFloor {
+                if frameEnergy(buffer, i) < floor {
                     silentRun += 1
                     if silentRun == pauseFrames {
                         let speechEndFrame = i - pauseFrames + 1  // first frame of the pause
@@ -391,6 +439,24 @@ final class TranscriptionEngine {
             if draining { return Cut(dropLeading: drop, take: speechLen) }
             return Cut(dropLeading: drop, take: nil)
         }
+    }
+
+    /// Whisper wants speech, not whispers: scale a chunk to a healthy loudness
+    /// before every decode. A quiet-but-real voice (49% input volume ≈ 0.0014
+    /// mean-abs, 2026-08-04 live trace) decodes as fragments and wrong-language
+    /// hallucinations at raw level. Gain is capped so a noise-floor chunk can't
+    /// be amplified into fake speech, never attenuates (loud audio already
+    /// decodes fine), and output is clamped to ±1 so a stray click can't clip.
+    static func normalizedForDecode(_ samples: [Float]) -> [Float] {
+        let targetRMS: Float = 0.06
+        let maxGain: Float = 32
+        guard !samples.isEmpty else { return samples }
+        var sum: Float = 0
+        for s in samples { sum += s * s }
+        let rms = (sum / Float(samples.count)).squareRoot()
+        guard rms > 0, rms < targetRMS else { return samples }
+        let gain = min(targetRMS / rms, maxGain)
+        return samples.map { min(max($0 * gain, -1), 1) }
     }
 
     // MARK: - Transcription Loop
@@ -493,16 +559,19 @@ final class TranscriptionEngine {
                     // or the cap / drain forces the cut. Freeing consumed audio
                     // keeps memory flat; the counter and clock offset ride along
                     // in the same lock.
-                    let (chunk, startSample, clockOffset): ([Float], Int, TimeInterval) = self.bufferLock.withLock {
-                        guard let buffered = self.audioBuffers[source], !buffered.isEmpty else { return ([], 0, 0) }
-                        let cut = Segmenter.nextCut(in: buffered, draining: draining)
+                    let (chunk, startSample, clockOffset, floor): ([Float], Int, TimeInterval, Float) = self.bufferLock.withLock {
+                        guard let buffered = self.audioBuffers[source], !buffered.isEmpty else {
+                            return ([], 0, 0, Segmenter.silenceFloor)
+                        }
+                        let floor = Segmenter.adaptiveFloor(for: buffered)
+                        let cut = Segmenter.nextCut(in: buffered, draining: draining, floor: floor)
                         let taken = cut.take.map { Array(buffered[cut.dropLeading ..< cut.dropLeading + $0]) } ?? []
                         let consumed = cut.dropLeading + taken.count
-                        guard consumed > 0 else { return ([], 0, 0) }
+                        guard consumed > 0 else { return ([], 0, 0, floor) }
                         self.audioBuffers[source] = Array(buffered[consumed...])
                         let start = self.consumedSamples[source] ?? 0
                         self.consumedSamples[source] = start + consumed
-                        return (taken, start + cut.dropLeading, self.localClockOffset[source] ?? 0)
+                        return (taken, start + cut.dropLeading, self.localClockOffset[source] ?? 0, floor)
                     }
                     guard !chunk.isEmpty else {
                         // Rolling preview — the "text feels slower since
@@ -517,13 +586,16 @@ final class TranscriptionEngine {
                         // latency reports come in.
                         if backend == .local, !draining,
                            Date().timeIntervalSince(lastPreview[source] ?? .distantPast) >= previewEvery {
-                            let pending: [Float] = self.bufferLock.withLock {
+                            let (pending, floor): ([Float], Float) = self.bufferLock.withLock {
                                 let buffered = self.audioBuffers[source] ?? []
-                                return buffered.count >= Segmenter.minSpeechSamples ? buffered : []
+                                guard buffered.count >= Segmenter.minSpeechSamples else {
+                                    return ([], Segmenter.silenceFloor)
+                                }
+                                return (buffered, Segmenter.adaptiveFloor(for: buffered))
                             }
                             let energy = pending.isEmpty ? 0
                                 : pending.reduce(into: Float(0)) { $0 += abs($1) } / Float(pending.count)
-                            if energy > Segmenter.silenceFloor, let whisperKit = self.whisperKit {
+                            if energy > floor, let whisperKit = self.whisperKit {
                                 lastPreview[source] = Date()
                                 // No interim callback here on purpose: each preview
                                 // re-decodes from the utterance's start, so streaming
@@ -533,11 +605,16 @@ final class TranscriptionEngine {
                                 // text; word-by-word streaming stays on the commit
                                 // decode where it reads forward, not in circles.
                                 let result = (try? await whisperKit.transcribe(
-                                    audioArray: pending, decodeOptions: decodeOptions)) ?? []
+                                    audioArray: Self.normalizedForDecode(pending),
+                                    decodeOptions: decodeOptions)) ?? []
                                 let raw = Self.cleaned(result.map(\.text).joined(separator: " "))
                                 let display = self.glossaryActive ? (Self.strippingGlossaryEcho(raw) ?? "") : raw
+                                if Self.loopTrace {
+                                    // Printed even when empty: "gate never passed"
+                                    // and "decoded to nothing" need different fixes.
+                                    print("TRACE \(source.label) preview: \(display.isEmpty ? "<empty>" : display)")
+                                }
                                 if !display.isEmpty {
-                                    if Self.loopTrace { print("TRACE \(source.label) preview: \(display)") }
                                     await MainActor.run { self.currentText = display }
                                 }
                             }
@@ -549,11 +626,17 @@ final class TranscriptionEngine {
                     let startTime = Double(startSample) / 16000.0 + clockOffset
                     let endTime = Double(startSample + chunk.count) / 16000.0 + clockOffset
 
-                    // Backstop energy gate. The segmenter already refuses to cut
-                    // silence, so this mostly guards drain-mode tails and keeps
-                    // feeding the hallucination filter its energy signal.
+                    // Backstop energy gate at the stream's adaptive floor. The
+                    // segmenter already refuses to cut silence, so this mostly
+                    // guards drain-mode tails and keeps feeding the
+                    // hallucination filter its energy signal.
                     let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
-                    guard energy > 0.002 else { continue }
+                    guard energy > floor else { continue }
+
+                    // Boost quiet-but-real chunks to a healthy level before
+                    // every decode. `energy` above stays raw on purpose: the
+                    // hallucination filter reads the room, not the boosted copy.
+                    let decodeSamples = Self.normalizedForDecode(chunk)
 
                     // On-device decode — the default path, and the per-chunk
                     // fallback when a cloud backend hiccups (never lose a chunk).
@@ -566,7 +649,7 @@ final class TranscriptionEngine {
                         // the "repeated 3 times" dry-run report, 2026-08-01).
                         func decode(_ options: DecodingOptions) async throws -> [(text: String, confidence: Float?)] {
                             let result = try await whisperKit.transcribe(
-                                audioArray: chunk,
+                                audioArray: decodeSamples,
                                 decodeOptions: options
                             )
                             return result.map { transcription in
@@ -604,7 +687,7 @@ final class TranscriptionEngine {
                         if backend == .groq, let groqKey {
                             do {
                                 pieces = [(try await GroqTranscriber.transcribe(
-                                    samples: chunk, language: language, apiKey: groqKey), nil)]
+                                    samples: decodeSamples, language: language, apiKey: groqKey), nil)]
                             } catch {
                                 NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
                                 await MainActor.run {

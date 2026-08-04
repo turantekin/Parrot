@@ -146,6 +146,18 @@ struct LiveRecordingView: View {
                 .help("Open Microphone privacy settings and enable Parrot")
             }
 
+            if cap.micVeryQuiet {
+                Button {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")!)
+                } label: {
+                    Label("mic is very quiet — raise input volume", systemImage: "mic.and.signal.meter")
+                        .font(.appCaption2)
+                        .foregroundStyle(Theme.Colors.warn)
+                }
+                .buttonStyle(.plain)
+                .help("Your voice reaches Parrot far below normal speech level — usually a low input volume in System Settings → Sound. Transcription still works, but accuracy improves with more signal.")
+            }
+
             if cap.micSignalLost {
                 Label("mic muted by another app — reclaiming", systemImage: "mic.slash.circle.fill")
                     .font(.appCaption2)

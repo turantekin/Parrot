@@ -35,6 +35,7 @@ enum ProfileTest {
         testModelFolderMatch()
         testBugReport()
         testSegmenter()
+        testQuietMic()
         testCopilotBudget()
         testDiarizedLabel()
         testSpeakerNames()
@@ -535,6 +536,81 @@ enum ProfileTest {
         let two = speech(5) + silence(Seg.pauseFrames) + speech(5) + silence(Seg.pauseFrames)
         check("seg cuts one utterance at a time",
               Seg.nextCut(in: two, draining: false) == .init(dropLeading: 0, take: (5 + Seg.padFrames) * Seg.frame))
+
+        // Quiet-gain audio (real session 2026-08-04: 49% input volume, speech
+        // ~0.0014 mean-abs) — invisible at the legacy floor, segmented
+        // correctly once the adaptive floor is passed in.
+        func quietSpeech(_ frames: Int) -> [Float] { Array(repeating: 0.0014, count: frames * Seg.frame) }
+        func roomNoise(_ frames: Int) -> [Float] { Array(repeating: 0.0002, count: frames * Seg.frame) }
+        let quietUtterance = roomNoise(3) + quietSpeech(10) + roomNoise(Seg.pauseFrames) + quietSpeech(2)
+        check("seg legacy floor is blind to quiet speech",  // documents the bug
+              Seg.nextCut(in: quietUtterance, draining: false)
+                == .init(dropLeading: quietUtterance.count, take: nil))
+        check("seg adaptive floor cuts quiet speech at its pause",
+              Seg.nextCut(in: quietUtterance, draining: false, floor: 0.0008)
+                == .init(dropLeading: 3 * Seg.frame, take: (10 + Seg.padFrames) * Seg.frame))
+        check("seg adaptive floor still discards quiet-room silence",
+              Seg.nextCut(in: roomNoise(8), draining: false, floor: 0.0008)
+                == .init(dropLeading: 8 * Seg.frame, take: nil))
+    }
+
+    // The quiet-mic pipeline (2026-08-04 live trace): buffer-derived noise
+    // floor + pre-decode loudness normalization.
+    static func testQuietMic() {
+        typealias Seg = TranscriptionEngine.Segmenter
+        func quietSpeech(_ frames: Int) -> [Float] { Array(repeating: 0.0014, count: frames * Seg.frame) }
+        func roomNoise(_ frames: Int) -> [Float] { Array(repeating: 0.0002, count: frames * Seg.frame) }
+
+        // Bimodal window (speech + real pauses): floor sits between the two.
+        let mixed = roomNoise(3) + quietSpeech(10) + roomNoise(Seg.pauseFrames)
+        let mixedFloor = Seg.adaptiveFloor(for: mixed)
+        check("adaptive floor lands between quiet room and quiet speech",
+              mixedFloor > 0.0002 && mixedFloor < 0.0014)
+        check("adaptive floor cuts the quiet utterance it derived from",
+              Seg.nextCut(in: mixed, draining: false, floor: mixedFloor)
+                == .init(dropLeading: 3 * Seg.frame, take: (10 + Seg.padFrames) * Seg.frame))
+
+        // Cold start, the 0.02× lesson: a backlog that is ALL quiet speech
+        // (no pause seen yet) must never be classified as leading silence —
+        // the flat-window rule keeps it buffering until a pause bounds it.
+        check("flat quiet-speech window reads as speech",
+              Seg.adaptiveFloor(for: quietSpeech(10)) == Seg.ditherFloor)
+        check("cold-start quiet speech is never eaten",
+              Seg.nextCut(in: quietSpeech(10), draining: false,
+                          floor: Seg.adaptiveFloor(for: quietSpeech(10)))
+                == .init(dropLeading: 0, take: nil))
+
+        // Flat true silence still reads as silence and is discarded.
+        check("flat quiet-room window reads as silence",
+              Seg.adaptiveFloor(for: roomNoise(8)) == Seg.silenceFloor)
+        check("quiet-room silence is still discarded",
+              Seg.nextCut(in: roomNoise(8), draining: false,
+                          floor: Seg.adaptiveFloor(for: roomNoise(8)))
+                == .init(dropLeading: 8 * Seg.frame, take: nil))
+
+        // Normal gain: derived floor never exceeds the legacy fixed one, so
+        // no environment behaves worse than shipped.
+        let normal: [Float] = Array(repeating: 0.0001, count: 3 * Seg.frame)
+            + Array(repeating: 0.02, count: 10 * Seg.frame)
+        check("adaptive floor is capped at the legacy floor",
+              Seg.adaptiveFloor(for: normal) <= Seg.silenceFloor)
+        check("adaptive floor never sinks below dither",
+              Seg.adaptiveFloor(for: normal) >= Seg.ditherFloor)
+        check("empty window falls back to the legacy floor",
+              Seg.adaptiveFloor(for: []) == Seg.silenceFloor)
+
+        typealias TE = TranscriptionEngine
+        func rms(_ s: [Float]) -> Float { (s.reduce(0) { $0 + $1 * $1 } / Float(s.count)).squareRoot() }
+        let voice: [Float] = (0..<1600).map { sin(Float($0) * 0.1) * 0.2 }
+        let faint = voice.map { $0 * 0.05 }  // the harness's 0.05× quiet-mic scaling
+        check("normalize boosts faint speech to target loudness",
+              abs(rms(TE.normalizedForDecode(faint)) - 0.06) < 0.005)
+        check("normalize leaves healthy audio untouched", TE.normalizedForDecode(voice) == voice)
+        check("normalize gain is capped on near-silence",
+              rms(TE.normalizedForDecode(Array(repeating: 0.0001, count: 1600))) < 0.004)
+        check("normalize clamps a stray click to ±1",
+              TE.normalizedForDecode(faint + [0.9]).allSatisfy { abs($0) <= 1 })
+        check("normalize empty chunk is safe", TE.normalizedForDecode([]).isEmpty)
     }
 
     @MainActor

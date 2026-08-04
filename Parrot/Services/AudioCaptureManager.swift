@@ -128,6 +128,10 @@ final class AudioCaptureManager: NSObject {
     /// Live mic input level (separate from system audio) so the UI can show
     /// whether the user's own voice is actually being picked up.
     private(set) var micLevel: Float = 0
+    /// Loudest mic buffer seen this recording. Separates "the mic delivers
+    /// nothing" (dead/denied → micSeemsDead) from "the mic delivers a whisper"
+    /// (input volume set very low → micVeryQuiet).
+    private(set) var micPeakLevel: Float = 0
     /// Whether the mic stream is actually capturing (false = system audio only).
     private(set) var micActive = false
     private(set) var inputDeviceName = ""
@@ -152,7 +156,20 @@ final class AudioCaptureManager: NSObject {
     /// rather than recent silence, because in a call the user is routinely silent for
     /// far longer than a few seconds while the other side is speaking.
     var micSeemsDead: Bool {
-        isCapturing && micActive && !micEverHadSignal
+        isCapturing && micActive && !micEverHadSignal && micPeakLevel < 0.0008
+            && Date().timeIntervalSince(lastMicSignalAt) > 15
+    }
+
+    /// True when the mic is alive but everything it has heard sits far below
+    /// speech level — almost always the input volume slider set very low (a
+    /// real session at 49% volume measured speech at ~0.0014 mean-abs,
+    /// 2026-08-04). Transcription survives this (adaptive floor + decode
+    /// normalization), but accuracy is better with real signal, so the device
+    /// bar nudges the user. One healthy-loudness buffer flips
+    /// `micEverHadSignal` and clears the hint for the session; mutually
+    /// exclusive with `micSeemsDead` via the same peak split.
+    var micVeryQuiet: Bool {
+        isCapturing && micActive && !micEverHadSignal && micPeakLevel >= 0.0008
             && Date().timeIntervalSince(lastMicSignalAt) > 15
     }
 
@@ -231,6 +248,7 @@ final class AudioCaptureManager: NSObject {
 
         lastMicSignalAt = Date()  // capture start; the "dead mic" warning waits on this
         micEverHadSignal = false
+        micPeakLevel = 0
         echoCancellerStarved = false
         isCapturing = true
     }
@@ -245,6 +263,7 @@ final class AudioCaptureManager: NSObject {
         micSignalLost = false
         audioLevel = 0
         micLevel = 0
+        micPeakLevel = 0
         echoCanceller = nil
 
         // Stop system audio stream
@@ -551,6 +570,7 @@ final class AudioCaptureManager: NSObject {
         DispatchQueue.main.async {
             if isMic {
                 self.micLevel = avg
+                self.micPeakLevel = max(self.micPeakLevel, avg)
                 // Speech sits well above room noise; treat this as "mic is alive".
                 if avg > 0.004 {
                     self.lastMicSignalAt = Date()
@@ -597,7 +617,7 @@ final class AudioCaptureManager: NSObject {
     // MARK: - Buffer helpers
 
     /// Mean absolute sample value — the same "energy" measure the transcription
-    /// loop gates on (its silence threshold is 0.002).
+    /// loop gates on (against its rolling adaptive floor).
     private static func meanAbs(_ samples: [Float]) -> Float {
         guard !samples.isEmpty else { return 0 }
         return samples.reduce(into: Float(0)) { $0 += abs($1) } / Float(samples.count)
