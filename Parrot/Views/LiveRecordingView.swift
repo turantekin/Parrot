@@ -288,7 +288,8 @@ struct LiveRecordingView: View {
                                 segment: segment,
                                 isFirstOfGroup: index == 0
                                     || displayedSegments[index - 1].speakerLabel != segment.speakerLabel,
-                                speakerSuggestions: recordingManager.liveSpeakerSuggestions
+                                speakerSuggestions: recordingManager.liveSpeakerSuggestions,
+                                meeting: recordingManager.currentMeeting
                             )
                             .id(segment.id)
                         }
@@ -423,13 +424,18 @@ struct ChatBubbleRow: View {
     let isFirstOfGroup: Bool
     /// Live voiceprint suggestions (label → known name) from the sweep. The
     /// "?" suffix keeps it a suggestion — the stored label stays neutral until
-    /// the user confirms in the post-call naming flow (confirm-first rule).
+    /// the user confirms (tap the label, or the post-call naming flow).
     var speakerSuggestions: [String: String] = [:]
+    /// Set during live recording: makes non-Me labels tappable to name the
+    /// voice mid-call (popover without clips — the voice is audibly live).
+    var meeting: Meeting? = nil
+    @State private var naming = false
 
     private var isMe: Bool { segment.speakerLabel == "Me" }
 
     private var displayLabel: String {
         guard let label = segment.speakerLabel else { return "Speaker" }
+        if let assigned = meeting?.speakerNames[label] { return assigned }
         if let known = speakerSuggestions[label] { return "\(known)?" }
         return label
     }
@@ -438,9 +444,24 @@ struct ChatBubbleRow: View {
         VStack(alignment: isMe ? .trailing : .leading, spacing: 3) {
             if isFirstOfGroup {
                 HStack(spacing: 6) {
-                    Text(displayLabel)
-                        .font(.appCaption.weight(.medium))
-                        .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
+                    if let meeting, let label = segment.speakerLabel, !isMe,
+                       label != AudioSource.them.label {
+                        Button { naming = true } label: {
+                            Text(displayLabel)
+                                .font(.appCaption.weight(.medium))
+                                .foregroundStyle(Theme.Colors.ink2)
+                                .underline(meeting.speakerNames[label] == nil, pattern: .dot)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Name this voice")
+                        .popover(isPresented: $naming, arrowEdge: .bottom) {
+                            SpeakerNamePopover(meeting: meeting, label: label)
+                        }
+                    } else {
+                        Text(displayLabel)
+                            .font(.appCaption.weight(.medium))
+                            .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
+                    }
                     Text(segment.formattedTimestamp)
                         .font(Theme.Typography.mono(11))
                         .foregroundStyle(Theme.Colors.ink3)
