@@ -66,6 +66,7 @@ struct SettingsView: View {
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @AppStorage("polishAfterCall") private var polishAfterCall = false
+    @AppStorage("livePreview") private var livePreview = true
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
@@ -94,7 +95,7 @@ struct SettingsView: View {
     private var settingsFingerprint: String {
         "\(selectedModel)|\(appearance)|\(copilotEnabled)|\(transcriptionLanguage)|"
             + "\(customVocabulary)|\(echoCancellation)|\(transcriptionBackend)|\(polishAfterCall)|"
-            + "\(copilotPace)|\(copilotWindow)"
+            + "\(copilotPace)|\(copilotWindow)|\(livePreview)"
     }
 
     private func flashSavedToast() {
@@ -272,6 +273,11 @@ struct SettingsView: View {
 
                 Toggle("Polish transcript after each call", isOn: $polishAfterCall)
                 Hint("Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.")
+
+                Divider()
+
+                Toggle("Show words as they're spoken", isOn: $livePreview)
+                Hint("Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.")
             }
 
             Section("On-Device Model") {

@@ -31,7 +31,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/RecordingManager.swift` | 623 | Orchestrates a recording session end-to-end; the hub |
 | `Services/AudioCaptureManager.swift` | 616 | ScreenCaptureKit system audio + mic tap, buffer conversion |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
-| `Services/TranscriptionEngine.swift` | 550 | On-device WhisperKit; `AudioSource` routing |
+| `Services/TranscriptionEngine.swift` | 947 | On-device WhisperKit; `AudioSource` routing; live preview decode |
 | `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
 | `Services/DiarizationEngine.swift` | 105 | FluidAudio offline pyannote diarization (CoreML): labels + per-speaker embeddings |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
@@ -53,13 +53,13 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/ContentView.swift` | 190 | Root split view + empty state + corner bug button |
 | `Views/SidebarView.swift` | 361 | Meeting list, rows, talk-ratio strip |
 | `Views/DashboardView.swift` | 329 | Landing stats + recent meetings |
-| `Views/LiveRecordingView.swift` | 532 | In-call screen: chat bubbles, mic level, side tabs |
+| `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 729 | Live insight cards, pinned blockers, suggested replies |
 | `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
-| `Views/SettingsView.swift` | 673 | All settings sections, provider keys, KB docs |
+| `Views/SettingsView.swift` | 829 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 689 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
