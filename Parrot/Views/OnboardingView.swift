@@ -109,8 +109,31 @@ struct OnboardingView: View {
             return
         }
         micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        screenGranted = CGPreflightScreenCaptureAccess()
-        screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
+        if #available(macOS 15.0, *) {
+            // Audio-only tap permission. "Granted" is inferred (proven audio or
+            // a Screen Recording grant) — there is no status API to ask.
+            screenGranted = PermissionFlow.systemAudioLooksGranted()
+            screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.tapAskedKey)
+        } else {
+            screenGranted = CGPreflightScreenCaptureAccess()
+            screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
+        }
+    }
+
+    /// The subtitle keeps the real macOS permission name so people can match
+    /// it to the System Settings pane. On 15+ that's the audio-only category.
+    private var systemAudioSubtitle: String {
+        if #available(macOS 15.0, *) {
+            return "System Audio Recording, the other side of the call"
+        }
+        return "Screen Recording, the other side of the call"
+    }
+
+    private var systemAudioPendingHint: String {
+        if #available(macOS 15.0, *) {
+            return "Clicked Allow on the macOS prompt? You're set — this row turns green the first time Parrot hears meeting audio. No restart needed."
+        }
+        return "Already flipped the switch? macOS applies Screen Recording when Parrot restarts — quit and reopen Parrot, and this page will pick up right here."
     }
 
     private var permissionsStep: some View {
@@ -145,10 +168,14 @@ struct OnboardingView: View {
                     icon: "speaker.wave.2",
                     askTitle: "Help Parrot hear your meeting",
                     grantedTitle: "Parrot can hear your meeting",
-                    subtitle: "Screen Recording, the other side of the call",
+                    subtitle: systemAudioSubtitle,
                     isGranted: screenGranted,
                     action: {
-                        if PermissionFlow.requestScreenCapture() == .granted {
+                        if #available(macOS 15.0, *) {
+                            if PermissionFlow.requestSystemAudioCapture() == .granted {
+                                screenGranted = true
+                            }
+                        } else if PermissionFlow.requestScreenCapture() == .granted {
                             screenGranted = true
                         }
                         screenAsked = true
@@ -156,7 +183,7 @@ struct OnboardingView: View {
                 )
 
                 if screenAsked && !screenGranted {
-                    Text("Already flipped the switch? macOS applies Screen Recording when Parrot restarts — quit and reopen Parrot, and this page will pick up right here.")
+                    Text(systemAudioPendingHint)
                         .font(Theme.Typography.caption)
                         .foregroundStyle(Theme.Colors.ink2)
                 }

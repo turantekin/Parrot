@@ -29,7 +29,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Services/RecordingManager.swift` | 623 | Orchestrates a recording session end-to-end; the hub |
-| `Services/AudioCaptureManager.swift` | 616 | ScreenCaptureKit system audio + mic tap, buffer conversion |
+| `Services/AudioCaptureManager.swift` | 700 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
+| `Services/SystemAudioTap.swift` | 250 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
 | `Services/TranscriptionEngine.swift` | 550 | On-device WhisperKit; `AudioSource` routing |
 | `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
@@ -41,7 +42,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/ProfileStore.swift` | 101 | Persists and mutates `CallProfile`s |
 | `Services/ProfilePresets.swift` | 141 | Built-in starter profiles |
 | `Services/ExportService.swift` | 127 | Transcript/report export (Markdown, text) |
-| `Services/PermissionFlow.swift` | 75 | Screen Recording + microphone grant checks |
+| `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/UpdateChecker.swift` | 103 | Daily GitHub release poll, feeds the update banner |
 | `Services/BugReport.swift` | 120 | Pre-filled GitHub issue: diagnostics, own-window screenshot, URL builder |
 | `Services/SpeakerProfileStore.swift` | 66 | Voiceprint matching (cosine ≥ 0.7), remember/forget for named voices |

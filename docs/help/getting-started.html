@@ -24,16 +24,21 @@ source, clone the repo and run <code>make run</code>.</p>
 dark button, answer the system dialog, and the row flips to a green check on
 its own. Both are needed to record a call properly:</p>
 <ul>
-  <li><strong>Screen Recording.</strong> This one surprises people, so here's
-  the honest explanation: it is simply how macOS exposes system audio. Parrot
-  uses it to hear the <em>other</em> side of your call. It never captures your
-  screen content, only sound.</li>
+  <li><strong>System Audio Recording.</strong> How Parrot hears the
+  <em>other</em> side of your call. On macOS 15 and newer this is an
+  audio-only permission: Parrot never asks for screen access at all. On
+  macOS 14 the same job runs through the classic Screen Recording
+  permission; that one surprises people, so here's the honest explanation:
+  it is simply how older macOS exposes system audio. Either way Parrot never
+  captures your screen content, only sound.</li>
   <li><strong>Microphone.</strong> Your side of the call.</li>
 </ul>
 
-<div class="tip"><strong>Heads up:</strong> Screen Recording only takes effect
-after the app restarts. If the row hasn't flipped to a green check after you
-granted it, quit Parrot and open it again. macOS is just like that.</div>
+<div class="tip"><strong>Heads up:</strong> on macOS 14, Screen Recording only
+takes effect after the app restarts. If the row hasn't flipped to a green
+check after you granted it, quit Parrot and open it again. macOS is just like
+that. On macOS 15+ there's no restart; the row confirms itself the first time
+Parrot hears meeting audio.</div>
 
 <h2>Pick a model</h2>
 <img src="img/onboarding-model.png" alt="The model picker during onboarding">

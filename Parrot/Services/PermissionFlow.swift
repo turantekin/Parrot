@@ -2,10 +2,11 @@ import AVFoundation
 import AppKit
 import CoreGraphics
 
-/// The one place that decides how to ask for Screen Recording / Microphone.
-/// Both the onboarding permissions step and the record-button preflight route
-/// through here, so the "first ask shows the OS prompt AND opens System
-/// Settings on top of it" double-dialog bug can't come back.
+/// The one place that decides how to ask for System Audio (macOS 15+) /
+/// Screen Recording (macOS 14) / Microphone. Both the onboarding permissions
+/// step and the record-button preflight route through here, so the "first ask
+/// shows the OS prompt AND opens System Settings on top of it" double-dialog
+/// bug can't come back.
 enum PermissionFlow {
 
     enum ScreenCaptureStep: Equatable {
@@ -53,6 +54,68 @@ enum PermissionFlow {
             }
         }
         return step
+    }
+
+    // MARK: - System audio (macOS 15+, Core Audio process tap)
+
+    /// macOS 15+ captures system audio through a process tap under TCC's
+    /// "System Audio Recording Only" category — no Screen Recording rights, no
+    /// scary prompt, no periodic macOS re-confirmation. The catch, measured
+    /// on-device: there is NO status/preflight API for this category, and an
+    /// unauthorized tap is created without error — it just delivers silence.
+    /// So status is inferred: the first nonzero buffer through a tap proves the
+    /// grant (AudioCaptureManager sets `tapProvenKey`), and until then the flow
+    /// stays optimistic — blocking a recording on a grant we cannot read would
+    /// hold the user's data hostage to a guess. A denied user still gets their
+    /// mic track, a dead system level bar, and one Settings deep-link.
+    static let tapProvenKey = "systemAudioTapProven"
+    static let tapAskedKey = "hasRequestedSystemAudioTap"
+    static let tapSettingsShownKey = "systemAudioSettingsShown"
+
+    /// Pure decision — covered by `--profile-test`. `screenGranted` counts as
+    /// granted because ScreenCaptureKit remains a full fallback backend.
+    static func nextSystemAudioStep(proven: Bool, screenGranted: Bool,
+                                    askedBefore: Bool, settingsShownBefore: Bool) -> ScreenCaptureStep {
+        if proven || screenGranted { return .granted }
+        if !askedBefore { return .promptShown }
+        if !settingsShownBefore { return .openSettings }
+        // Asked and deep-linked once already. The grant is unreadable, so stop
+        // gatekeeping: start the recording and let the level bar tell the truth.
+        return .granted
+    }
+
+    @available(macOS 15.0, *)
+    @discardableResult
+    static func requestSystemAudioCapture() -> ScreenCaptureStep {
+        let defaults = UserDefaults.standard
+        let step = nextSystemAudioStep(
+            proven: defaults.bool(forKey: tapProvenKey),
+            screenGranted: CGPreflightScreenCaptureAccess(),
+            askedBefore: defaults.bool(forKey: tapAskedKey),
+            settingsShownBefore: defaults.bool(forKey: tapSettingsShownKey)
+        )
+        switch step {
+        case .granted:
+            break
+        case .promptShown:
+            defaults.set(true, forKey: tapAskedKey)
+            SystemAudioTap.fireAuthorizationPrompt()
+        case .openSettings:
+            defaults.set(true, forKey: tapSettingsShownKey)
+            // Re-fire first: if a TCC reset put us back to not-determined this
+            // posts the official prompt again; if genuinely denied it is a
+            // silent no-op that keeps Parrot's row present in the pane.
+            SystemAudioTap.fireAuthorizationPrompt()
+            // On macOS 15+ this anchor opens the combined
+            // "Screen & System Audio Recording" pane, which hosts both lists.
+            openSettings(pane: "Privacy_ScreenCapture")
+        }
+        return step
+    }
+
+    /// Silent status for onboarding UI — must never fire a prompt.
+    static func systemAudioLooksGranted() -> Bool {
+        UserDefaults.standard.bool(forKey: tapProvenKey) || CGPreflightScreenCaptureAccess()
     }
 
     /// notDetermined → the one official OS prompt; denied/restricted → Settings.

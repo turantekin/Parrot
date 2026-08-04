@@ -37,6 +37,11 @@ struct ParrotMain {
             DiarizeTest.run(audioPath: args[i + 1])
             return
         }
+        if let i = args.firstIndex(of: "--capture-test") {
+            let seconds = (i + 1 < args.count) ? (Double(args[i + 1]) ?? 10) : 10
+            CaptureTest.run(seconds: seconds)
+            return
+        }
         if args.contains("--profile-test") {
             MainActor.assumeIsolated { ProfileTest.run() }
             return
