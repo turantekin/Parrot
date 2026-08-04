@@ -6,13 +6,15 @@ import SwiftData
 /// Suggestion-only by design: nothing here writes a speaker name; the user
 /// confirms in the naming popover (confirm-first rule in the design spec).
 enum SpeakerProfileStore {
-    /// Cosine similarity floor for "sounds like X" suggestions. Calibrated on
-    /// the real Aug 3 call (split-half): same voice across independent halves
-    /// = 0.96, different voices = 0.50–0.53 — our per-meeting MEAN embeddings
-    /// score far higher than the generic 0.5–0.6 research band, so 0.7 keeps
-    /// a ±0.2 margin against both false matches and misses.
+    /// Cosine similarity floor for "sounds like X" suggestions. Measured on
+    /// real recordings: same voice on a clean call 0.96; same voice through
+    /// degraded audio (played back over speakers and re-captured) 0.65–0.70;
+    /// different voices 0.50–0.53. 0.7 missed two true matches at 0.66/0.68,
+    /// so 0.65 — catches every true match seen while keeping a 0.11+ gap
+    /// above every false one. Suggestion-only, so a rare false "sounds like?"
+    /// costs one glance.
     // ponytail: single knob, used only by match(_:in:).
-    static let suggestThreshold: Float = 0.7
+    static let suggestThreshold: Float = 0.65
 
     static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
