@@ -60,6 +60,14 @@ struct MeetingDetailView: View {
                 Divider()
             }
 
+            // Above the tabs on purpose: the app opens meetings on the Report
+            // tab, and a confirm card hidden behind the Transcript tab was
+            // simply never seen (first user test, 2026-08-04).
+            if nameVoicesCardVisible {
+                nameVoicesCard
+                    .padding(.bottom, 4)
+            }
+
             // Tabs — each gets the full pane with a single scroll, instead of the
             // old stack of fixed-height mini-scrollers.
             Picker("View", selection: $tab) {
@@ -385,9 +393,8 @@ struct MeetingDetailView: View {
                 processingView
                 Divider()
             }
-            if nameVoicesCardVisible {
-                nameVoicesCard
-            } else if meeting.status == .done, meeting.systemAudioPath.nilIfEmpty != nil {
+            if !nameVoicesCardVisible, meeting.status == .done,
+               meeting.systemAudioPath.nilIfEmpty != nil {
                 // Re-run on-device speaker detection — fixes old meetings
                 // recorded before real diarization, and bad splits after
                 // threshold tuning. Lives inside the card when it's shown.
