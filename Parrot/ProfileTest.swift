@@ -724,5 +724,19 @@ enum ProfileTest {
               PermissionFlow.nextScreenCaptureStep(preflightGranted: false, askedBefore: false) == .promptShown)
         check("perm: re-ask deep-links to Settings",
               PermissionFlow.nextScreenCaptureStep(preflightGranted: false, askedBefore: true) == .openSettings)
+
+        // macOS 15+ system-audio tap: the grant is unreadable (an unauthorized
+        // tap "succeeds" silently), so the flow is prompt → one Settings
+        // deep-link → optimistic. It must never gatekeep forever.
+        check("sysaudio: proven tap wins",
+              PermissionFlow.nextSystemAudioStep(proven: true, screenGranted: false, askedBefore: false, settingsShownBefore: false) == .granted)
+        check("sysaudio: Screen Recording grant is a valid fallback",
+              PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: true, askedBefore: true, settingsShownBefore: true) == .granted)
+        check("sysaudio: first ask posts the one OS prompt",
+              PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: false, settingsShownBefore: false) == .promptShown)
+        check("sysaudio: second ask deep-links to Settings once",
+              PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: false) == .openSettings)
+        check("sysaudio: after prompt + Settings it stops gatekeeping",
+              PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: true) == .granted)
     }
 }

@@ -94,6 +94,10 @@ targets:
         # Shown when macOS asks for Screen Recording, which Parrot uses to capture
         # system audio via ScreenCaptureKit. Also lives here so xcodegen keeps it.
         NSScreenCaptureUsageDescription: "Parrot captures system audio from your meetings via screen recording. Only audio is used — never screen content."
+        # macOS 15+: shown by the audio-only "System Audio Recording" consent
+        # prompt (Core Audio process tap). This replaces the Screen Recording
+        # ask on modern macOS; without the key the tap is silently denied.
+        NSAudioCaptureUsageDescription: "Parrot records your meeting's audio (what you hear) to transcribe it on-device. It never sees your screen."
         # Points Finder/Dock at the asset-catalog icon (asset compiler doesn't
         # inject this when the Info.plist is static).
         CFBundleIconName: AppIcon

@@ -79,6 +79,115 @@ enum TranscribeTest {
     }
 }
 
+/// `--capture-test [seconds]`: real end-to-end system-audio capture through the
+/// production AudioCaptureManager (process tap on macOS 15+, ScreenCaptureKit on
+/// 14.x / as rescue), while the caller plays audio through the speakers, e.g.:
+///   (sleep 2; say "capture test") & dist/Parrot.app/Contents/MacOS/Parrot --capture-test 8
+/// Prints backend, live buffer stats, and the finalized .caf's measured signal;
+/// exits 0 iff real system audio landed in the file. Run it from the signed
+/// .app bundle — TCC decides by bundle identity. Uses a pumped main run loop,
+/// not the semaphore pattern: startCapture is @MainActor and the level/rescue
+/// hops dispatch to main, so a blocked main thread would deadlock them.
+enum CaptureTest {
+    /// Cross-queue tallies from the onAudioBuffer callback (audio queues).
+    private final class BufferCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var systemBuffers = 0
+        private(set) var micBuffers = 0
+        private(set) var systemPeak: Float = 0
+        private(set) var micPeak: Float = 0
+
+        func record(buffer: AVAudioPCMBuffer, source: AudioSource) {
+            var peak: Float = 0
+            if let ch = buffer.floatChannelData?[0] {
+                for i in 0..<Int(buffer.frameLength) { peak = max(peak, abs(ch[i])) }
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            if source == .them {
+                systemBuffers += 1
+                systemPeak = max(systemPeak, peak)
+            } else {
+                micBuffers += 1
+                micPeak = max(micPeak, peak)
+            }
+        }
+
+        func snapshot() -> (systemBuffers: Int, systemPeak: Float, micBuffers: Int, micPeak: Float) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (systemBuffers, systemPeak, micBuffers, micPeak)
+        }
+    }
+
+    static func run(seconds: Double) {
+        Task { @MainActor in
+            await runCapture(seconds: seconds)
+        }
+        RunLoop.main.run()
+    }
+
+    @MainActor
+    private static func runCapture(seconds: Double) async {
+        print("=== capture-test — macOS \(ProcessInfo.processInfo.operatingSystemVersionString) ===")
+        let manager = AudioCaptureManager()
+        let counter = BufferCounter()
+        manager.onAudioBuffer = { buffer, source in
+            counter.record(buffer: buffer, source: source)
+        }
+        do {
+            try await manager.startCapture()
+        } catch {
+            print("capture-test: startCapture FAILED — \(error.localizedDescription)")
+            exit(2)
+        }
+        print("backend: \(manager.captureBackend.rawValue) | input: \(manager.inputDeviceName) | output: \(manager.outputDeviceName)")
+        print("screen-recording preflight (SCK fallback available): \(CGPreflightScreenCaptureAccess())")
+
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+
+        let endBackend = manager.captureBackend  // stopCapture resets it
+        let systemURL = manager.systemAudioURL
+        let micURL = manager.micAudioURL
+        await manager.stopCapture()
+
+        let stats = counter.snapshot()
+        print(String(format: "live buffers — system: %d (peak %.4f) | mic: %d (peak %.4f)",
+                     stats.systemBuffers, stats.systemPeak, stats.micBuffers, stats.micPeak))
+        print("backend at end: \(endBackend.rawValue) | tap grant proven: \(UserDefaults.standard.bool(forKey: PermissionFlow.tapProvenKey))")
+
+        let systemStats = fileStats(systemURL)
+        print("system .caf: \(systemStats.text)")
+        print("mic .caf: \(fileStats(micURL).text)")
+
+        let pass = systemStats.peak > 0.01
+        print(pass ? "CAPTURE OK — real system audio in the file"
+                   : "CAPTURE SILENT — no system audio landed (permission pending/denied, or nothing played)")
+        exit(pass ? 0 : 1)
+    }
+
+    private static func fileStats(_ url: URL?) -> (text: String, peak: Float) {
+        guard let url, let file = try? AVAudioFile(forReading: url) else { return ("missing", 0) }
+        let frames = AVAudioFrameCount(file.length)
+        guard frames > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames),
+              (try? file.read(into: buffer)) != nil,
+              let ch = buffer.floatChannelData?[0] else { return ("unreadable", 0) }
+        var peak: Float = 0
+        var sumSquares: Double = 0
+        for i in 0..<Int(buffer.frameLength) {
+            let a = abs(ch[i])
+            peak = max(peak, a)
+            sumSquares += Double(a) * Double(a)
+        }
+        let rms = (sumSquares / Double(max(1, Int(buffer.frameLength)))).squareRoot()
+        let text = String(format: "%.1f s @ %.0f Hz, peak %.4f, rms %.5f",
+                          Double(file.length) / file.processingFormat.sampleRate,
+                          file.processingFormat.sampleRate, peak, rms)
+        return (text, peak)
+    }
+}
+
 /// Renders every screenshot the user guide needs, offscreen, into a directory:
 ///   Parrot --help-shots docs/help/img
 /// Settings pages are Forms (scroll views), which ImageRenderer leaves empty —

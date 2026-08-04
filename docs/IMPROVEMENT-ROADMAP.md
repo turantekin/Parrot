@@ -33,13 +33,54 @@ truth for the post-test improvement effort. Update the status table as work land
 | **$** | Per-call AI cost transparency | 🟡 built | Every Anthropic response's `usage` tokens metered in the provider; frozen to `Meeting.aiUsageData` at end of post-call chain with transcription/polish audio seconds. `AIPricing` table (haiku $1/$5 per MTok verified 2026-07-02) + pure `costBreakdown()` (12 harness checks). Detail header shows "AI cost ~$X" row with click-to-expand breakdown popover, labeled estimated; old meetings show nothing. Eyeball after next recorded call. |
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
-| — | Audio-only capture permission (macOS 15+) | ⬜ not started | Also from the teardown: Anarlog sits in TCC's "System Audio Recording Only" list, not the scary "Screen & System Audio Recording" one. Core Audio process taps (macOS 14.2+/15 APIs) capture system audio with no screen-content rights, so the Screen Recording ask disappears from onboarding entirely. Capture-engine change in `AudioCaptureManager`: tap path on new macOS, current ScreenCaptureKit path kept for 14.x. |
+| — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-08-04** — **Audio-only capture built** (macOS 15+ process taps; the
+  Anarlog-teardown item). What landed:
+  - **`SystemAudioTap`** (new): `CATapDescription(monoGlobalTapButExcludeProcesses:)`
+    excluding our own PID → `AudioHardwareCreateProcessTap` → private aggregate
+    device with the tap → IOProc → AVAudioConverter to 16 kHz mono Float32.
+    Delivers the exact buffer contract the SCK path produces, so files, AEC
+    reference, levels, and transcription are untouched. Handles output-device
+    format changes by rebuilding just the converter.
+  - **`AudioCaptureManager`**: backend dispatcher (tap on 15+, SCK on 14.x or
+    tap failure, `forceSCKCapture` default as escape hatch); the old SCK
+    delegate body extracted into a shared `handleSystemAudio`.
+  - **TCC reality, measured on this machine (macOS 26.5)**: there is NO status
+    or preflight API for "System Audio Recording Only", and an unauthorized tap
+    is created *without error* — it delivers zero-filled buffers, or (after
+    repeated attempts / while denied) no buffers at all. Screen Recording being
+    granted does NOT auto-satisfy it. Consequences baked in:
+    - `PermissionFlow.nextSystemAudioStep` (pure, harness-covered): proven-tap
+      or SCK grant → go; first ask → the one OS prompt; second ask → one
+      Settings deep-link; after that never gatekeep (a grant we can't read
+      must not block recordings — mic side still captures).
+    - First nonzero tap buffer persists `systemAudioTapProven`; recording
+      proceeds on `.promptShown` (prompt hovers over the live call).
+    - **Silent-tap rescue**: while the tap has produced no signal, every 15 s
+      swap to SCK if Screen Recording is granted (upgraders keep working), else
+      recreate the tap so an Allow clicked mid-recording takes effect ≤15 s.
+  - **Onboarding/docs**: row copy is now "System Audio Recording" on 15+ (no
+    restart quirk), Screen Recording wording kept for 14.x; README, help book,
+    Makefile howto updated. `NSAudioCaptureUsageDescription` added via
+    project.yml.
+  - **Verified**: `make test` ALL PASS (187, +5 sysaudio checks); new
+    `--capture-test [s]` harness (run from the signed dist bundle, `say` as the
+    far side) proves the tap pipeline end-to-end **inside the sandbox** —
+    buffers→convert→.caf at 16 kHz — and that the rescue takes the right branch.
+    System track stays silent here because the TCC grant needs a human click.
+  - **Still needs Uygar**: one real recording on the new build. Expect the
+    one-time "Parrot would like to record system audio" prompt (possibly
+    already pending on screen from harness runs) — click Allow; audio must
+    flow within ~15 s; `Meeting` gets both tracks; row turns green. If system
+    audio stays dead: System Settings → Privacy & Security → Screen & System
+    Audio Recording → "System Audio Recording Only" → toggle Parrot on.
 
 - **2026-07-02** — **Phases T + $ built** (pluggable transcription & AI cost
   transparency; commits `T1`–`T3`, `C1`, `C2`). Users pick their engine in

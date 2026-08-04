@@ -112,10 +112,10 @@ Two things worth knowing:
 ### Permissions
 
 On first launch, Parrot walks you through the two permissions it needs:
-1. **Screen Recording** — this is simply how macOS exposes system audio. Parrot only captures audio, never your screen content
+1. **System Audio Recording** — the other side of the call. On macOS 15+ this is the audio-only permission (Core Audio process tap): no screen-content rights, no periodic "Parrot is recording your screen" re-confirmations. On macOS 14 it's the classic Screen Recording permission instead — that's simply how older macOS exposes system audio; Parrot only ever captures audio, never screen content
 2. **Microphone** — your side of the call
 
-The onboarding page shows live status for both and deep-links to the exact Settings panes. One macOS quirk to know: Screen Recording takes effect when the app restarts — if the row doesn't turn green after you grant it, quit and reopen Parrot (onboarding picks up right where you left off). And if you ever want the walkthrough again, it's one click away: Help → Show Welcome Tour.
+The onboarding page shows live status for both and deep-links to the exact Settings panes. On macOS 14, one quirk to know: Screen Recording takes effect when the app restarts — if the row doesn't turn green after you grant it, quit and reopen Parrot (onboarding picks up right where you left off). On macOS 15+ no restart is needed; the row confirms itself the first time Parrot hears meeting audio. And if you ever want the walkthrough again, it's one click away: Help → Show Welcome Tour.
 
 ### Choose a Model
 
@@ -223,7 +223,7 @@ Seriously, if you're into Swift/macOS development, audio processing, or ML on-de
 Here's where I could really use a hand:
 
 - **Speaker diarization** — The current approach is energy-based and can't reliably tell multiple far-side voices apart. If you know anything about CoreML, Pyannote, or voice fingerprinting, please help me make this actually work.
-- **Screen Recording permission headaches** — macOS permissions are driving me a little crazy. If you've dealt with ScreenCaptureKit in sandboxed apps, I want to hear from you.
+- **Permission edge cases** — macOS 15+ now uses the audio-only System Audio Recording permission (Core Audio process taps), with ScreenCaptureKit kept for macOS 14. The catch: taps have no permission-status API at all (an unauthorized tap just delivers silence), so if you know TCC quirks around `kTCCServiceAudioCapture`, I want to hear from you.
 - **Bug fixes** — Found something broken? Open a PR, I'll review it quickly.
 - **Feature ideas** — Open an issue and let's chat about it.
 - **Just vibes** — Even if you just want to say "cool project" or "this is dumb, do it this way instead" — I'm all ears.
@@ -233,7 +233,7 @@ No formal process. No templates. Just open an issue or PR and we'll figure it ou
 ## Known Issues (I'm Working on It)
 
 - **Transcription could stop the moment you joined a call** ([#12](https://github.com/turantekin/Parrot/issues/12)) — fixed in 0.11.3: when another app grabs the mic and macOS feeds Parrot silence, Parrot now detects it, shows *"mic muted by another app — reclaiming"*, retries automatically, and recovers when the mic frees up. Kept here until the original reporter confirms the fix in the wild — if you still hit it, `PARROT_AUDIO_DEBUG=1` logs from a failing call are gold.
-- **Screen Recording permission resets on ad-hoc source builds** — macOS ties the grant to the signing identity, and identity-less builds look like a new app every time. `make signing-help` shows two free ways to make it stick. Downloaded release builds keep the grant across updates.
+- **Audio permissions reset on ad-hoc source builds** — macOS ties the System Audio / Screen Recording and Microphone grants to the signing identity, and identity-less builds look like a new app every time. `make signing-help` shows two free ways to make it stick. Downloaded release builds keep the grant across updates.
 - **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
 - **Speaker diarization is... okay** — "Me" vs "Them" is exact (separate audio tracks), but splitting multiple far-side voices apart is energy-based and imperfect, especially with 3+ people on the other end. Real voice fingerprinting is on my list.
 

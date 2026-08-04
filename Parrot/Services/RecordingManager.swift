@@ -143,11 +143,22 @@ final class RecordingManager {
     /// permissions, then starts. Returns without starting (and without throwing)
     /// when a permission flow was triggered instead.
     func preflightPermissionsAndStart(modelContext: ModelContext) async throws {
-        // Check Screen Recording permission BEFORE touching any ScreenCaptureKit
-        // API (querying SCShareableContent while unauthorized pops the OS prompt
-        // AND throws). PermissionFlow posts the single official prompt on a
-        // first ask, or deep-links to Settings if previously denied — never both.
-        guard PermissionFlow.requestScreenCapture() == .granted else { return }
+        // Check the system-audio permission BEFORE touching any capture API.
+        // macOS 15+: the audio-only tap permission (optimistic after the one
+        // official prompt — its grant can't be read back, see PermissionFlow).
+        // macOS 14: Screen Recording, where querying SCShareableContent while
+        // unauthorized pops the OS prompt AND throws. Either way PermissionFlow
+        // posts a single prompt or deep-links to Settings — never both.
+        if #available(macOS 15.0, *) {
+            // .promptShown proceeds too: the recording starts while the one-time
+            // OS prompt hovers, and the silent-tap rescue picks the grant up
+            // within ~15 s of Allow. Blocking would ransom the meeting to a
+            // dialog for a grant we can't even read back. Only .openSettings
+            // (asked before, still never proven) pauses to point at the pane.
+            guard PermissionFlow.requestSystemAudioCapture() != .openSettings else { return }
+        } else {
+            guard PermissionFlow.requestScreenCapture() == .granted else { return }
+        }
 
         // Ensure the microphone is authorized so the user's own voice ("Me")
         // is captured. Without this the engine runs but feeds silence.

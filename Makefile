@@ -82,9 +82,10 @@ howto:
 	@echo '    make run'
 	@echo
 	@echo 'First launch walks you through two macOS permissions:'
-	@echo '  1. Screen Recording  — how macOS exposes system audio (audio only, never screen content)'
-	@echo '  2. Microphone        — your side of the call'
-	@echo 'Screen Recording only takes effect after a restart: quit and reopen if the row stays red.'
+	@echo '  1. System Audio Recording — the other side of the call (audio-only on macOS 15+;'
+	@echo '     macOS 14 uses Screen Recording for this — audio only, never screen content)'
+	@echo '  2. Microphone             — your side of the call'
+	@echo 'macOS 14 only: Screen Recording takes effect after a restart — quit and reopen if the row stays red.'
 	@echo
 	@echo 'Then pick a WhisperKit model in onboarding (`base` is a good default; it downloads on'
 	@echo 'first use). Everything runs on-device — cloud engines and the Copilot are opt-in and'

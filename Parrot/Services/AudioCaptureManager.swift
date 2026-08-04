@@ -30,6 +30,20 @@ final class AudioCaptureManager: NSObject {
     /// disabled (mic passes through untouched).
     private var echoCanceller: EchoCanceller?
 
+    /// Which system-audio engine is live. The Core Audio process tap (macOS 15+,
+    /// audio-only TCC — no Screen Recording ask) is preferred; ScreenCaptureKit
+    /// is the 14.x path and the silent-tap rescue fallback.
+    enum CaptureBackend: String { case none, tap, sck }
+    @ObservationIgnored private(set) var captureBackend: CaptureBackend = .none
+    /// The live SystemAudioTap on macOS 15+. Typed AnyObject because
+    /// @available(macOS 15) types can't be stored properties at target 14.
+    private var processTap: AnyObject?
+    /// True once the tap delivered any nonzero sample this recording. An
+    /// unauthorized tap "works" but produces exact zeros forever (measured, no
+    /// error/status API exists), so first real audio is the only proof of the
+    /// "System Audio Recording Only" grant — it also feeds the silence rescue.
+    @ObservationIgnored private var tapEverHadSignal = false
+
     /// Throttle timestamps for pushing audio levels to the UI — the waveform needs
     /// only ~10 updates/sec, not one per ~20 ms audio buffer per stream.
     @ObservationIgnored private var lastSystemLevelAt = Date.distantPast
@@ -212,10 +226,12 @@ final class AudioCaptureManager: NSObject {
         micWatchdog = MicSignalWatchdog()
         micSignalLost = false
         micRecoveryScheduled = false
+        tapEverHadSignal = false
 
         filesClosed = false  // fresh URLs above; queues are idle, so no race
 
         try await startSystemAudioCapture()
+        dbgSck = DebugAccumulator(label: captureBackend.rawValue)
 
         // The microphone is optional. System audio ("Them") is the core capture;
         // a missing or denied mic must NOT abort the whole recording. If mic setup
@@ -247,11 +263,16 @@ final class AudioCaptureManager: NSObject {
         micLevel = 0
         echoCanceller = nil
 
-        // Stop system audio stream
+        // Stop system audio stream (whichever backend is live)
+        if #available(macOS 15.0, *), let tap = processTap as? SystemAudioTap {
+            tap.stop()
+        }
+        processTap = nil
         if let stream {
             try? await stream.stopCapture()
             self.stream = nil
         }
+        captureBackend = .none
 
         // Stop mic engine
         if let micRestartObserver { NotificationCenter.default.removeObserver(micRestartObserver) }
@@ -276,9 +297,88 @@ final class AudioCaptureManager: NSObject {
         }
     }
 
+    // MARK: - System Audio
+
+    /// Tap-first on macOS 15+ (audio-only permission), ScreenCaptureKit on 14.x
+    /// or whenever the tap can't start. Both paths feed handleSystemAudio with
+    /// identical 16 kHz mono buffers, so everything downstream is unaware.
+    @MainActor
+    private func startSystemAudioCapture() async throws {
+        // ponytail: escape hatch for field debugging of the new path —
+        // `defaults write com.uygar.parrot forceSCKCapture -bool YES`.
+        if #available(macOS 15.0, *), !UserDefaults.standard.bool(forKey: "forceSCKCapture") {
+            do {
+                try startTapCapture()
+                return
+            } catch {
+                NSLog("Parrot: process-tap capture unavailable (\(error.localizedDescription)) — falling back to ScreenCaptureKit")
+            }
+            do {
+                try await startSCKCapture()
+            } catch {
+                // Neither path came up. Report in the language of the new
+                // permission, not the legacy Screen Recording one.
+                throw CaptureError.systemAudioUnavailable
+            }
+            return
+        }
+        try await startSCKCapture()
+    }
+
+    @available(macOS 15.0, *)
+    @MainActor
+    private func startTapCapture() throws {
+        let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: AVAudioChannelCount(channels),
+            interleaved: false
+        )!
+        let tap = SystemAudioTap(targetFormat: targetFormat)
+        tap.onBuffer = { [weak self] buffer in
+            guard let self, self.isCapturing else { return }
+            self.handleSystemAudio(buffer)
+        }
+        try tap.start()
+        processTap = tap
+        captureBackend = .tap
+        scheduleTapSilenceRescue()
+    }
+
+    /// An unauthorized tap "succeeds" and delivers silence forever, with no way
+    /// to ask TCC (measured). So while the tap stays all-zeros, every 15 s:
+    /// swap to ScreenCaptureKit if Screen Recording IS granted (typical for
+    /// users upgrading from the SCK era) — same buffers, same files, nothing
+    /// downstream notices; otherwise recreate the tap, because a "System
+    /// Audio" grant the user clicks mid-recording may only take effect on a
+    /// tap created after it. Either way a recording converges to real audio
+    /// within ~15 s of the user clicking Allow, and a false trigger (call
+    /// genuinely silent for 15 s) is harmless for the same reason.
+    @available(macOS 15.0, *)
+    private func scheduleTapSilenceRescue() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, self.isCapturing, self.captureBackend == .tap, !self.tapEverHadSignal,
+                  let tap = self.processTap as? SystemAudioTap else { return }
+            tap.stop()
+            self.processTap = nil
+            if CGPreflightScreenCaptureAccess() {
+                Self.oslog.log("system tap silent for 15 s — swapping to the ScreenCaptureKit backend")
+                do {
+                    try await self.startSCKCapture()
+                } catch {
+                    Self.oslog.error("SCK rescue failed — \(error.localizedDescription, privacy: .public)")
+                }
+            } else {
+                Self.oslog.log("system tap silent for 15 s — recreating it to pick up a fresh System Audio grant")
+                try? self.startTapCapture()  // re-arms this rescue
+            }
+        }
+    }
+
     // MARK: - System Audio (ScreenCaptureKit)
 
-    private func startSystemAudioCapture() async throws {
+    private func startSCKCapture() async throws {
         // Pre-check screen capture permission
         let content: SCShareableContent
         do {
@@ -312,6 +412,52 @@ final class AudioCaptureManager: NSObject {
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInteractive))
         try await stream.startCapture()
         self.stream = stream
+        captureBackend = .sck
+    }
+
+    // MARK: - System audio ingest (shared by both backends)
+
+    /// Everything downstream of capture: persist "Them" to disk, prove the tap
+    /// grant, feed the echo-canceller reference, update the level, and hand the
+    /// buffer to transcription. Buffers arrive as 16 kHz mono Float32 from
+    /// either backend; runs on that backend's own audio queue.
+    private func handleSystemAudio(_ pcmBuffer: AVAudioPCMBuffer) {
+        // Persist everyone else's voice ("Them") as PCM.
+        appendAudio(pcmBuffer, to: .system)
+
+        // First nonzero sample through the tap is the only readable proof of
+        // the System Audio TCC grant — persist it for PermissionFlow.
+        if captureBackend == .tap, !tapEverHadSignal,
+           Self.meanAbs(Self.floats(from: pcmBuffer)) > 0 {
+            tapEverHadSignal = true
+            UserDefaults.standard.set(true, forKey: PermissionFlow.tapProvenKey)
+        }
+
+        if Self.audioDebugEnabled {
+            dbgSck.add(
+                raw: Self.meanAbs(Self.floats(from: pcmBuffer)),
+                clean: nil,
+                refBacklog: nil,
+                extra: String(format: " fmt=%.0fHz x%dch",
+                              pcmBuffer.format.sampleRate, pcmBuffer.format.channelCount))
+        }
+
+        // Feed the same audio to the echo canceller as the far-end reference, so it
+        // can subtract this from the mic. Only when it's the expected 16 kHz mono.
+        if pcmBuffer.format.sampleRate == sampleRate, pcmBuffer.format.channelCount == channels {
+            echoCanceller?.pushReference(Self.floats(from: pcmBuffer))
+        } else if echoCanceller != nil, !echoCancellerStarved {
+            // Without a reference the AEC is silently a no-op and speaker bleed
+            // transcribes as "Me" — surface it once instead of hiding it.
+            NSLog("Parrot: echo canceller starved — system audio is \(pcmBuffer.format.sampleRate) Hz ×\(pcmBuffer.format.channelCount)ch, expected \(sampleRate) Hz mono")
+            DispatchQueue.main.async { self.echoCancellerStarved = true }
+        }
+
+        // Update audio level
+        updateAudioLevel(buffer: pcmBuffer)
+
+        // Send everyone else's speech to transcription as "Them"
+        onAudioBuffer?(pcmBuffer, .them)
     }
 
     // MARK: - Microphone (AVAudioEngine)
@@ -642,34 +788,7 @@ extension AudioCaptureManager: SCStreamOutput {
             return
         }
 
-        // Persist everyone else's voice ("Them") as PCM.
-        appendAudio(pcmBuffer, to: .system)
-
-        if Self.audioDebugEnabled {
-            dbgSck.add(
-                raw: Self.meanAbs(Self.floats(from: pcmBuffer)),
-                clean: nil,
-                refBacklog: nil,
-                extra: String(format: " fmt=%.0fHz x%dch",
-                              pcmBuffer.format.sampleRate, pcmBuffer.format.channelCount))
-        }
-
-        // Feed the same audio to the echo canceller as the far-end reference, so it
-        // can subtract this from the mic. Only when it's the expected 16 kHz mono.
-        if pcmBuffer.format.sampleRate == sampleRate, pcmBuffer.format.channelCount == channels {
-            echoCanceller?.pushReference(Self.floats(from: pcmBuffer))
-        } else if echoCanceller != nil, !echoCancellerStarved {
-            // Without a reference the AEC is silently a no-op and speaker bleed
-            // transcribes as "Me" — surface it once instead of hiding it.
-            NSLog("Parrot: echo canceller starved — system audio is \(pcmBuffer.format.sampleRate) Hz ×\(pcmBuffer.format.channelCount)ch, expected \(sampleRate) Hz mono")
-            DispatchQueue.main.async { self.echoCancellerStarved = true }
-        }
-
-        // Update audio level
-        updateAudioLevel(buffer: pcmBuffer)
-
-        // Send everyone else's speech to transcription as "Them"
-        onAudioBuffer?(pcmBuffer, .them)
+        handleSystemAudio(pcmBuffer)
     }
 }
 
@@ -679,12 +798,14 @@ enum CaptureError: LocalizedError {
     case noDisplay
     case noMicrophone
     case screenRecordingDenied
+    case systemAudioUnavailable
 
     var errorDescription: String? {
         switch self {
         case .noDisplay: "No display found for audio capture"
         case .noMicrophone: "No microphone available"
         case .screenRecordingDenied: "Screen Recording permission is required. Please grant it in System Settings > Privacy & Security > Screen & System Audio Recording, then restart Parrot."
+        case .systemAudioUnavailable: "System audio capture could not start. Allow Parrot in System Settings > Privacy & Security > Screen & System Audio Recording, then try again."
         }
     }
 }
