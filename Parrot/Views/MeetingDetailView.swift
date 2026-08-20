@@ -708,7 +708,9 @@ struct MeetingDetailView: View {
 struct SpeakerNamePopover: View {
     let meeting: Meeting
     let label: String
-    let playClip: (_ start: TimeInterval, _ end: TimeInterval) -> Void
+    /// Nil during a live recording: playing clips mid-call would bleed into
+    /// the capture, and the user is hearing the voice anyway.
+    var playClip: ((_ start: TimeInterval, _ end: TimeInterval) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @AppStorage("rememberVoices") private var rememberVoices = false
@@ -739,7 +741,9 @@ struct SpeakerNamePopover: View {
             Text("Who is this?")
                 .font(Theme.Typography.caption)
                 .fontWeight(.semibold)
-            Text("Listen to a couple of moments from this voice.")
+            Text(playClip != nil
+                 ? "Listen to a couple of moments from this voice."
+                 : "You're hearing them live — type who it is.")
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.ink2)
 
@@ -755,9 +759,9 @@ struct SpeakerNamePopover: View {
                 .tint(Theme.Colors.accent)
             }
 
-            ForEach(meeting.longestSegments(for: label), id: \.id) { clip in
+            ForEach(playClip == nil ? [] : meeting.longestSegments(for: label), id: \.id) { clip in
                 Button {
-                    playClip(clip.startTime, min(clip.endTime, clip.startTime + 8))
+                    playClip?(clip.startTime, min(clip.endTime, clip.startTime + 8))
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")

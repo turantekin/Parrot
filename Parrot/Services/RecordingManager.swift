@@ -10,6 +10,14 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
+    /// Live-labels sweep (experimental, "liveSpeakerLabels" default): the
+    /// repeating task and the previous run's label→embedding identities.
+    private var liveSweepTask: Task<Void, Never>?
+    private var liveAnchors: [String: [Float]] = [:]
+    /// Live voiceprint matches (label → remembered name), display-only —
+    /// bubbles show "Gürkan?" while the stored label stays Speaker N until
+    /// the user confirms post-call.
+    private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
     let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
@@ -236,6 +244,21 @@ final class RecordingManager {
         recordingStartTime = .now
         isRecording = true
 
+        // Experimental live speaker labels: re-diarize the call-so-far every
+        // 30 s so "Them" bubbles upgrade to stable Speaker N mid-call. The
+        // engine runs ~380× realtime, so each sweep costs seconds; the final
+        // post-call pass stays authoritative.
+        liveAnchors = [:]
+        liveSpeakerSuggestions = [:]
+        if UserDefaults.standard.bool(forKey: "liveSpeakerLabels") {
+            liveSweepTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    await self?.runLiveSweep()
+                }
+            }
+        }
+
         // Start elapsed time timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -254,6 +277,8 @@ final class RecordingManager {
 
         timer?.invalidate()
         timer = nil
+        liveSweepTask?.cancel()
+        liveSweepTask = nil
 
         // Stop the copilot (its ingest no-ops once inactive), then capture — so
         // the transcription buffers stop growing and the drain below terminates.
@@ -616,6 +641,45 @@ final class RecordingManager {
 
     // MARK: - Post-Processing
 
+    /// One live pass: re-diarize the call so far and relabel in place.
+    /// Failures just wait for the next cycle (the .caf is mid-write).
+    private func runLiveSweep() async {
+        guard isRecording, elapsedTime >= 45, !diarizationEngine.isProcessing,
+              let meeting = currentMeeting,
+              let path = meeting.systemAudioPath.nilIfEmpty else { return }
+        do {
+            let output = try await diarizationEngine.diarize(audioURL: URL(fileURLWithPath: path))
+            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
+            let turns = output.segments.map {
+                DiarizationEngine.SpeakerSegmentResult(
+                    speakerLabel: mapping[$0.speakerLabel] ?? $0.speakerLabel,
+                    startTime: $0.startTime, endTime: $0.endTime)
+            }
+            for segment in meeting.segments where segment.speakerLabel != "Me" {
+                if let label = Self.diarizedLabel(for: (segment.startTime, segment.endTime), turns: turns) {
+                    segment.speakerLabel = label
+                }
+            }
+            liveAnchors = Dictionary(uniqueKeysWithValues:
+                output.embeddings.map { (mapping[$0.key] ?? $0.key, $0.value) })
+
+            // Name matching in live: consult remembered voices (opt-in) so the
+            // bubbles can show "Gürkan?" instead of Speaker 2. Suggestion only.
+            if UserDefaults.standard.bool(forKey: "rememberVoices"), let context = modelContext {
+                var suggestions: [String: String] = [:]
+                for (label, embedding) in liveAnchors {
+                    if let match = SpeakerProfileStore.match(embedding, in: context) {
+                        suggestions[label] = match.name
+                    }
+                }
+                liveSpeakerSuggestions = suggestions
+            }
+            try? modelContext?.save()
+        } catch {
+            NSLog("Parrot: live speaker sweep skipped — \(error.localizedDescription)")
+        }
+    }
+
     /// Re-runs diarization on a finished meeting (audio is retained). Safe to
     /// call repeatedly; refuses the meeting currently being recorded.
     func redetectSpeakers(meeting: Meeting) async {
@@ -634,17 +698,30 @@ final class RecordingManager {
             let audioURL = URL(fileURLWithPath: audioPath)
             let output = try await diarizationEngine.diarize(audioURL: audioURL)
 
+            // Continuity with any live sweeps: keep the identities the user
+            // watched during the call. Empty anchors → identity mapping, so
+            // non-live meetings and redetect are untouched.
+            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
+            liveAnchors = [:]
+            let turns = output.segments.map {
+                DiarizationEngine.SpeakerSegmentResult(
+                    speakerLabel: mapping[$0.speakerLabel] ?? $0.speakerLabel,
+                    startTime: $0.startTime, endTime: $0.endTime)
+            }
+            let embeddings = Dictionary(uniqueKeysWithValues:
+                output.embeddings.map { (mapping[$0.key] ?? $0.key, $0.value) })
+
             // Assign speaker labels to transcript segments by time overlap.
             // "Me" segments come from the mic stream and are already attributed;
             // diarization only refines who's who within the system audio ("Them").
             for transcriptSegment in meeting.segments where transcriptSegment.speakerLabel != "Me" {
                 if let label = Self.diarizedLabel(
                     for: (transcriptSegment.startTime, transcriptSegment.endTime),
-                    turns: output.segments) {
+                    turns: turns) {
                     transcriptSegment.speakerLabel = label
                 }
             }
-            meeting.speakerEmbeddingsData = try? JSONEncoder().encode(output.embeddings)
+            meeting.speakerEmbeddingsData = try? JSONEncoder().encode(embeddings)
             try? modelContext?.save()
         } catch {
             // Diarization is a refinement pass; the audio and transcript are
@@ -653,6 +730,40 @@ final class RecordingManager {
             NSLog("Parrot: diarization failed — \(error.localizedDescription)")
             try? modelContext?.save()
         }
+    }
+
+    /// Maps a diarization run's labels onto the previous run's identities, so
+    /// live sweeps can't flip Speaker 1 and Speaker 2 mid-call when talk-time
+    /// order changes. Greedy in label order: best unused anchor with cosine
+    /// ≥ 0.7 (calibrated same-voice ≈ 0.96) wins that anchor's label;
+    /// unmatched clusters take the next unused index. Empty anchors → identity.
+    nonisolated static func stableMapping(
+        newEmbeddings: [String: [Float]],
+        anchors: [String: [Float]]
+    ) -> [String: String] {
+        var mapping: [String: String] = [:]
+        var usedAnchors: Set<String> = []
+        let newLabels = newEmbeddings.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for label in newLabels {
+            guard let embedding = newEmbeddings[label] else { continue }
+            let best = anchors
+                .filter { !usedAnchors.contains($0.key) }
+                .map { (label: $0.key, similarity: SpeakerProfileStore.cosine(embedding, $0.value)) }
+                .max { $0.similarity < $1.similarity }
+            if let best, best.similarity >= 0.7 {
+                mapping[label] = best.label
+                usedAnchors.insert(best.label)
+            }
+        }
+        // Unmatched clusters get the smallest "Speaker N" nobody else holds.
+        let reserved = Set(anchors.keys).union(mapping.values)
+        var next = 1
+        for label in newLabels where mapping[label] == nil {
+            while reserved.contains("Speaker \(next)") || mapping.values.contains("Speaker \(next)") { next += 1 }
+            mapping[label] = "Speaker \(next)"
+            next += 1
+        }
+        return mapping
     }
 
     /// Best speaker turn for a transcript segment: max time overlap, else the
