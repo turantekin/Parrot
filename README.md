@@ -232,7 +232,6 @@ No formal process. No templates. Just open an issue or PR and we'll figure it ou
 
 ## Known Issues (I'm Working on It)
 
-- **Transcription could stop the moment you joined a call** ([#12](https://github.com/turantekin/Parrot/issues/12)) — fixed in 0.11.3: when another app grabs the mic and macOS feeds Parrot silence, Parrot now detects it, shows *"mic muted by another app — reclaiming"*, retries automatically, and recovers when the mic frees up. Kept here until the original reporter confirms the fix in the wild — if you still hit it, `PARROT_AUDIO_DEBUG=1` logs from a failing call are gold.
 - **Audio permissions reset on ad-hoc source builds** — macOS ties the System Audio / Screen Recording and Microphone grants to the signing identity, and identity-less builds look like a new app every time. `make signing-help` shows two free ways to make it stick. Downloaded release builds keep the grant across updates.
 - **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
 - **Speaker diarization isn't perfect** — "Me" vs "Them" is exact (separate audio tracks), and since 0.16.0 real on-device speaker detection splits the far side apart. Similar voices or heavy crosstalk can still get a line wrong — right-click that line to reassign just it.
