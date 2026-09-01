@@ -70,6 +70,7 @@ struct SettingsView: View {
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
+    @AppStorage("liveSpeakerLabels") private var liveSpeakerLabels = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
     @State private var showFileImporter = false
@@ -315,6 +316,11 @@ struct SettingsView: View {
                     .disabled(diarizerDownloading)
                 }
                 Text("Tells apart the different people on a call, on this Mac. Downloads automatically after a call if missing. Uses pyannote models via FluidAudio (CC-BY-4.0).")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink2)
+
+                Toggle("Live speaker labels", isOn: $liveSpeakerLabels)
+                Text("Experimental. During a call, tells the other people apart every 30 seconds instead of waiting for the end. The final pass when the call ends is still the accurate one.")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink2)
 

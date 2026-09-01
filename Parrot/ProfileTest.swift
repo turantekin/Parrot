@@ -40,6 +40,7 @@ enum ProfileTest {
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
+        testLiveLabelStability()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -661,6 +662,26 @@ enum ProfileTest {
         check("sample count grows", profile?.sampleCount == 2)
         SpeakerProfileStore.deleteAll(in: ctx)
         check("deleteAll empties", SpeakerProfileStore.profiles(in: ctx).isEmpty)
+    }
+
+    static func testLiveLabelStability() {
+        typealias M = RecordingManager
+        let anchors: [String: [Float]] = ["Speaker 1": [1, 0, 0], "Speaker 2": [0, 1, 0]]
+        check("identity when no anchors",
+              M.stableMapping(newEmbeddings: ["Speaker 1": [1, 0, 0]], anchors: [:]) == ["Speaker 1": "Speaker 1"])
+        let flipped = M.stableMapping(
+            newEmbeddings: ["Speaker 1": [0, 0.99, 0.1], "Speaker 2": [0.99, 0, 0.1]],
+            anchors: anchors)
+        check("talk-order flip keeps identities",
+              flipped == ["Speaker 1": "Speaker 2", "Speaker 2": "Speaker 1"])
+        let grown = M.stableMapping(
+            newEmbeddings: ["Speaker 1": [1, 0, 0], "Speaker 2": [0, 0, 1]],
+            anchors: ["Speaker 1": [1, 0, 0]])
+        check("new voice gets fresh label", grown == ["Speaker 1": "Speaker 1", "Speaker 2": "Speaker 2"])
+        let taken = M.stableMapping(
+            newEmbeddings: ["Speaker 1": [0, 0, 1]],
+            anchors: anchors)
+        check("unmatched avoids anchor labels", taken == ["Speaker 1": "Speaker 3"])
     }
 
     static func testDiarizedLabel() {
