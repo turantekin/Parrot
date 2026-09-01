@@ -24,7 +24,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 
 ## What It Does
 
-- **Records system audio + microphone** — Captures what everyone says in a meeting (via ScreenCaptureKit) plus your own voice
+- **Records system audio + microphone** — Captures what everyone says in a meeting (audio-only Core Audio taps on macOS 15+, ScreenCaptureKit on macOS 14) plus your own voice
 - **Knows who said what** — On-device speaker detection tells the people on the call apart. Name each voice once from short clips, and the transcript, reports, and coaching all use real names. Turn on **Remember voices** and Parrot suggests who's talking on the next call. Free and fully local. (Meetily charges $10/month for diarization; Anarlog $15/month, via the cloud.)
 - **Real-time transcription, your choice of engine** — On-device WhisperKit by default (private, free). Or bring your own key for **Groq** (big-model accuracy for ~$0.04/hr) or **Deepgram** (true streaming — words appear ~300 ms after they're spoken). Cloud engines fall back to on-device automatically if anything fails mid-call
 - **Transcripts read like people talk** — Lines land as whole sentences when the speaker pauses (not chopped 2-second fragments), with a live preview filling in while they're still mid-sentence. Silence is never transcribed
@@ -33,7 +33,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 - **You control what the Copilot spends** — A pace setting (Relaxed fits free model tiers), a dial for how much conversation each request carries, and a pause button right on the call screen: while paused, nothing is sent and nothing is spent
 - **Call Profiles** — Reshape the copilot per call type (sales discovery, 1:1 coaching, interviews…): each profile has its own insight kinds, sentiment gauges, persona, and tone
 - **Per-call AI cost transparency** — Every meeting shows what the AI actually cost: model, tokens, calls, transcription minutes, and estimated dollars, with a line-by-line breakdown. Local features show $0.00, proudly
-- **Knows who's talking** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; energy-based diarization then refines who's who within "Them" after the call
+- **Knows who's talking, live** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; speaker detection then refines who's who within "Them" after the call
 - **Post-call reports** — AI summary with pain points, plus a coaching report: talk ratio, what went well, what to improve, objections handled vs missed, and commitments
 - **Per-call notes** — Type notes live during the call (side panel) and edit them later; stored with the meeting
 - **Playback synced with the transcript** — Click a transcript line, hear that moment
@@ -51,7 +51,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 | Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0) — on-device pyannote-derived models (CC-BY-4.0), ~13 MB downloaded on first use |
 | Copilot & reports (optional, BYO key) | Claude API (Haiku) with structured outputs |
 | Knowledge base | Apple NaturalLanguage embeddings — documents chunked & embedded on-device, never uploaded |
-| System Audio | ScreenCaptureKit (no virtual audio drivers needed) |
+| System Audio | Core Audio process taps on macOS 15+ · ScreenCaptureKit on macOS 14 (no virtual audio drivers needed) |
 | Microphone | AVAudioEngine |
 | Storage | SwiftData + SQLite |
 | Project | [xcodegen](https://github.com/yonaskolb/XcodeGen) — `project.yml` is the source of truth |
@@ -212,7 +212,7 @@ Things I want to add but haven't figured out yet:
 - [ ] **Calendar integration** — auto-name meetings based on what's on my calendar
 - [ ] **Keyword bookmarks** — mark important moments during a recording
 - [ ] **Better waveform visualization** — the current one is... functional
-- [x] **Notarize and distribute** — done! Notarized DMG on the [Releases page](https://github.com/turantekin/Parrot/releases). Auto-update (Sparkle) still to come
+- [x] **Notarize and distribute** — done! Notarized DMG on the [Releases page](https://github.com/turantekin/Parrot/releases), and since 0.14.0 Parrot keeps itself up to date (Sparkle)
 
 If any of these excite you, jump in!
 
@@ -222,7 +222,7 @@ Seriously, if you're into Swift/macOS development, audio processing, or ML on-de
 
 Here's where I could really use a hand:
 
-- **Speaker diarization** — The current approach is energy-based and can't reliably tell multiple far-side voices apart. If you know anything about CoreML, Pyannote, or voice fingerprinting, please help me make this actually work.
+- **Speaker diarization** — Real on-device diarization landed in 0.16.0 (FluidAudio, pyannote-derived models). Overlapping speech and very similar voices can still fool it, and live speaker labels during the call are still cooking. If you know this space, I'd love the help.
 - **Permission edge cases** — macOS 15+ now uses the audio-only System Audio Recording permission (Core Audio process taps), with ScreenCaptureKit kept for macOS 14. The catch: taps have no permission-status API at all (an unauthorized tap just delivers silence), so if you know TCC quirks around `kTCCServiceAudioCapture`, I want to hear from you.
 - **Bug fixes** — Found something broken? Open a PR, I'll review it quickly.
 - **Feature ideas** — Open an issue and let's chat about it.
@@ -235,7 +235,7 @@ No formal process. No templates. Just open an issue or PR and we'll figure it ou
 - **Transcription could stop the moment you joined a call** ([#12](https://github.com/turantekin/Parrot/issues/12)) — fixed in 0.11.3: when another app grabs the mic and macOS feeds Parrot silence, Parrot now detects it, shows *"mic muted by another app — reclaiming"*, retries automatically, and recovers when the mic frees up. Kept here until the original reporter confirms the fix in the wild — if you still hit it, `PARROT_AUDIO_DEBUG=1` logs from a failing call are gold.
 - **Audio permissions reset on ad-hoc source builds** — macOS ties the System Audio / Screen Recording and Microphone grants to the signing identity, and identity-less builds look like a new app every time. `make signing-help` shows two free ways to make it stick. Downloaded release builds keep the grant across updates.
 - **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
-- **Speaker diarization is... okay** — "Me" vs "Them" is exact (separate audio tracks), but splitting multiple far-side voices apart is energy-based and imperfect, especially with 3+ people on the other end. Real voice fingerprinting is on my list.
+- **Speaker diarization isn't perfect** — "Me" vs "Them" is exact (separate audio tracks), and since 0.16.0 real on-device speaker detection splits the far side apart. Similar voices or heavy crosstalk can still get a line wrong — right-click that line to reassign just it.
 
 ## Similar Projects
 
