@@ -10,13 +10,17 @@ final class TranscriptSegment {
     var text: String
     var speakerLabel: String?
     var confidence: Float?
+    var translatedText: String?
+    var detectedLanguage: String?
 
     init(
         startTime: TimeInterval,
         endTime: TimeInterval,
         text: String,
         speakerLabel: String? = nil,
-        confidence: Float? = nil
+        confidence: Float? = nil,
+        translatedText: String? = nil,
+        detectedLanguage: String? = nil
     ) {
         self.id = UUID()
         self.startTime = startTime
@@ -24,6 +28,8 @@ final class TranscriptSegment {
         self.text = text
         self.speakerLabel = speakerLabel
         self.confidence = confidence
+        self.translatedText = translatedText
+        self.detectedLanguage = detectedLanguage
     }
 
     var formattedTimestamp: String {

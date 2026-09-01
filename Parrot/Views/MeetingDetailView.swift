@@ -861,9 +861,17 @@ struct TranscriptSegmentRow: View {
             }
 
             // Text
-            Text(segment.text)
-                .font(Theme.Typography.body)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(segment.text)
+                    .font(Theme.Typography.body)
+                    .textSelection(.enabled)
+                if let translated = segment.translatedText, translated != segment.text {
+                    Text(translated)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .textSelection(.enabled)
+                }
+            }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

@@ -1,5 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(Translation)
+import Translation
+#endif
 
 /// Which pane the live side panel shows.
 enum LiveSideTab: String {
@@ -23,6 +26,8 @@ struct LiveRecordingView: View {
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("liveSideTab") private var sideTabRaw = LiveSideTab.transcript.rawValue
     @AppStorage("liveSideCollapsed") private var sideCollapsed = false
+    @AppStorage(TranslationPolicy.enabledKey) private var liveTranslation = false
+    @AppStorage(TranslationPolicy.targetKey) private var translationTarget = ""
 
     private var sideTab: LiveSideTab { LiveSideTab(rawValue: sideTabRaw) ?? .transcript }
 
@@ -61,6 +66,19 @@ struct LiveRecordingView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+#if canImport(Translation)
+        .background {
+            if #available(macOS 15.0, *), liveTranslation {
+                LiveTranslationBinder(
+                    targetLanguage: translationTarget.isEmpty
+                        ? (Locale.current.language.languageCode?.identifier ?? "en")
+                        : translationTarget
+                ) { session in
+                    recordingManager.translationEngine.attachLiveSession(session)
+                }
+            }
+        }
+#endif
     }
 
     // MARK: - Recording Header
@@ -451,10 +469,19 @@ struct ChatBubbleRow: View {
                 .padding(isMe ? .trailing : .leading, 6)
             }
 
-            Text(segment.text)
-                .font(Theme.Typography.body)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: isMe ? .trailing : .leading, spacing: 4) {
+                Text(segment.text)
+                    .font(Theme.Typography.body)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let translated = segment.translatedText, translated != segment.text {
+                    Text(translated)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
@@ -559,3 +586,24 @@ struct AudioWaveformView: View {
         .animation(.linear(duration: 0.1), value: levels)
     }
 }
+
+#if canImport(Translation)
+@available(macOS 15.0, *)
+private struct LiveTranslationBinder: View {
+    let targetLanguage: String
+    let onSession: (TranslationSession) -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .translationTask(
+                TranslationSession.Configuration(
+                    source: nil,
+                    target: Locale.Language(components: Locale.Language.Components(identifier: targetLanguage))
+                )
+            ) { session in
+                onSession(session)
+            }
+    }
+}
+#endif

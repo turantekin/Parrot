@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import WhisperKit
 
 /// Offscreen logic harness. Run: `.build/debug/Parrot --profile-test`
 /// Prints PASS/FAIL per check and exits non-zero on any failure.
@@ -40,6 +41,10 @@ enum ProfileTest {
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
+        testASRLoopPolicy()
+        testASRLanguageRouter()
+        testTranslationPolicy()
+        testMeetingRef()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -498,12 +503,23 @@ enum ProfileTest {
         func speech(_ frames: Int) -> [Float] { Array(repeating: 0.02, count: frames * Seg.frame) }
         func silence(_ frames: Int) -> [Float] { Array(repeating: 0.0001, count: frames * Seg.frame) }
 
-        // Silence never decodes: live keeps only the partial tail frame, drain eats all.
+        // Short silence stays buffered. Once we have 2 s, take a 3 s window
+        // from the front so quiet speech is decoded instead of deleted.
         let quiet = silence(8) + [0.0001, 0.0001]
-        check("seg silence live drops whole frames",
-              Seg.nextCut(in: quiet, draining: false) == .init(dropLeading: 8 * Seg.frame, take: nil))
-        check("seg silence draining drops everything",
-              Seg.nextCut(in: quiet, draining: true) == .init(dropLeading: quiet.count, take: nil))
+        check("seg short silence live waits",
+              Seg.nextCut(in: quiet, draining: false) == .init(dropLeading: 0, take: nil))
+        let tiny = silence(2)
+        check("seg tiny silence draining drops",
+              Seg.nextCut(in: tiny, draining: true) == .init(dropLeading: tiny.count, take: nil))
+        check("seg 0.8s silence draining is decoded",
+              Seg.nextCut(in: quiet, draining: true) == .init(dropLeading: 0, take: quiet.count))
+        let longSilence = silence(40)
+        check("seg 4s silence is a decode window",
+              Seg.nextCut(in: longSilence, draining: false)
+                == .init(dropLeading: 0, take: ASRLoopPolicy.silenceLookbackSamples))
+        check("seg long silence draining walks a window",
+              Seg.nextCut(in: longSilence, draining: true)
+                == .init(dropLeading: 0, take: ASRLoopPolicy.silenceLookbackSamples))
 
         // Speech bounded by a pause cuts at the boundary, padded 100 ms into it.
         let utterance = silence(3) + speech(10) + silence(Seg.pauseFrames) + speech(2)
@@ -527,8 +543,12 @@ enum ProfileTest {
         check("seg continuous speech waits",
               Seg.nextCut(in: running, draining: false) == .init(dropLeading: 0, take: nil))
         let monologue = speech(Seg.maxSegmentSamples / Seg.frame + 10)
-        check("seg cap forces a cut",
-              Seg.nextCut(in: monologue, draining: false) == .init(dropLeading: 0, take: Seg.maxSegmentSamples))
+        let capCut = Seg.nextCut(in: monologue, draining: false)
+        check("seg cap forces a cut", capCut.dropLeading == 0 && capCut.take != nil)
+        check("seg soft cap is at most 4s", (capCut.take ?? 0) <= ASRLoopPolicy.softCapSamples)
+        let soft = speech(ASRLoopPolicy.softCapSamples / Seg.frame + 5)
+        let softCut = Seg.nextCut(in: soft, draining: false)
+        check("seg 4s speech is cut", softCut.take != nil && softCut.dropLeading == 0)
         check("seg draining takes the tail",
               Seg.nextCut(in: running, draining: true) == .init(dropLeading: 0, take: running.count))
 
@@ -543,15 +563,14 @@ enum ProfileTest {
         func quietSpeech(_ frames: Int) -> [Float] { Array(repeating: 0.0014, count: frames * Seg.frame) }
         func roomNoise(_ frames: Int) -> [Float] { Array(repeating: 0.0002, count: frames * Seg.frame) }
         let quietUtterance = roomNoise(3) + quietSpeech(10) + roomNoise(Seg.pauseFrames) + quietSpeech(2)
-        check("seg legacy floor is blind to quiet speech",  // documents the bug
-              Seg.nextCut(in: quietUtterance, draining: false)
-                == .init(dropLeading: quietUtterance.count, take: nil))
+        check("seg legacy floor still misses quiet speech frames",
+              Seg.nextCut(in: quietUtterance, draining: false, floor: Seg.silenceFloor).take
+                == ASRLoopPolicy.silenceWindowTake(sampleCount: (quietUtterance.count / Seg.frame) * Seg.frame))
         check("seg adaptive floor cuts quiet speech at its pause",
               Seg.nextCut(in: quietUtterance, draining: false, floor: 0.0008)
                 == .init(dropLeading: 3 * Seg.frame, take: (10 + Seg.padFrames) * Seg.frame))
-        check("seg adaptive floor still discards quiet-room silence",
-              Seg.nextCut(in: roomNoise(8), draining: false, floor: 0.0008)
-                == .init(dropLeading: 8 * Seg.frame, take: nil))
+        check("seg adaptive floor still does not decode quiet-room silence",
+              Seg.nextCut(in: roomNoise(8), draining: false, floor: 0.0008).take == nil)
     }
 
     // The quiet-mic pipeline (2026-08-04 live trace): buffer-derived noise
@@ -583,10 +602,9 @@ enum ProfileTest {
         // Flat true silence still reads as silence and is discarded.
         check("flat quiet-room window reads as silence",
               Seg.adaptiveFloor(for: roomNoise(8)) == Seg.silenceFloor)
-        check("quiet-room silence is still discarded",
+        check("quiet-room silence is still not decoded",
               Seg.nextCut(in: roomNoise(8), draining: false,
-                          floor: Seg.adaptiveFloor(for: roomNoise(8)))
-                == .init(dropLeading: 8 * Seg.frame, take: nil))
+                          floor: Seg.adaptiveFloor(for: roomNoise(8))).take == nil)
 
         // Normal gain: derived floor never exceeds the legacy fixed one, so
         // no environment behaves worse than shipped.
@@ -814,5 +832,172 @@ enum ProfileTest {
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: false) == .openSettings)
         check("sysaudio: after prompt + Settings it stops gatekeeping",
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: true) == .granted)
+    }
+
+    static func testASRLoopPolicy() {
+        let long = [Float](repeating: 0.1, count: ASRLoopPolicy.tailPreviewSamples + 8000)
+        check("preview off is empty", ASRLoopPolicy.previewSamples(long, mode: .off).isEmpty)
+        check("preview tail capped",
+              ASRLoopPolicy.previewSamples(long, mode: .tail).count == ASRLoopPolicy.tailPreviewSamples)
+        let huge = [Float](repeating: 0.1, count: ASRLoopPolicy.maxDecodeSamples + 1000)
+        check("decode window cap",
+              ASRLoopPolicy.applyDecodeWindowCap(huge).count == ASRLoopPolicy.maxDecodeSamples)
+        check("preview mutex skips when commit in flight",
+              ASRLoopPolicy.shouldPreview(
+                mode: .tail, commitInFlight: true,
+                pendingCount: TranscriptionEngine.Segmenter.minSpeechSamples + 1,
+                now: Date(), nextAt: .distantPast) == false)
+        check("preview waits until nextAt",
+              ASRLoopPolicy.shouldPreview(
+                mode: .on, commitInFlight: false,
+                pendingCount: TranscriptionEngine.Segmenter.minSpeechSamples + 1,
+                now: Date(), nextAt: Date().addingTimeInterval(10)) == false)
+        check("preview yields to other-stream commit",
+              ASRLoopPolicy.shouldPreview(
+                mode: .tail, commitInFlight: false,
+                pendingCount: TranscriptionEngine.Segmenter.minSpeechSamples + 1,
+                now: Date(), nextAt: .distantPast, otherCommitReady: true) == false)
+        check("wasted decode empty+energy",
+              ASRLoopPolicy.isWastedDecode(energyPassed: true, text: "   "))
+        check("real text is not wasted",
+              !ASRLoopPolicy.isWastedDecode(energyPassed: true, text: "hello"))
+        check("drop short drain tail",
+              ASRLoopPolicy.shouldDropDrainTail(100, draining: true))
+        check("keep live short speech",
+              !ASRLoopPolicy.shouldDropDrainTail(100, draining: false))
+
+        var options = DecodingOptions(task: .transcribe, language: nil, detectLanguage: true)
+        options = ASRLoopPolicy.applyingLanguageFreeze(options, frozen: "tr")
+        check("freeze sets language", options.language == "tr")
+        check("freeze clears detectLanguage", options.detectLanguage == false)
+        check("preview options never detect",
+              ASRLoopPolicy.previewOptions(DecodingOptions(task: .transcribe, language: nil, detectLanguage: true)).detectLanguage == false)
+        let hinted = ASRLoopPolicy.previewOptions(
+            DecodingOptions(task: .transcribe, language: nil, detectLanguage: true),
+            hintLanguage: "de"
+        )
+        check("preview hint sets language", hinted.language == "de")
+        check("preview hint still skips detect", hinted.detectLanguage == false)
+
+        let spec = LoopSessionConfig.parseBenchSpec("preview=on,language=auto,fallback=3,compute=gpu,backend=whisper,streams=2")
+        check("bench spec preview", spec.preview == .on)
+        check("bench spec auto language", spec.language == nil)
+        check("auto does not freeze language", spec.freezeLanguage == false)
+        check("explicit freeze stays on",
+              LoopSessionConfig.parseBenchSpec("language=auto,freeze=true").freezeLanguage == true)
+        check("bench spec fallback", spec.fallbackCount == 3)
+        check("bench spec compute", spec.compute == .gpu)
+        check("bench spec streams", spec.streams == 2)
+        check("english weights map base",
+              LoopSessionConfig.resolvedWhisperModel("base", language: "en") == "base.en")
+        check("english weights leave turbo",
+              LoopSessionConfig.resolvedWhisperModel("large-v3-turbo", language: "en") == "large-v3-turbo")
+
+        check("p50 of five", DecodeStats.percentile([1, 2, 3, 4, 5], 0.5) == 3)
+        check("empty percentile nil", DecodeStats.percentile([], 0.9) == nil)
+
+        check("speculative preview at 2s",
+              ASRLoopPolicy.shouldSpeculativePreview(pendingCount: ASRLoopPolicy.speculativePendingSamples))
+        check("no speculative preview under 2s",
+              !ASRLoopPolicy.shouldSpeculativePreview(pendingCount: ASRLoopPolicy.speculativePendingSamples - 1))
+        check("silence window waits under 2s",
+              ASRLoopPolicy.silenceWindowTake(sampleCount: ASRLoopPolicy.speculativePendingSamples - 1) == nil)
+        check("silence window takes 3s at 4s",
+              ASRLoopPolicy.silenceWindowTake(sampleCount: ASRLoopPolicy.sampleRate * 4)
+                == ASRLoopPolicy.silenceLookbackSamples)
+        check("agreement consume leaves a tail",
+              LocalAgreement.samplesForPrefix(
+                pendingSamples: 16_000, confirmed: "hello there", hypothesis: "hello there everyone"
+              ) < 16_000)
+        check("agreement consume is zero on empty pending",
+              LocalAgreement.samplesForPrefix(pendingSamples: 0, confirmed: "a b", hypothesis: "a b c") == 0)
+
+        let valleyBuf = [Float](repeating: 0.02, count: ASRLoopPolicy.softCapSamples + TranscriptionEngine.Segmenter.frame * 2)
+        check("valley take on 4s speech",
+              ASRLoopPolicy.energyValleyTake(in: valleyBuf, drop: 0, speechLen: valleyBuf.count) != nil)
+        check("no valley take under soft cap",
+              ASRLoopPolicy.energyValleyTake(in: Array(valleyBuf.prefix(1000)), drop: 0, speechLen: 1000) == nil)
+
+        check("previous text keeps last 40 words",
+              ASRLoopPolicy.previousTextPrompt((1...50).map { "w\($0)" }.joined(separator: " "))
+                .split(separator: " ").count == 40)
+
+        var prompted = DecodingOptions(task: .transcribe, language: "en", detectLanguage: false)
+        prompted = ASRLoopPolicy.applyingPreviousText(prompted, tokens: [1, 2, 3])
+        check("previous text sets prompt tokens", prompted.promptTokens == [1, 2, 3])
+        check("previous text enables prefill", prompted.usePrefillPrompt == true)
+
+        check("agreement needs two shared words",
+              LocalAgreement.confirmedPrefix("hello there friend", "hello there everyone") == "hello there")
+        check("agreement ignores trailing punct",
+              LocalAgreement.confirmedPrefix("Hello, there.", "hello there folks") == "hello there")
+        check("agreement rejects one-word overlap",
+              LocalAgreement.confirmedPrefix("hello friend", "hello everyone") == nil)
+        check("agreement delta is the new tail",
+              LocalAgreement.delta(emitted: "hello there", confirmed: "hello there everyone") == "everyone")
+        check("agreement delta nil when caught up",
+              LocalAgreement.delta(emitted: "hello there", confirmed: "hello there") == nil)
+        check("remainder strips emitted prefix",
+              LocalAgreement.remainder(emitted: "hello there", full: "hello there everyone") == "everyone")
+        check("remainder keeps full on mismatch",
+              LocalAgreement.remainder(emitted: "nope", full: "hello there") == "hello there")
+        check("remainder empty when already emitted",
+              LocalAgreement.remainder(emitted: "hello there", full: "hello there").isEmpty)
+    }
+
+    static func testASRLanguageRouter() {
+        check("en routes parakeet", ASRLanguageRouter.backend(for: "en") == .parakeet)
+        check("tr routes sensevoice", ASRLanguageRouter.backend(for: "tr") == .sensevoice)
+        check("unknown routes whisper", ASRLanguageRouter.backend(for: "xx") == .whisper)
+        check("auto/nil routes whisper", ASRLanguageRouter.backend(for: nil) == .whisper)
+        check("explicit parakeet kept",
+              ASRLanguageRouter.resolved(requested: .parakeet, language: "xx") == .parakeet)
+        check("streaming ASR gated until bench win", FluidStreamingASR.isAvailable == false)
+        check("fallback notice for parakeet",
+              FluidStreamingASR.fallbackNotice(for: .parakeet) != nil)
+        check("no notice for whisper",
+              FluidStreamingASR.fallbackNotice(for: .whisper) == nil)
+        check("CTC vocab boost gated", FluidVocabBoost.isAvailable == false)
+    }
+
+    static func testTranslationPolicy() {
+        check("same language skip",
+              !TranslationPolicy.shouldTranslate(source: "en", target: "en", text: "hello there"))
+        check("short skip",
+              !TranslationPolicy.shouldTranslate(source: "de", target: "en", text: "a"))
+        check("pair allowed",
+              TranslationPolicy.shouldTranslate(source: "de", target: "en", text: "Guten Tag"))
+        let responses = [
+            TranslationResponse(clientIdentifier: "a", text: "Hello"),
+            TranslationResponse(clientIdentifier: "c", text: "Bye"),
+        ]
+        let mapped = TranslationPolicy.mapBatch([], responses: responses)
+        check("maps client a", mapped["a"] == "Hello")
+        check("maps client c", mapped["c"] == "Bye")
+        check("unknown id missing", mapped["b"] == nil)
+    }
+
+    static func testMeetingRef() {
+        let raw = """
+        {"meta":{"schema":1}}
+        {"text":"a","startRecordingMs":4448,"endRecordingMs":5177,"speaker":{"source":"system"}}
+        {"text":"b","startRecordingMs":20000,"endRecordingMs":24000,"speaker":{"source":"mic"}}
+        {"text":"c","startRecordingMs":190000,"endRecordingMs":191000,"speaker":{"source":"system"}}
+        """
+        let all = MeetingLiveRef.parseNDJSON(raw)
+        check("skips meta", all.count == 3)
+        check("first start", all[0].startMs == 4448)
+        check("system counted", all[0].source == "system")
+        let win = MeetingLiveRef.inWindow(all, windowMs: 180_000)
+        check("window drops late line", win.count == 2)
+        let stats = MeetingRefStats.of(win)
+        check("window mic/sys", stats.mic == 1 && stats.system == 1)
+        check("window first", stats.firstMs == 4448)
+        check("p50 dur is 729 or 4000", stats.p50DurMs == 729 || stats.p50DurMs == 4000)
+        let report = MeetingCompare.lines(
+            ref: stats, oursSegments: 5, oursFirstMs: 115_865, oursP50DurMs: 2000
+        )
+        check("report names the bench", report.contains(where: { $0.hasPrefix("=== meeting-bench") }))
+        check("lag is ours minus ref", report.contains(where: { $0.contains("111417") }))
     }
 }

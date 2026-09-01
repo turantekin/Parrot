@@ -14,6 +14,7 @@ final class RecordingManager {
     let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
     let profileStore = ProfileStore()
+    let translationEngine = TranslationEngine()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -456,12 +457,25 @@ final class RecordingManager {
             endTime: result.endTime,
             text: result.text,
             speakerLabel: result.source.label,
-            confidence: result.confidence
+            confidence: result.confidence,
+            detectedLanguage: result.detectedLanguage
         )
 
         modelContext.insert(segment)
         segment.meeting = meeting
         try? modelContext.save()
+
+        if TranslationEngine.isEnabled {
+            let text = result.text
+            let lang = result.detectedLanguage
+            Task { @MainActor in
+                guard let translated = await self.translationEngine.translateCommitted(
+                    text: text, id: segment.id.uuidString, sourceLanguage: lang
+                ) else { return }
+                segment.translatedText = translated
+                try? modelContext.save()
+            }
+        }
     }
 
     /// Near-verbatim match for the echo-dedup above: Whisper decodes the bleed
@@ -646,6 +660,8 @@ final class RecordingManager {
             }
             meeting.speakerEmbeddingsData = try? JSONEncoder().encode(output.embeddings)
             try? modelContext?.save()
+            // DiarizerManager is scoped to diarize() — models leave RAM here.
+            // Do not keep a second ASR stack loaded; streaming ASR stays gated.
         } catch {
             // Diarization is a refinement pass; the audio and transcript are
             // already saved. Keep the generic "Them" labels rather than showing

@@ -9,14 +9,14 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 112 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
 | `Parrot/ProfileTest.swift` | 363 | `--profile-test`: headless logic harness, ~60 assertions |
-| `Parrot/SnapshotTool.swift` | 522 | Offscreen PNG renderers + transcribe/analyze harnesses |
+| `Parrot/SnapshotTool.swift` | 522 | Offscreen PNG renderers + `--liveloop-test` / `--asr-bench` / `--meeting-bench` / `--translate-test` |
 
 ## Models (SwiftData `@Model` + Codable values)
 
 | File | L | Purpose |
 |---|---|---|
 | `Models/Meeting.swift` | 166 | `Meeting` record + `MeetingStatus` lifecycle + per-speaker names/embeddings |
-| `Models/TranscriptSegment.swift` | 34 | One diarized, timestamped utterance |
+| `Models/TranscriptSegment.swift` | 40 | One diarized, timestamped utterance + optional translation |
 | `Models/Insight.swift` | 60 | `CallInsight` (stored) and `Insight` (live value) |
 | `Models/CallProfile.swift` | 92 | Per-call-type prompt config: kinds, sentiment gauges |
 | `Models/KindStyle.swift` | 84 | Maps insight kinds to icon/color; `Color` helpers |
@@ -32,7 +32,11 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/AudioCaptureManager.swift` | 700 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
 | `Services/SystemAudioTap.swift` | 250 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
-| `Services/TranscriptionEngine.swift` | 947 | On-device WhisperKit; `AudioSource` routing; live preview decode |
+| `Services/TranscriptionEngine.swift` | 1180 | On-device WhisperKit; live preview; LocalAgreement commits; `DecodeStats` |
+| `Services/DecodeStats.swift` | 145 | Live-loop decode counters + RSS for harness footers |
+| `Services/ASRLoopPolicy.swift` | 330 | Preview/language-freeze/compute knobs; LocalAgreement; ASR backend router |
+| `Services/MeetingRef.swift` | 90 | Wispr-style `live.ndjson` parse + meeting-bench compare |
+| `Services/TranslationEngine.swift` | 100 | Committed-line translation protocol + stub provider |
 | `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
 | `Services/DiarizationEngine.swift` | 105 | FluidAudio offline pyannote diarization (CoreML): labels + per-speaker embeddings |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |

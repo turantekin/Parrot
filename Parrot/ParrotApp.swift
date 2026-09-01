@@ -28,6 +28,19 @@ struct ParrotMain {
             LiveLoopTest.run(audioPath: args[i + 1], model: model)
             return
         }
+        if let i = args.firstIndex(of: "--asr-bench"), i + 1 < args.count {
+            AsrBench.run(arguments: Array(args[(i + 1)...]))
+            return
+        }
+        if args.contains("--meeting-bench") {
+            let i = args.firstIndex(of: "--meeting-bench")!
+            MeetingBench.run(arguments: Array(args[(i + 1)...]))
+            return
+        }
+        if args.contains("--translate-test") {
+            TranslateTest.run()
+            return
+        }
         if let i = args.firstIndex(of: "--transcribe-test"), i + 1 < args.count {
             let modelFolder = (i + 2 < args.count) ? args[i + 2] : ""
             TranscribeTest.run(audioPath: args[i + 1], modelFolder: modelFolder)

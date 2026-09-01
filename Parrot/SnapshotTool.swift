@@ -351,53 +351,86 @@ enum HelpShots {
 ///   Parrot --liveloop-test /path/audio.aiff [model]
 /// Set LIVELOOP_REALTIME=1 to feed at recording pace (slow, but reproduces
 /// live polling interleave); default feeds everything and drains.
+/// The metrics footer is the baseline — record it locally per chip, do not
+/// check in a golden file that flakes across machines.
 /// Born from a real drop: the middle sentence of a three-sentence test never
 /// reached the transcript while both neighbors did (2026-08-01).
 enum LiveLoopTest {
+    struct RunResult {
+        var segments: [(text: String, start: TimeInterval, end: TimeInterval)]
+        var stats: DecodeStats.Snapshot
+    }
+
     static func run(audioPath: String, model: String) {
         // dispatchMain(), not a semaphore: the engine's lifecycle funcs are
         // @MainActor, so the main thread must service the main queue rather
         // than block — a sem.wait() here deadlocks before the first print.
         Task { @MainActor in
-            // LIVELOOP_VOCAB simulates the app's custom vocabulary (glossary
-            // prompt) without touching persisted defaults — the same
-            // register(defaults:) trick the snapshot harnesses use.
-            if let vocab = ProcessInfo.processInfo.environment["LIVELOOP_VOCAB"] {
-                UserDefaults.standard.register(defaults: ["customVocabulary": vocab])
+            do {
+                let result = try await execute(
+                    audioPath: audioPath,
+                    model: model.isEmpty ? "base" : model,
+                    config: LoopSessionConfig.fromEnvironmentAndDefaults()
+                )
+                print("=== liveloop-test — \(result.segments.count) segment(s) ===")
+                for seg in result.segments {
+                    print(String(format: "[%6.2f – %6.2f] %@", seg.start, seg.end, seg.text))
+                }
+                for line in result.stats.footerLines() { print(line) }
+                exit(0)
+            } catch {
+                print("liveloop-test: \(error)")
+                exit(1)
             }
-            let engine = TranscriptionEngine()
-            await engine.loadModel(model.isEmpty ? "base" : model)
-            guard engine.isReady else { print("liveloop-test: model failed to load"); exit(1) }
-
-            var emitted: [(text: String, start: TimeInterval, end: TimeInterval)] = []
-            engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime)) }
-
-            let samples: [Float]
-            do { samples = try loadSamples16k(path: audioPath) } catch {
-                print("liveloop-test: audio load failed — \(error)"); exit(1)
-            }
-            print("liveloop-test: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000))s)")
-
-            engine.startTranscribing(meetingStartTime: .now)
-            let realtime = ProcessInfo.processInfo.environment["LIVELOOP_REALTIME"] != nil
-            let slice = 3200  // 200 ms, the ballpark capture delivers
-            var i = 0
-            while i < samples.count {
-                let end = min(i + slice, samples.count)
-                engine.appendAudio(pcmBuffer(Array(samples[i..<end])), source: .them)
-                if realtime { try? await Task.sleep(for: .milliseconds(200)) }
-                i = end
-            }
-            await engine.stopTranscribing()  // drain the tail
-            try? await Task.sleep(for: .seconds(0.5))  // let queued onSegment hops land
-
-            print("=== liveloop-test — \(emitted.count) segment(s) ===")
-            for seg in emitted {
-                print(String(format: "[%6.2f – %6.2f] %@", seg.start, seg.end, seg.text))
-            }
-            exit(0)
         }
         dispatchMain()
+    }
+
+    @MainActor
+    static func execute(
+        audioPath: String,
+        model: String,
+        config: LoopSessionConfig
+    ) async throws -> RunResult {
+        if let vocab = ProcessInfo.processInfo.environment["LIVELOOP_VOCAB"] {
+            UserDefaults.standard.register(defaults: ["customVocabulary": vocab])
+        }
+        let engine = TranscriptionEngine()
+        engine.sessionOverride = config
+        await engine.loadModel(model)
+        guard engine.isReady else { throw LiveLoopError.modelFailed }
+
+        var emitted: [(text: String, start: TimeInterval, end: TimeInterval)] = []
+        engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime)) }
+
+        let samples = try loadSamples16k(path: audioPath)
+        print("liveloop-test: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000))s)")
+
+        engine.startTranscribing(meetingStartTime: .now)
+        let realtime = ProcessInfo.processInfo.environment["LIVELOOP_REALTIME"] != nil
+        let slice = 3200
+        var i = 0
+        let feedBoth = config.streams > 1
+        while i < samples.count {
+            let end = min(i + slice, samples.count)
+            let buf = pcmBuffer(Array(samples[i..<end]))
+            engine.appendAudio(buf, source: .them)
+            if feedBoth { engine.appendAudio(buf, source: .me) }
+            if realtime { try? await Task.sleep(for: .milliseconds(200)) }
+            i = end
+        }
+        await engine.stopTranscribing()
+        try? await Task.sleep(for: .seconds(0.5))
+        engine.unloadModel()
+        return RunResult(
+            segments: emitted,
+            stats: engine.snapshotDecodeStats(segmentCount: emitted.count)
+        )
+    }
+
+    enum LiveLoopError: LocalizedError {
+        case modelFailed
+        var errorDescription: String? { "model failed to load" }
     }
 
     /// File → 16 kHz mono Float32, the engine's expected input format.
@@ -424,7 +457,7 @@ enum LiveLoopTest {
                                          count: Int(outBuf.frameLength)))
     }
 
-    private static func pcmBuffer(_ samples: [Float]) -> AVAudioPCMBuffer {
+    fileprivate static func pcmBuffer(_ samples: [Float]) -> AVAudioPCMBuffer {
         let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000,
                                    channels: 1, interleaved: false)!
         let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count))!
@@ -433,6 +466,249 @@ enum LiveLoopTest {
             buf.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count)
         }
         return buf
+    }
+}
+
+/// A/B two decode policies on the same file.
+///   Parrot --asr-bench /path/audio.aiff --a "preview=on,language=auto,fallback=3" --b "preview=tail,language=en,fallback=1"
+enum AsrBench {
+    static func run(arguments: [String]) {
+        Task { @MainActor in
+            await execute(arguments: arguments)
+        }
+        dispatchMain()
+    }
+
+    @MainActor
+    private static func execute(arguments: [String]) async {
+        guard let audio = arguments.first, !audio.hasPrefix("--") else {
+            print("asr-bench: usage: --asr-bench <audio> --a spec --b spec [model]")
+            exit(1)
+        }
+        var specA = "preview=on,language=auto,fallback=3,compute=ane"
+        var specB = "preview=tail,language=en,fallback=1,compute=gpu"
+        var model = "base"
+        var i = 1
+        while i < arguments.count {
+            let arg = arguments[i]
+            if arg == "--a", i + 1 < arguments.count {
+                specA = arguments[i + 1]; i += 2; continue
+            }
+            if arg == "--b", i + 1 < arguments.count {
+                specB = arguments[i + 1]; i += 2; continue
+            }
+            if arg == "--model", i + 1 < arguments.count {
+                model = arguments[i + 1]; i += 2; continue
+            }
+            if !arg.hasPrefix("--") { model = arg }
+            i += 1
+        }
+
+        do {
+            let a = try await LiveLoopTest.execute(
+                audioPath: audio, model: model, config: LoopSessionConfig.parseBenchSpec(specA)
+            )
+            let b = try await LiveLoopTest.execute(
+                audioPath: audio, model: model, config: LoopSessionConfig.parseBenchSpec(specB)
+            )
+            print("=== asr-bench ===")
+            print("A  \(specA)")
+            print("B  \(specB)")
+            printRow("wall_s", a.stats.wallSeconds, b.stats.wallSeconds, fmt: "%.2f")
+            printRow("rtfx", a.stats.rtfx, b.stats.rtfx, fmt: "%.2f")
+            printRow("first_commit_ms", a.stats.firstCommitMs ?? -1, b.stats.firstCommitMs ?? -1, fmt: "%.0f")
+            printInt("preview_decodes", a.stats.previewDecodes, b.stats.previewDecodes)
+            printInt("commit_decodes", a.stats.commitDecodes, b.stats.commitDecodes)
+            printInt("language_detects", a.stats.languageDetects, b.stats.languageDetects)
+            printInt("empty_text_commits", a.stats.emptyTextCommits, b.stats.emptyTextCommits)
+            printInt("agreement_emits", a.stats.agreementEmits, b.stats.agreementEmits)
+            printInt("silence_dropped", a.stats.samplesDroppedAsSilence, b.stats.samplesDroppedAsSilence)
+            printRow("peak_rss_mb", a.stats.peakRSSMB, b.stats.peakRSSMB, fmt: "%.0f")
+            printInt("segments", a.stats.segments, b.stats.segments)
+            exit(0)
+        } catch {
+            print("asr-bench FAILED: \(error.localizedDescription)")
+            exit(1)
+        }
+    }
+
+    private static func printRow(_ name: String, _ a: Double, _ b: Double, fmt: String) {
+        let label = name.padding(toLength: 18, withPad: " ", startingAt: 0)
+        print("\(label)  A \(String(format: fmt, a))  B \(String(format: fmt, b))  Δ \(String(format: fmt, b - a))")
+    }
+
+    private static func printInt(_ name: String, _ a: Int, _ b: Int) {
+        print("\(name.padding(toLength: 18, withPad: " ", startingAt: 0))  A \(a)  B \(b)  Δ \(b - a)")
+    }
+}
+
+/// Compare our live loop to a Wispr-style `live.ndjson` on structure only
+/// (counts, first-commit, p50 duration, mic/system). Text is never printed.
+///
+///   Parrot --meeting-bench /path/audio.aiff --ref /path/live.ndjson [model]
+///   Parrot --meeting-bench --ref /path/live.ndjson --window-s 180 --ours-segments 5 --ours-first-ms 115865
+enum MeetingBench {
+    static func run(arguments: [String]) {
+        var audio: String?
+        var refPath: String?
+        var model = "base"
+        var windowS: Int?
+        var oursSegments: Int?
+        var oursFirstMs: Double?
+        var i = 0
+        while i < arguments.count {
+            let arg = arguments[i]
+            if arg == "--ref", i + 1 < arguments.count {
+                refPath = arguments[i + 1]; i += 2; continue
+            }
+            if arg == "--window-s", i + 1 < arguments.count {
+                windowS = Int(arguments[i + 1]); i += 2; continue
+            }
+            if arg == "--ours-segments", i + 1 < arguments.count {
+                oursSegments = Int(arguments[i + 1]); i += 2; continue
+            }
+            if arg == "--ours-first-ms", i + 1 < arguments.count {
+                oursFirstMs = Double(arguments[i + 1]); i += 2; continue
+            }
+            if arg == "--model", i + 1 < arguments.count {
+                model = arguments[i + 1]; i += 2; continue
+            }
+            if !arg.hasPrefix("--"), audio == nil {
+                audio = arg
+            } else if !arg.hasPrefix("--") {
+                model = arg
+            }
+            i += 1
+        }
+        guard let refPath else {
+            print("meeting-bench: usage: --meeting-bench [audio] --ref live.ndjson [--window-s N] [--ours-segments N --ours-first-ms N] [model]")
+            exit(1)
+        }
+
+        if audio == nil, let oursSegments, oursFirstMs != nil {
+            report(refPath: refPath, windowS: windowS ?? 0, oursSegments: oursSegments, oursFirstMs: oursFirstMs, oursP50: nil)
+            return
+        }
+        guard let audio else {
+            print("meeting-bench: need <audio> or --ours-segments + --ours-first-ms")
+            exit(1)
+        }
+        Task { @MainActor in
+            do {
+                let result = try await LiveLoopTest.execute(
+                    audioPath: audio,
+                    model: model,
+                    config: LoopSessionConfig.fromEnvironmentAndDefaults()
+                )
+                let durs = result.segments.map { ($0.end - $0.start) * 1000 }.sorted()
+                let p50 = durs.isEmpty ? nil : durs[durs.count / 2]
+                let window = windowS ?? Int(result.stats.audioSeconds.rounded(.up))
+                report(
+                    refPath: refPath,
+                    windowS: window,
+                    oursSegments: result.segments.count,
+                    oursFirstMs: result.stats.firstCommitMs,
+                    oursP50: p50
+                )
+            } catch {
+                print("meeting-bench FAILED: \(error.localizedDescription)")
+                exit(1)
+            }
+        }
+        dispatchMain()
+    }
+
+    private static func report(
+        refPath: String,
+        windowS: Int,
+        oursSegments: Int,
+        oursFirstMs: Double?,
+        oursP50: Double?
+    ) {
+        guard let raw = try? String(contentsOfFile: refPath, encoding: .utf8) else {
+            print("meeting-bench: cannot read \(refPath)")
+            exit(1)
+        }
+        let windowMs = windowS > 0 ? windowS * 1000 : Int.max
+        let ref = MeetingRefStats.of(MeetingLiveRef.inWindow(MeetingLiveRef.parseNDJSON(raw), windowMs: windowMs))
+        for line in MeetingCompare.lines(
+            ref: ref,
+            oursSegments: oursSegments,
+            oursFirstMs: oursFirstMs,
+            oursP50DurMs: oursP50
+        ) {
+            print(line)
+        }
+        exit(0)
+    }
+}
+
+/// Offline translation policy harness. `TRANSLATE_LIVE=1` is reserved for a
+/// future OS-pack run and is not part of `make test`.
+enum TranslateTest {
+    static func run() {
+        var failures = 0
+        func check(_ name: String, _ cond: Bool) {
+            if cond { print("PASS \(name)") } else { print("FAIL \(name)"); failures += 1 }
+        }
+
+        check("skip same language",
+              !TranslationPolicy.shouldTranslate(source: "en", target: "en", text: "hello there"))
+        check("skip short",
+              !TranslationPolicy.shouldTranslate(source: "de", target: "en", text: "a"))
+        check("allow pair",
+              TranslationPolicy.shouldTranslate(source: "de", target: "en", text: "Hallo Welt"))
+        check("region tags collapse",
+              !TranslationPolicy.shouldTranslate(source: "en-US", target: "en-GB", text: "hello there"))
+
+        let requests = [
+            TranslationRequest(clientIdentifier: "0", text: "Hallo", sourceLanguage: "de", targetLanguage: "en"),
+            TranslationRequest(clientIdentifier: "1", text: "hello", sourceLanguage: "en", targetLanguage: "en"),
+            TranslationRequest(clientIdentifier: "2", text: "Bonjour", sourceLanguage: "fr", targetLanguage: "en"),
+        ]
+        let stub = StubTranslationProvider()
+        stub.map = ["Hallo": "Hello", "Bonjour": "Hello"]
+        let sem = DispatchSemaphore(value: 0)
+        var responses: [TranslationResponse] = []
+        Task {
+            responses = await stub.translate(requests)
+            sem.signal()
+        }
+        sem.wait()
+        check("skips same-language in batch", !responses.contains { $0.clientIdentifier == "1" })
+        let mapped = TranslationPolicy.mapBatch(requests, responses: responses)
+        check("clientIdentifier 0 maps", mapped["0"] == "Hello")
+        check("clientIdentifier 2 maps", mapped["2"] == "Hello")
+        check("missing id stays out", mapped["1"] == nil)
+
+        if ProcessInfo.processInfo.environment["TRANSLATE_LIVE"] == "1" {
+            if #available(macOS 15.0, *) {
+#if canImport(Translation)
+                let sem = DispatchSemaphore(value: 0)
+                var status = "unknown"
+                Task {
+                    status = await LiveTranslationAvailability.status(from: "de", to: "en")
+                    sem.signal()
+                }
+                sem.wait()
+                switch status {
+                case "installed":
+                    print("PASS live packs installed (de→en) — session is SwiftUI-hosted, not on the decode task")
+                case "supported":
+                    print("SKIP live packs not downloaded")
+                default:
+                    print("SKIP live pair \(status)")
+                }
+#else
+                print("SKIP Translation framework unavailable")
+#endif
+            } else {
+                print("SKIP TRANSLATE_LIVE needs macOS 15+")
+            }
+        }
+
+        print(failures == 0 ? "=== translate-test ALL PASS ===" : "=== translate-test FAILURES: \(failures) ===")
+        exit(failures == 0 ? 0 : 1)
     }
 }
 

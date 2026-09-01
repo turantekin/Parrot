@@ -81,6 +81,22 @@ final class TranscriptionEngine {
 
     /// Called when a finalized transcript segment is ready
     var onSegment: ((TranscriptionResult) -> Void)?
+    /// Harness override for loop knobs. Production leaves this nil.
+    var sessionOverride: LoopSessionConfig?
+    private let statsLock = OSAllocatedUnfairLock()
+    private var decodeStats = DecodeStats()
+
+    func snapshotDecodeStats(segmentCount: Int) -> DecodeStats.Snapshot {
+        statsLock.withLock { decodeStats.snapshot(segmentCount: segmentCount) }
+    }
+
+    @MainActor
+    func unloadModel() {
+        whisperKit = nil
+        isReady = false
+        modelState = .notLoaded
+        loadingModelName = nil
+    }
 
     enum ModelState {
         case notLoaded
@@ -96,6 +112,7 @@ final class TranscriptionEngine {
         let startTime: TimeInterval
         let endTime: TimeInterval
         let confidence: Float?
+        let detectedLanguage: String?
     }
 
     // MARK: - Model Management
@@ -119,6 +136,13 @@ final class TranscriptionEngine {
     /// never blocked. Same rule for start/stopTranscribing below.
     @MainActor
     func loadModel(_ modelName: String = "base") async {
+        let session = sessionOverride ?? LoopSessionConfig.fromEnvironmentAndDefaults()
+        let resolved = LoopSessionConfig.resolvedWhisperModel(modelName, language: session.language)
+        await loadResolvedModel(resolved)
+    }
+
+    @MainActor
+    private func loadResolvedModel(_ modelName: String) async {
         // Switching models mid-download must not race two loads (the old
         // last-finisher-wins behavior could load a model the user had already
         // navigated away from). The newest call cancels the previous one; the
@@ -156,9 +180,11 @@ final class TranscriptionEngine {
 
             guard loadGeneration == generation else { return }
             modelState = .loading
+            let session = sessionOverride ?? LoopSessionConfig.fromEnvironmentAndDefaults()
             let config = WhisperKitConfig(
                 model: resolvedModelName,
                 modelFolder: modelFolder.path,
+                computeOptions: session.compute.computeOptions,
                 verbose: false,
                 logLevel: .none,
                 prewarm: true,
@@ -194,6 +220,9 @@ final class TranscriptionEngine {
         case "large-v3-turbo": "Large V3 Turbo"
         case "large-v3-v20240930_626MB": "Large V3 Turbo Compressed"
         case "tiny", "base", "small", "medium": modelName.capitalized
+        case "tiny.en": "Tiny (English)"
+        case "base.en": "Base (English)"
+        case "small.en": "Small (English)"
         default: modelName
         }
     }
@@ -311,6 +340,11 @@ final class TranscriptionEngine {
         bufferLock.withLock {
             audioBuffers[source, default: []].append(contentsOf: samples)
         }
+        if isTranscribing {
+            statsLock.withLock {
+                decodeStats.audioSecondsFed += Double(frameCount) / 16_000
+            }
+        }
     }
 
     // MARK: - Utterance Segmentation
@@ -411,10 +445,21 @@ final class TranscriptionEngine {
             var speechFrame: Int?
             for i in 0..<frames where frameEnergy(buffer, i) >= floor { speechFrame = i; break }
             guard let s = speechFrame else {
-                // All silence so far. Keep the partial tail frame while live (it
-                // may be the onset of a word); draining consumes everything so
-                // the loop can reach empty and exit.
-                return Cut(dropLeading: draining ? n : frames * frame, take: nil)
+                // Energy VAD called this silence. Walk it in 2–3 s decode
+                // windows instead of deleting it — quiet meeting mixes were
+                // sitting until 110 s for that reason. True silence comes
+                // back empty and is dropped after the decode.
+                if draining {
+                    if let take = ASRLoopPolicy.silenceWindowTake(sampleCount: frames * frame) {
+                        return Cut(dropLeading: 0, take: take)
+                    }
+                    if n >= minSpeechSamples { return Cut(dropLeading: 0, take: n) }
+                    return Cut(dropLeading: n, take: nil)
+                }
+                if let take = ASRLoopPolicy.silenceWindowTake(sampleCount: frames * frame) {
+                    return Cut(dropLeading: 0, take: take)
+                }
+                return Cut(dropLeading: 0, take: nil)
             }
             let drop = s * frame
 
@@ -439,6 +484,9 @@ final class TranscriptionEngine {
 
             // Speech with no boundary yet.
             let speechLen = n - drop
+            if let take = ASRLoopPolicy.energyValleyTake(in: buffer, drop: drop, speechLen: speechLen) {
+                return Cut(dropLeading: drop, take: take)
+            }
             if speechLen >= maxSegmentSamples { return Cut(dropLeading: drop, take: maxSegmentSamples) }
             if draining { return Cut(dropLeading: drop, take: speechLen) }
             return Cut(dropLeading: drop, take: nil)
@@ -482,6 +530,7 @@ final class TranscriptionEngine {
         var groqKey: String?
         cloudNotice = nil
         self.meetingStartTime = meetingStartTime
+        statsLock.withLock { decodeStats = DecodeStats() }
         bufferLock.withLock {
             deepgramFailedSources = []
             localClockOffset = [:]
@@ -496,9 +545,11 @@ final class TranscriptionEngine {
             }
         }
 
-        // Resolve the user's transcription language ("auto"/nil = auto-detect).
-        let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
-        let language = (setting == nil || setting == "auto") ? nil : setting
+        let session = sessionOverride ?? LoopSessionConfig.fromEnvironmentAndDefaults()
+        if let notice = FluidStreamingASR.fallbackNotice(for: session.backend) {
+            cloudNotice = notice
+        }
+        let language = session.language
 
         if backend == .deepgram {
             if let key = APIKeyStore.load(account: TranscriptionBackend.deepgram.keychainAccount!), !key.isEmpty {
@@ -531,7 +582,7 @@ final class TranscriptionEngine {
         decodeOptions.compressionRatioThreshold = 2.4
         decodeOptions.logProbThreshold = -1.0
         decodeOptions.noSpeechThreshold = 0.6
-        decodeOptions.temperatureFallbackCount = 3
+        decodeOptions.temperatureFallbackCount = session.fallbackCount
 
         // Detached on purpose: startTranscribing is @MainActor, and a plain
         // Task {} would inherit that, putting every energy scan and buffer copy
@@ -548,8 +599,16 @@ final class TranscriptionEngine {
             // starving the commit decodes. Toggleable in Settings; read once
             // per session like the language setting.
             let previewBase: TimeInterval = 1.0
-            let previewEnabled = UserDefaults.standard.object(forKey: "livePreview") as? Bool ?? true
             var nextPreviewAt: [AudioSource: Date] = [:]
+            var lastPreviewText: [AudioSource: String] = [:]
+            var emittedPrefix: [AudioSource: String] = [:]
+            var loopOptions = decodeOptions
+            var lastDetectedLanguage = language
+            var frozenLanguage = language
+            var commitInFlight = false
+            let previewMode = session.preview
+            let freezeLanguage = session.freezeLanguage
+            let meetingStart = self.meetingStartTime
 
             while !Task.isCancelled {
                 // isTranscribing == false flips the loop into drain mode: keep
@@ -559,6 +618,17 @@ final class TranscriptionEngine {
                 // that ordering is RecordingManager.stopRecording's contract.
                 let draining = !self.isTranscribing
                 var didWork = false
+                // Dual-stream stall: a preview of A used to delay a pending
+                // cut of B by one full decode. Peek first; commits win.
+                let anyCommitReady: Bool = self.bufferLock.withLock {
+                    AudioSource.allCases.contains { src in
+                        guard let buffered = self.audioBuffers[src], !buffered.isEmpty else {
+                            return false
+                        }
+                        let floor = Segmenter.adaptiveFloor(for: buffered)
+                        return Segmenter.nextCut(in: buffered, draining: draining, floor: floor).take != nil
+                    }
+                }
 
                 for source in AudioSource.allCases {
                     // Pull at most one utterance for this stream under the lock.
@@ -577,6 +647,11 @@ final class TranscriptionEngine {
                         let taken = cut.take.map { Array(buffered[cut.dropLeading ..< cut.dropLeading + $0]) } ?? []
                         let consumed = cut.dropLeading + taken.count
                         guard consumed > 0 else { return ([], 0, 0, floor) }
+                        if cut.take == nil, cut.dropLeading > 0 {
+                            self.statsLock.withLock {
+                                self.decodeStats.samplesDroppedAsSilence += cut.dropLeading
+                            }
+                        }
                         self.audioBuffers[source] = Array(buffered[consumed...])
                         let start = self.consumedSamples[source] ?? 0
                         self.consumedSamples[source] = start + consumed
@@ -593,8 +668,16 @@ final class TranscriptionEngine {
                         // ponytail: a preview of source A delays a pending cut
                         // of source B by one decode; parallelize if dual-speech
                         // latency reports come in.
-                        if previewEnabled, backend == .local, !draining,
-                           Date() >= nextPreviewAt[source] ?? .distantPast {
+                        let pendingCount = self.bufferLock.withLock { self.audioBuffers[source]?.count ?? 0 }
+                        if backend == .local, !draining,
+                           ASRLoopPolicy.shouldPreview(
+                            mode: previewMode,
+                            commitInFlight: commitInFlight,
+                            pendingCount: pendingCount,
+                            now: Date(),
+                            nextAt: nextPreviewAt[source] ?? .distantPast,
+                            otherCommitReady: anyCommitReady
+                           ) {
                             let (pending, floor): ([Float], Float) = self.bufferLock.withLock {
                                 let buffered = self.audioBuffers[source] ?? []
                                 guard buffered.count >= Segmenter.minSpeechSamples else {
@@ -602,27 +685,25 @@ final class TranscriptionEngine {
                                 }
                                 return (buffered, Segmenter.adaptiveFloor(for: buffered))
                             }
-                            let energy = pending.isEmpty ? 0
-                                : pending.reduce(into: Float(0)) { $0 += abs($1) } / Float(pending.count)
-                            if energy > floor, let whisperKit = self.whisperKit {
-                                // No interim callback here on purpose: each preview
-                                // re-decodes from the utterance's start, so streaming
-                                // its words made the bubble restart the same sentence
-                                // every cycle (dry-run feedback, 2026-08-01). The
-                                // bubble now updates once per preview with the fuller
-                                // text; word-by-word streaming stays on the commit
-                                // decode where it reads forward, not in circles.
+                            let previewAudio = ASRLoopPolicy.previewSamples(pending, mode: previewMode)
+                            let energy = previewAudio.isEmpty ? 0
+                                : previewAudio.reduce(into: Float(0)) { $0 += abs($1) } / Float(previewAudio.count)
+                            let speculative = ASRLoopPolicy.shouldSpeculativePreview(pendingCount: pending.count)
+                            if (energy > floor || speculative), let whisperKit = self.whisperKit {
                                 let decodeStarted = Date()
                                 let result = (try? await whisperKit.transcribe(
-                                    audioArray: Self.normalizedForDecode(pending),
-                                    decodeOptions: decodeOptions)) ?? []
+                                    audioArray: Self.normalizedForDecode(previewAudio),
+                                    decodeOptions: ASRLoopPolicy.previewOptions(
+                                        loopOptions, hintLanguage: lastDetectedLanguage))) ?? []
+                                let ms = Date().timeIntervalSince(decodeStarted) * 1000
+                                self.statsLock.withLock {
+                                    self.decodeStats.record(.preview, ms: ms, meetingStart: meetingStart)
+                                }
                                 nextPreviewAt[source] = Date().addingTimeInterval(
                                     max(previewBase, Date().timeIntervalSince(decodeStarted) * 2))
                                 let raw = Self.cleaned(result.map(\.text).joined(separator: " "))
                                 let display = self.glossaryActive ? (Self.strippingGlossaryEcho(raw) ?? "") : raw
                                 if Self.loopTrace {
-                                    // Printed even when empty: "gate never passed"
-                                    // and "decoded to nothing" need different fixes.
                                     print("TRACE \(source.label) preview: \(display.isEmpty ? "<empty>" : display)")
                                 }
                                 if !display.isEmpty {
@@ -636,6 +717,55 @@ final class TranscriptionEngine {
                                         self.currentText = display
                                         self.currentSpeaker = source
                                     }
+                                    let previous = lastPreviewText[source] ?? ""
+                                    if let confirmed = LocalAgreement.confirmedPrefix(previous, display),
+                                       let delta = LocalAgreement.delta(
+                                        emitted: emittedPrefix[source] ?? "", confirmed: confirmed
+                                       ),
+                                       !Self.isLikelyHallucination(delta, energy: energy) {
+                                        emittedPrefix[source] = confirmed
+                                        let (consumed, offset, pendingN): (Int, TimeInterval, Int) =
+                                            self.bufferLock.withLock {
+                                                (self.consumedSamples[source] ?? 0,
+                                                 self.localClockOffset[source] ?? 0,
+                                                 self.audioBuffers[source]?.count ?? 0)
+                                            }
+                                        let agreeStart = Double(consumed) / 16_000 + offset
+                                        let agreeEnd = LocalAgreement.estimatedEnd(
+                                            startTime: agreeStart,
+                                            pendingSamples: pendingN,
+                                            confirmed: confirmed,
+                                            hypothesis: display
+                                        )
+                                        self.statsLock.withLock {
+                                            self.decodeStats.recordAgreementEmit(meetingStart: meetingStart)
+                                        }
+                                        let consume = LocalAgreement.samplesForPrefix(
+                                            pendingSamples: pendingN,
+                                            confirmed: confirmed,
+                                            hypothesis: display
+                                        )
+                                        if consume > 0 {
+                                            self.bufferLock.withLock {
+                                                let buffered = self.audioBuffers[source] ?? []
+                                                let n = min(consume, buffered.count)
+                                                self.audioBuffers[source] = Array(buffered[n...])
+                                                self.consumedSamples[source] = (self.consumedSamples[source] ?? 0) + n
+                                            }
+                                        }
+                                        let detected = lastDetectedLanguage
+                                        await MainActor.run {
+                                            self.onSegment?(TranscriptionResult(
+                                                text: delta,
+                                                source: source,
+                                                startTime: agreeStart,
+                                                endTime: agreeEnd,
+                                                confidence: nil,
+                                                detectedLanguage: detected
+                                            ))
+                                        }
+                                    }
+                                    lastPreviewText[source] = display
                                 }
                             }
                         }
@@ -650,36 +780,62 @@ final class TranscriptionEngine {
                     // segmenter already refuses to cut silence, so this mostly
                     // guards drain-mode tails and keeps feeding the
                     // hallucination filter its energy signal.
+                    if ASRLoopPolicy.shouldDropDrainTail(chunk.count, draining: draining) {
+                        self.statsLock.withLock {
+                            self.decodeStats.samplesDroppedAsSilence += chunk.count
+                        }
+                        continue
+                    }
+
                     let energy = chunk.reduce(into: Float(0)) { $0 += abs($1) } / Float(chunk.count)
-                    guard energy > floor else { continue }
+                    // Live soft-cap takes already passed the segmenter. Skipping
+                    // them here ate quiet meeting mixes (clip 01: 180 s in, 3 lines
+                    // out). Only drain tails still use the energy backstop.
+                    if draining, energy <= floor { continue }
 
                     // Boost quiet-but-real chunks to a healthy level before
                     // every decode. `energy` above stays raw on purpose: the
                     // hallucination filter reads the room, not the boosted copy.
-                    let decodeSamples = Self.normalizedForDecode(chunk)
+                    let decodeSamples = Self.normalizedForDecode(ASRLoopPolicy.applyDecodeWindowCap(chunk))
 
                     // On-device decode — the default path, and the per-chunk
                     // fallback when a cloud backend hiccups (never lose a chunk).
-                    func decodeLocally() async throws -> [(text: String, confidence: Float?)] {
+                    func decodeLocally() async throws -> [(text: String, confidence: Float?, language: String?)] {
                         guard let whisperKit = self.whisperKit else { return [] }
                         // No interim streaming here anymore: the rolling preview is
                         // the live text, and re-streaming the same sentence from
                         // word one during the commit decode made its tail appear
                         // three times over (preview, re-stream, committed bubble —
                         // the "repeated 3 times" dry-run report, 2026-08-01).
-                        func decode(_ options: DecodingOptions) async throws -> [(text: String, confidence: Float?)] {
+                        func decode(_ options: DecodingOptions, kind: DecodeStats.Kind) async throws -> [(text: String, confidence: Float?, language: String?)] {
+                            let decodeStarted = Date()
                             let result = try await whisperKit.transcribe(
                                 audioArray: decodeSamples,
                                 decodeOptions: options
                             )
+                            let ms = Date().timeIntervalSince(decodeStarted) * 1000
+                            self.statsLock.withLock {
+                                self.decodeStats.record(kind, ms: ms, meetingStart: meetingStart)
+                                if options.detectLanguage { self.decodeStats.languageDetects += 1 }
+                            }
+                            if let lang = result.first?.language, !lang.isEmpty {
+                                lastDetectedLanguage = lang
+                                if freezeLanguage, frozenLanguage == nil {
+                                    frozenLanguage = lang
+                                    loopOptions = ASRLoopPolicy.applyingLanguageFreeze(loopOptions, frozen: lang)
+                                }
+                            }
                             return result.map { transcription in
                                 (transcription.text,
                                  transcription.segments.map(\.avgLogprob).reduce(0, +)
-                                    / Float(max(transcription.segments.count, 1)))
+                                    / Float(max(transcription.segments.count, 1)),
+                                 transcription.language)
                             }
                         }
 
-                        let pieces = try await decode(decodeOptions)
+                        commitInFlight = true
+                        defer { commitInFlight = false }
+                        let pieces = try await decode(loopOptions, kind: .commit)
                         guard self.glossaryActive else { return pieces }
                         // The glossary prompt can make Whisper swallow a clear
                         // utterance whole — empty text (or only the echoed
@@ -696,18 +852,18 @@ final class TranscriptionEngine {
                         }
                         if usable { return pieces }
                         if Self.loopTrace { print("TRACE \(source.label) glossary decode unusable — retrying bare") }
-                        var bare = decodeOptions
+                        var bare = loopOptions
                         bare.promptTokens = nil
                         bare.usePrefillPrompt = false
-                        return try await decode(bare)
+                        return try await decode(bare, kind: .glossaryRetry)
                     }
 
                     do {
-                        let pieces: [(text: String, confidence: Float?)]
+                        let pieces: [(text: String, confidence: Float?, language: String?)]
                         if backend == .groq, let groqKey {
                             do {
                                 pieces = [(try await GroqTranscriber.transcribe(
-                                    samples: decodeSamples, language: language, apiKey: groqKey), nil)]
+                                    samples: decodeSamples, language: language, apiKey: groqKey), nil, language)]
                             } catch {
                                 NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
                                 await MainActor.run {
@@ -721,6 +877,9 @@ final class TranscriptionEngine {
 
                         for piece in pieces {
                             let cleaned = Self.cleaned(piece.text)
+                            if ASRLoopPolicy.isWastedDecode(energyPassed: true, text: cleaned) {
+                                self.statsLock.withLock { self.decodeStats.emptyTextCommits += 1 }
+                            }
                             if Self.loopTrace {
                                 // logprob is printed so a real call can be used
                                 // to study the noise/quality question with
@@ -738,8 +897,22 @@ final class TranscriptionEngine {
                             // Prompt leak: the glossary prompt comes back as
                             // "transcription", alone or prefixed onto real
                             // speech — keep the speech, drop only the echo.
-                            guard let text = self.glossaryActive
+                            guard let committed = self.glossaryActive
                                 ? Self.strippingGlossaryEcho(cleaned) : cleaned else { continue }
+                            let already = emittedPrefix[source] ?? ""
+                            let text = LocalAgreement.remainder(emitted: already, full: committed)
+                            emittedPrefix[source] = nil
+                            lastPreviewText[source] = nil
+                            guard !text.isEmpty else { continue }
+                            let detected = piece.language ?? lastDetectedLanguage
+                            if !self.glossaryActive, let tokenizer = self.whisperKit?.tokenizer {
+                                let prompt = ASRLoopPolicy.previousTextPrompt(
+                                    [already, text].filter { !$0.isEmpty }.joined(separator: " ")
+                                )
+                                let tokens = tokenizer.encode(text: " " + prompt)
+                                    .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                                loopOptions = ASRLoopPolicy.applyingPreviousText(loopOptions, tokens: tokens)
+                            }
 
                             await MainActor.run {
                                 // Clear the interim line — the text lives in the
@@ -752,7 +925,8 @@ final class TranscriptionEngine {
                                     source: source,
                                     startTime: startTime,
                                     endTime: endTime,
-                                    confidence: piece.confidence
+                                    confidence: piece.confidence,
+                                    detectedLanguage: detected
                                 ))
                             }
                         }
@@ -767,8 +941,14 @@ final class TranscriptionEngine {
                 // progressively behind — the regression that left the back half of a
                 // call untranscribed.
                 if !didWork {
-                    if draining { break }  // buffers empty → fully drained, exit
-                    try? await Task.sleep(for: .milliseconds(250))
+                    let backlog = self.bufferLock.withLock {
+                        AudioSource.allCases.contains { (self.audioBuffers[$0]?.count ?? 0) > 0 }
+                    }
+                    if draining {
+                        if !backlog { break }
+                        continue
+                    }
+                    try? await Task.sleep(for: .milliseconds(backlog ? 20 : 250))
                 }
             }
         }
@@ -803,7 +983,8 @@ final class TranscriptionEngine {
                     self.currentSpeaker = nil
                     self.onSegment?(TranscriptionResult(
                         text: cleanedText, source: source,
-                        startTime: start, endTime: end, confidence: nil))
+                        startTime: start, endTime: end, confidence: nil,
+                        detectedLanguage: language))
                 }
             }
             streamer.onError = { [weak self] message in
@@ -913,7 +1094,7 @@ final class TranscriptionEngine {
         options.compressionRatioThreshold = 2.4
         options.logProbThreshold = -1.0
         options.noSpeechThreshold = 0.6
-        options.temperatureFallbackCount = 3
+        options.temperatureFallbackCount = (sessionOverride ?? LoopSessionConfig.fromEnvironmentAndDefaults()).fallbackCount
         primeGlossary(into: &options)
 
         let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
@@ -930,7 +1111,8 @@ final class TranscriptionEngine {
                 source: .them,
                 startTime: Double(segment.start),
                 endTime: Double(segment.end),
-                confidence: segment.avgLogprob
+                confidence: segment.avgLogprob,
+                detectedLanguage: language
             )
         }
     }

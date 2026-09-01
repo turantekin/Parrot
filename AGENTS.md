@@ -43,6 +43,10 @@ bundle time by the Makefile, not by Xcode.
 - Cloud calls need an explicit user opt-in path; on-device stays the default.
 - Test via the CLI harnesses in `SnapshotTool.swift` / `ProfileTest.swift`
   (`--profile-test`, `--snapshot`, `--copilot-snapshot`, `--sidebar-snapshot`,
-  `--transcribe-test`, `--analyze-test`, `--capture-test`). There is no
+  `--transcribe-test`, `--analyze-test`, `--capture-test`, `--liveloop-test`,
+  `--asr-bench`, `--meeting-bench`, `--translate-test`). There is no
   XCTest target. `--capture-test` does live audio capture — run it from the
   signed `dist/Parrot.app` bundle (TCC keys grants to the bundle identity).
+  `--liveloop-test` / `--asr-bench` / `--meeting-bench` (with audio) load
+  Whisper models and are not part of `make test`. `--meeting-bench --ref`
+  with `--ours-segments` is offline.

@@ -67,6 +67,9 @@ struct SettingsView: View {
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @AppStorage("polishAfterCall") private var polishAfterCall = false
     @AppStorage("livePreview") private var livePreview = true
+    @AppStorage(LoopSessionConfig.defaultsKeyCompute) private var asrCompute = ComputePlacement.ane.rawValue
+    @AppStorage(TranslationPolicy.enabledKey) private var liveTranslation = false
+    @AppStorage(TranslationPolicy.targetKey) private var translationTarget = ""
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
@@ -95,7 +98,7 @@ struct SettingsView: View {
     private var settingsFingerprint: String {
         "\(selectedModel)|\(appearance)|\(copilotEnabled)|\(transcriptionLanguage)|"
             + "\(customVocabulary)|\(echoCancellation)|\(transcriptionBackend)|\(polishAfterCall)|"
-            + "\(copilotPace)|\(copilotWindow)|\(livePreview)"
+            + "\(copilotPace)|\(copilotWindow)|\(livePreview)|\(asrCompute)|\(liveTranslation)|\(translationTarget)"
     }
 
     private func flashSavedToast() {
@@ -278,6 +281,12 @@ struct SettingsView: View {
 
                 Toggle("Show words as they're spoken", isOn: $livePreview)
                 Hint("Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.")
+
+                Picker("On-device compute", selection: $asrCompute) {
+                    Text("Neural Engine — cooler").tag(ComputePlacement.ane.rawValue)
+                    Text("GPU — lower latency").tag(ComputePlacement.gpu.rawValue)
+                }
+                Hint("Encoder placement for the next model load. Decoder stays on the Neural Engine.")
             }
 
             Section("On-Device Model") {
@@ -361,7 +370,22 @@ struct SettingsView: View {
                     Text("Korean").tag("ko")
                     Text("Hindi").tag("hi")
                 }
-                Hint("Applies to the next recording. Pick a language only if auto-detect keeps guessing wrong.")
+                Hint("Applies to the next recording. Auto-detect re-checks each committed line so mixed-language calls can switch. Pick a language only to lock the session.")
+            }
+
+            Section("Live translation") {
+                Toggle("Show translation of committed lines", isOn: $liveTranslation)
+                if liveTranslation {
+                    Picker("Translate into", selection: $translationTarget) {
+                        Text("System language").tag("")
+                        Text("English").tag("en")
+                        Text("Turkish").tag("tr")
+                        Text("Spanish").tag("es")
+                        Text("German").tag("de")
+                        Text("French").tag("fr")
+                    }
+                }
+                Hint("Committed lines only — previews stay in the spoken language so translation cannot add decode latency. Uses a pluggable provider; system language packs need macOS 15+.")
             }
 
             Section("Custom Vocabulary") {
