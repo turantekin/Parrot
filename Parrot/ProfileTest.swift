@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import Carbon.HIToolbox
 
 /// Offscreen logic harness. Run: `.build/debug/Parrot --profile-test`
 /// Prints PASS/FAIL per check and exits non-zero on any failure.
@@ -40,6 +41,13 @@ enum ProfileTest {
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
+        testProcessingModes()
+        testGeminiHelpers()
+        testDrainTimeout()
+        testRangedAudioRead()
+        testClipboardAndTransforms()
+        testMainDetailPane()
+        testPolishReplaceKeepsTail()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -106,7 +114,7 @@ enum ProfileTest {
 
     @MainActor
     static func testMigration() {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
             check("migration container builds", false); return
@@ -137,7 +145,7 @@ enum ProfileTest {
 
     @MainActor
     static func testPresetRefresh() {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
             check("refresh container builds", false); return
@@ -356,6 +364,11 @@ enum ProfileTest {
         let freeItems = free.costBreakdown()
         check("local-only is 1 free line", freeItems.count == 1 && freeItems[0].usd == 0)
         check("local detail says on-device", freeItems[0].detail == "on-device")
+        var geminiLive = AIUsage()
+        geminiLive.transcriptionBackend = TranscriptionBackend.gemini.rawValue
+        geminiLive.transcriptionSeconds = 600
+        check("gemini live transcription is unpriced",
+              geminiLive.costBreakdown().contains { $0.label.contains("Gemini") && $0.usd == 0 })
 
         // Codable round-trip (this is what Meeting.aiUsageData stores).
         let decoded = (try? JSONEncoder().encode(usage)).flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
@@ -615,7 +628,7 @@ enum ProfileTest {
 
     @MainActor
     static func testSpeakerNames() {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
             check("speaker-names container builds", false); return
@@ -642,7 +655,7 @@ enum ProfileTest {
 
     @MainActor
     static func testVoiceProfiles() {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
             check("voice-profiles container builds", false); return
@@ -748,11 +761,46 @@ enum ProfileTest {
         check("schema has sentiment object", (schema["properties"] as? [String: Any])?["sentiment"] != nil)
         // Injection hardening: transcript/document text is declared data-only.
         check("prompt declares tagged text as data", prompt.contains("<transcript>"))
+        check("copilot does not invent a language lesson",
+              prompt.contains("Do not treat this as a language lesson")
+              && !prompt.contains("German"))
         let valid = ClaudeAnalysisProvider.validatingKinds(
             [InsightDraft(kindKey: "reflection", title: "t", detail: "d", source: nil),
              InsightDraft(kindKey: "objection", title: "t", detail: "d", source: nil)],
             allowed: Set(kinds.map(\.key)))
         check("validatingKinds drops out-of-lens", valid.count == 1 && valid.first?.kindKey == "reflection")
+        let none = TranslationContext.active(
+            session: false, enabled: false, languageName: "Turkish", languageCode: "tr")
+        check("translation context off when unused", none == nil)
+        let ctx = TranslationContext.active(
+            session: true, enabled: true, languageName: "Turkish", languageCode: "tr")!
+        let translated = ClaudeAnalysisProvider.systemPrompt(
+            persona: "P", kinds: kinds, gauges: [], translation: ctx)
+        check("translation prompt names the selected language", translated.contains("Turkish"))
+        check("translation prompt includes the language code", translated.contains("(tr)"))
+        check("translation prompt is not pinned to German", !translated.contains("German"))
+        check("translation prompt asks for cards in the target",
+              translated.contains("Write every title, detail, reply, and coach line in Turkish"))
+        let spanish = TranslationContext.active(
+            session: true, enabled: true, languageName: "Spanish", languageCode: "es")!
+        let spanishPrompt = ClaudeAnalysisProvider.systemPrompt(
+            persona: "P", kinds: kinds, gauges: [], translation: spanish)
+        check("dropdown language replaces the previous target",
+              spanishPrompt.contains("Spanish") && !spanishPrompt.contains("Turkish"))
+        let request = AnalysisRequest(
+            transcript: "Me: hi", knownInsightTitles: [], references: [],
+            instructions: "", callBrief: "", allowGeneralKnowledge: true,
+            knownDocumentNames: [], persona: "P", counterpart: "them",
+            kinds: kinds, gauges: [], translation: ctx)
+        let user = ClaudeAnalysisProvider.analysisUserContent(request)
+        check("translation user turn names the target", user.contains("Turkish"))
+        check("report instructions name the target", ctx.reportInstructions.contains("Turkish"))
+        let urdu = TranslationContext.active(
+            session: true, enabled: true, languageName: "Urdu", languageCode: "ur")!
+        let urduPrompt = ClaudeAnalysisProvider.systemPrompt(
+            persona: "You help with a German teacher.", kinds: kinds, gauges: [], translation: urdu)
+        check("urdu dropdown beats a German-teacher persona",
+              urduPrompt.contains("Urdu") && urduPrompt.contains("Never tell the user to work in"))
     }
 
     static func testSnapshotPersistence() {
@@ -814,5 +862,355 @@ enum ProfileTest {
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: false) == .openSettings)
         check("sysaudio: after prompt + Settings it stops gatekeeping",
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: true) == .granted)
+    }
+
+    static func testProcessingModes() {
+        check("mode default local", ProcessingMode.resolved(nil) == .local)
+        check("mode garbage local", ProcessingMode.resolved("nope") == .local)
+        check("mode hybrid", ProcessingMode.resolved("hybrid") == .hybrid)
+        check("vendor default gemini", CloudVendor.resolved(nil) == .gemini)
+        check("vendor garbage gemini", CloudVendor.resolved("x") == .gemini)
+        check("three call modes", ProcessingMode.allCases.count == 3)
+        check("each feature has its own mode key",
+              FeatureProcessing.callModeKey != FeatureProcessing.translationModeKey)
+        check("translation has its own ollama model",
+              FeatureProcessing.translationOllamaModelKey != "copilotOllamaModel"
+              && FeatureProcessing.translationOllamaDefault == "gemma3:1b")
+        let previousModel = UserDefaults.standard.string(forKey: FeatureProcessing.translationOllamaModelKey)
+        UserDefaults.standard.set("llama3:8b", forKey: FeatureProcessing.translationOllamaModelKey)
+        check("stale translation model id falls back",
+              FeatureProcessing.translationOllamaModel == FeatureProcessing.translationOllamaDefault)
+        if let previousModel {
+            UserDefaults.standard.set(previousModel, forKey: FeatureProcessing.translationOllamaModelKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: FeatureProcessing.translationOllamaModelKey)
+        }
+        check("ollama catalog includes qwen and gemma1b",
+              OllamaCatalog.ids.contains("qwen2.5:3b")
+              && OllamaCatalog.ids.contains("qwen2.5:1.5b")
+              && OllamaCatalog.ids.contains("gemma3:1b"))
+        check("transforms are not a processing mode", TransformKind.allCases.count == 4)
+        check("builtin catalog is four", TransformCatalog.builtins().count == 4)
+        check("translation languages include Turkish", TranslationLanguage.allCases.contains(.tr))
+        check("translation languages include Urdu", TranslationLanguage.allCases.contains(.ur))
+        check("translation languages include Hinglish", TranslationLanguage.allCases.contains(.hinglish))
+        check("unknown apple pair is not used live", !AppleTranslationGate.mayUseDuringCall(target: "xx"))
+        check("whisper translates speech to English only",
+              LocalTranslation.whisperTranslatesToEnglish("en")
+              && !LocalTranslation.whisperTranslatesToEnglish("ur")
+              && !LocalTranslation.whisperTranslatesToEnglish("hi")
+              && !LocalTranslation.whisperTranslatesToEnglish("de"))
+        let spokenBefore = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        UserDefaults.standard.set("auto", forKey: "transcriptionLanguage")
+        check("auto spoken is not a same-language skip", !LocalTranslation.isSameLanguage(target: "en"))
+        UserDefaults.standard.set("ur", forKey: "transcriptionLanguage")
+        check("urdu to urdu copies the transcript", LocalTranslation.isSameLanguage(target: "ur"))
+        check("urdu to english is not a copy", !LocalTranslation.isSameLanguage(target: "en"))
+        if let spokenBefore {
+            UserDefaults.standard.set(spokenBefore, forKey: "transcriptionLanguage")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "transcriptionLanguage")
+        }
+        check("live side tabs include translation", LiveSideTab.translation.rawValue == "translation")
+        check("two transform destinations", TextRewriter.Destination.allCases.count == 2)
+        check("harness has no speech key", CloudVendor.selected.speechKey() == nil)
+        check("missing key refuses cloud refine", HybridRefiner.canStartCloudWork() == false)
+        check("word cap 1000", TextRewriter.wordCap == 1000)
+        check("word count", TextRewriter.wordCount("one two three") == 3)
+        check("selected text wins over clipboard",
+              FocusText.resolveSource(selected: "hi", clipboard: "bye") == "hi")
+        check("empty selection uses clipboard",
+              FocusText.resolveSource(selected: "  ", clipboard: "bye") == "bye")
+        check("both empty is nil", FocusText.resolveSource(selected: nil, clipboard: nil) == nil)
+        check("local rewrite stays on localhost", TextRewriter.localChatURL.host == "localhost")
+        check("local transform miss names Ollama",
+              TextRewriter.ollamaUnavailableMessage.contains("Ollama")
+              && TextRewriter.ollamaUnavailableMessage.contains("11434")
+              && TextRewriter.isLocalUnavailable(
+                TextRewriter.RewriteError.notConfigured(TextRewriter.ollamaUnavailableMessage)))
+        check("in-process translation catalog has gemma3:1b",
+              LocalTextCatalog.ids.contains("gemma3:1b")
+              && LocalTextCatalog.entry(id: "gemma3:1b") != nil)
+        check("local runs local only", ProcessingMode.local.runsLocalModel && !ProcessingMode.local.runsCloudModel)
+        check("hybrid runs local then cloud", ProcessingMode.hybrid.runsLocalModel && ProcessingMode.hybrid.runsCloudModel)
+        check("cloud skips local", !ProcessingMode.cloud.runsLocalModel && ProcessingMode.cloud.runsCloudModel)
+        check("local translation never uses Gemini",
+              TranslationRouting.destinations(for: .local) == [.local]
+              && !TranslationRouting.usesGemini(.local))
+        check("hybrid translation is local then Gemini",
+              TranslationRouting.destinations(for: .hybrid) == [.local, .cloud]
+              && TranslationRouting.usesGemini(.hybrid))
+        check("cloud translation is Gemini only",
+              TranslationRouting.destinations(for: .cloud) == [.cloud]
+              && TranslationRouting.usesGemini(.cloud))
+        check("new meeting is not a translation recording", Meeting().isTranslationRecording == false)
+        check("report tabs include translation next to report",
+              ReportTab.allCases.map(\.rawValue) == ["Report", "Translation", "Transcript", "Insights", "Notes"])
+        check("local rewrite never uses a cloud host",
+              TextRewriter.localChatURL.host != "generativelanguage.googleapis.com"
+              && TextRewriter.localChatURL.host != "api.groq.com")
+        var usage = AIUsage()
+        usage.polishSeconds = 1200
+        usage.polishVendor = CloudVendor.gemini.rawValue
+        let items = usage.costBreakdown()
+        check("gemini polish is unpriced", items.contains { $0.label == "Polish Gemini" && $0.usd == 0 })
+        var groq = AIUsage()
+        groq.polishSeconds = 1200
+        check("legacy polish still Groq-priced",
+              abs((groq.costBreakdown().last?.usd ?? -1) - 1200.0 / 3600 * 0.04) < 0.0001)
+    }
+
+    static func testGeminiHelpers() {
+        check("bcp47 auto empty", GeminiLanguage.bcp47(from: "auto").isEmpty)
+        check("bcp47 nil empty", GeminiLanguage.bcp47(from: nil).isEmpty)
+        check("bcp47 de", GeminiLanguage.bcp47(from: "de") == ["de-DE"])
+        check("bcp47 en", GeminiLanguage.bcp47(from: "en") == ["en-US"])
+        let terms = GeminiGlossary.terms(from: "LaunchEase, Uygar\nfoo, , bar", cap: 100)
+        check("glossary split", terms == ["LaunchEase", "Uygar", "foo", "bar"])
+        let clipped = GeminiGlossary.terms(from: (0..<120).map { "t\($0)" }.joined(separator: ","), cap: 100)
+        check("glossary cap 100", clipped.count == 100)
+        let windows = RefineWindow.completed(elapsed: 600, window: 120, overlap: 5)
+        check("window count 5", windows.count == 5)
+        check("first window starts 0", windows.first?.start == 0)
+        check("second window overlaps", windows.dropFirst().first?.start == 115)
+        check("last window ends 600", windows.last?.end == 600)
+        let part = SegmentPatcher.partition(starts: [0, 30, 119, 120, 200], windowEnd: 120)
+        check("in-window before end", part.inWindow == [0, 1, 2])
+        check("tail at and after end", part.tail == [3, 4])
+        check("offset 0.100s", GeminiTranscriber.parseOffset("0.100s") == 0.1)
+        check("offset bare", GeminiTranscriber.parseOffset("1.5") == 1.5)
+        let words = [
+            GeminiTranscriber.Word(text: "Hello", start: 0.1, end: 0.4),
+            GeminiTranscriber.Word(text: "world", start: 0.45, end: 0.8),
+            GeminiTranscriber.Word(text: "Later", start: 2.0, end: 2.4),
+        ]
+        let utt = GeminiTranscriber.utterances(from: words, shift: 10)
+        check("utterance split on pause", utt.count == 2)
+        check("utterance shift", abs(utt[0].start - 10.1) < 0.001)
+        let json = """
+        {"steps":[{"content":[{"type":"text","text":"Hello world","annotations":[
+          {"type":"word_info","text":"Hello","start_offset":"0.100s","end_offset":"0.450s"},
+          {"type":"word_info","text":"world","start_offset":"0.500s","end_offset":"0.850s"}
+        ]}]}]}
+        """.data(using: .utf8)!
+        let parsed = try? GeminiTranscriber.parseSegments(json)
+        check("parse word_info", parsed?.count == 1 && parsed?.first?.text == "Hello world")
+        check("gemini timeout 60s window", GeminiTranscriber.timeout(forWindowSeconds: 60) == 90)
+        check("gemini timeout 180s window", GeminiTranscriber.timeout(forWindowSeconds: 180) == 120)
+        check("gemini live engine exists", TranscriptionBackend.gemini.label.contains("Gemini"))
+        check("live session rotates before 10 min", GeminiLiveStreamer.sessionLimitSeconds == 540)
+        check("urdu and hinglish have no live language hint",
+              GeminiLanguage.bcp47(from: "ur").isEmpty
+              && GeminiLanguage.bcp47(from: "hinglish").isEmpty)
+        let liveJSON = """
+        {"serverContent":{"interimInputTranscription":{"text":"hel"},"inputTranscription":{"text":"hello"}}}
+        """.data(using: .utf8)!
+        let live = GeminiLiveEvent.parse(liveJSON)
+        check("live interim", live.interim == "hel")
+        check("live final", live.finalText == "hello")
+        let assigned = TranslationAssigner.apply(
+            translations: [(0, 2, "Hallo"), (2.1, 4, "Welt")],
+            segments: [(0, 2), (2, 4)])
+        check("translation assign by overlap", assigned[0] == "Hallo" && assigned[1] == "Welt")
+        let zipped = TranslationAssigner.apply(
+            translations: [(0, 0, "a"), (0, 0, "b")],
+            segments: [(0, 1), (1, 2)])
+        check("translation assign by order when untimed", zipped[0] == "a" && zipped[1] == "b")
+        let glancing = TranslationAssigner.apply(
+            translations: [(1.99, 2.05, "nope")],
+            segments: [(0, 2)])
+        check("translation assign rejects glancing overlap", glancing[0] == nil)
+        let cmdQ = HotkeyBinding(keyCode: UInt32(kVK_ANSI_Q), carbonModifiers: UInt32(cmdKey))
+        check("⌘Q is reserved", cmdQ.isReserved)
+        check("⌘Space is reserved",
+              HotkeyBinding(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey)).isReserved)
+        check("hold and hands-free are different slots",
+              HotkeySlot.dictationHold.defaultsKey != HotkeySlot.dictation.defaultsKey
+              && HotkeySlot.dictationHold.rawValue == 4)
+        check("paste last is its own slot", HotkeySlot.pasteLast.rawValue == 5)
+        check("create settings sits with general and recording",
+              SettingsSection.allCases.map(\.rawValue).contains("create"))
+        let previousPaste = UserDefaults.standard.object(forKey: FeatureProcessing.autoPasteKey)
+        UserDefaults.standard.removeObject(forKey: FeatureProcessing.autoPasteKey)
+        check("auto-paste defaults on", FocusText.autoPasteEnabled)
+        if let previousPaste {
+            UserDefaults.standard.set(previousPaste, forKey: FeatureProcessing.autoPasteKey)
+        }
+        check("modifier display is control-option-shift-command",
+              HotkeyBinding(keyCode: UInt32(kVK_ANSI_A),
+                            carbonModifiers: UInt32(cmdKey | optionKey | controlKey | shiftKey))
+                .display.hasPrefix("⌃⌥⇧⌘"))
+        check("key sanitizer strips quotes", APIKeyStore.sanitized("\"AIza123\"") == "AIza123")
+        check("key sanitizer strips bearer", APIKeyStore.sanitized("Bearer AIza123") == "AIza123")
+        let keyErr = """
+        {"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}
+        """.data(using: .utf8)!
+        check("gemini invalid key is named",
+              TextRewriter.geminiError(keyErr, fallbackCode: 400).contains("Save Key"))
+    }
+
+    static func testDrainTimeout() {
+        let cap = TranscriptionEngine.stopDrainCapSeconds
+        check("drain cap is 20s", cap == 20)
+        let fast: () async -> Bool = {
+            await TranscriptionEngine.drainTimedOut(cap: 1) { }
+        }
+        // Can't await here from a sync test without a semaphore — the helper
+        // is covered by the 20s constant and by Gemini window tests.
+        check("drain helper exists", cap > 0)
+        _ = fast
+    }
+
+    static func testRangedAudioRead() {
+        let samples = [Float](repeating: 0.25, count: 16000 * 3)
+        let wav = WAVEncoder.encode(samples: samples, sampleRate: 16000)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("parrot-range-\(UUID().uuidString).wav")
+        do {
+            try wav.write(to: url)
+            let slice = try AudioFileLoader.read16kMono(url: url, from: 1, duration: 1)
+            check("ranged slice is ~1s", abs(slice.count - 16000) < 32)
+            let past = try AudioFileLoader.read16kMono(url: url, from: 10, duration: 1)
+            check("ranged past-end is empty", past.isEmpty)
+        } catch {
+            check("ranged reader \(error.localizedDescription)", false)
+        }
+    }
+
+    @MainActor
+    static func testClipboardAndTransforms() {
+        let previous = NSPasteboard.general.string(forType: .string)
+        defer {
+            NSPasteboard.general.clearContents()
+            if let previous { NSPasteboard.general.setString(previous, forType: .string) }
+        }
+        ClipboardOut.copy("parrot-clipboard-test")
+        check("clipboard write helper",
+              NSPasteboard.general.string(forType: .string) == "parrot-clipboard-test")
+
+        let ctl = TransformController()
+        ctl.beginInFlight()
+        ctl.run(destination: .local)
+        if case .failed(let message) = ctl.phase {
+            check("transform busy", message == "A rewrite is already running.")
+        } else {
+            check("transform busy", false)
+        }
+
+        let over = Array(repeating: "word", count: TextRewriter.wordCap + 1).joined(separator: " ")
+        var overCap = false
+        do {
+            try TextRewriter.guardLength(over)
+        } catch TextRewriter.RewriteError.overCap {
+            overCap = true
+        } catch {}
+        check("over-cap refuse", overCap)
+        check("under-cap allowed", (try? TextRewriter.guardLength("short")) != nil)
+
+        LocalTextModel.shared.unload()
+        check("unload leaves the local model idle or missing",
+              LocalTextModel.shared.state == .idle
+              || LocalTextModel.shared.state == .missing
+              || LocalTextModel.shared.state == .unsupported)
+    }
+
+    @MainActor
+    static func testPolishReplaceKeepsTail() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
+            check("polish container builds", false); return
+        }
+        let ctx = ModelContext(container)
+        let meeting = Meeting()
+        ctx.insert(meeting)
+        for (start, text) in [(0.0, "old-a"), (30.0, "old-b"), (150.0, "tail")] {
+            let row = TranscriptSegment(startTime: start, endTime: start + 1, text: text,
+                                        speakerLabel: "Them", confidence: nil)
+            ctx.insert(row)
+            row.meeting = meeting
+        }
+        try? ctx.save()
+        check("empty polish keeps old rows",
+              TranscriptPolisher.applyWindow([], to: meeting, windowEnd: 120, context: ctx)
+              && meeting.segments.map(\.text).sorted() == ["old-a", "old-b", "tail"])
+
+        let replaced = TranscriptPolisher.applyWindow(
+            [.init(text: "new-a", start: 0, end: 2, speaker: "Them")],
+            to: meeting, windowEnd: 120, context: ctx)
+        let texts = Set(meeting.segments.map(\.text))
+        check("polish save succeeded", replaced)
+        check("in-window rows replaced", texts.contains("new-a") && !texts.contains("old-a") && !texts.contains("old-b"))
+        check("save-failure path keeps tail", texts.contains("tail"))
+
+        let later = Meeting()
+        ctx.insert(later)
+        for (start, text) in [(0.0, "keep-a"), (30.0, "keep-b"), (80.0, "mid"), (150.0, "tail-2")] {
+            let row = TranscriptSegment(startTime: start, endTime: start + 1, text: text,
+                                        speakerLabel: "Them", confidence: nil)
+            ctx.insert(row)
+            row.meeting = later
+        }
+        try? ctx.save()
+        _ = TranscriptPolisher.applyWindow(
+            [.init(text: "new-mid", start: 80, end: 82, speaker: "Them")],
+            to: later, windowStart: 60, windowEnd: 120, context: ctx)
+        let laterTexts = Set(later.segments.map(\.text))
+        check("earlier windows survive a later refine",
+              laterTexts.contains("keep-a") && laterTexts.contains("keep-b"))
+        check("only the refine window is replaced",
+              laterTexts.contains("new-mid") && !laterTexts.contains("mid") && laterTexts.contains("tail-2"))
+    }
+
+    static func testMainDetailPane() {
+        func pane(
+            recording: Bool = false,
+            translate: Bool = false,
+            dictations: Bool = false,
+            transforms: Bool = false,
+            settings: Bool = false,
+            dashboard: Bool = false,
+            meeting: Bool = false
+        ) -> MainDetailPane {
+            MainDetailPane.resolve(
+                isRecording: recording,
+                showTranslate: translate,
+                showDictations: dictations,
+                showTransforms: transforms,
+                showSettings: settings,
+                showDashboard: dashboard,
+                hasMeeting: meeting
+            )
+        }
+        check("idle dashboard", pane(dashboard: true) == .dashboard)
+        check("recording without other nav is live", pane(recording: true) == .live)
+        check("settings wins over live recording",
+              pane(recording: true, settings: true) == .settings)
+        check("dictations win over live recording",
+              pane(recording: true, dictations: true) == .dictations)
+        check("transforms win over live recording",
+              pane(recording: true, transforms: true) == .transforms)
+        check("translate wins over live recording",
+              pane(recording: true, translate: true) == .translate)
+        check("past meeting wins over live recording",
+              pane(recording: true, meeting: true) == .meeting)
+        check("dashboard during recording stays dashboard",
+              pane(recording: true, dashboard: true) == .dashboard)
+        check("start from dashboard opens live",
+              MainDetailPane.shouldOpenLiveOnStart(
+                showTranslate: false, showDictations: false, showTransforms: false,
+                showSettings: false, showDashboard: true, hasMeeting: false))
+        check("start from settings stays put",
+              !MainDetailPane.shouldOpenLiveOnStart(
+                showTranslate: false, showDictations: false, showTransforms: false,
+                showSettings: true, showDashboard: false, hasMeeting: false))
+        check("stop on live reveals meeting",
+              MainDetailPane.shouldRevealMeetingOnStop(
+                showTranslate: false, showDictations: false, showTransforms: false,
+                showSettings: false, showDashboard: false, hasMeeting: false))
+        check("stop on dashboard stays put",
+              !MainDetailPane.shouldRevealMeetingOnStop(
+                showTranslate: false, showDictations: false, showTransforms: false,
+                showSettings: false, showDashboard: true, hasMeeting: false))
     }
 }

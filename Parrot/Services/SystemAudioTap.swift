@@ -53,10 +53,14 @@ final class SystemAudioTap {
         if let own = Self.processObject(forPID: ProcessInfo.processInfo.processIdentifier) {
             excluded = [own]
         }
-        let description = CATapDescription(monoGlobalTapButExcludeProcesses: excluded)
+        // Stereo tap on purpose. A mono global tap asks HAL to mix the default
+        // output down, and that mixer sits on the speaker path — calls sound
+        // EQ'd / like a pass-through for as long as the recording runs.
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
         description.name = "Parrot System Audio"
         description.isPrivate = true
-        description.muteBehavior = .unmuted  // the user must keep hearing their call
+        description.muteBehavior = .unmuted
+        description.isMono = false
 
         var newTapID = AudioObjectID(kAudioObjectUnknown)
         var err = AudioHardwareCreateProcessTap(description, &newTapID)
@@ -66,8 +70,8 @@ final class SystemAudioTap {
         tapID = newTapID
 
         do {
-            // The tap's format follows the output hardware (typically 48 kHz
-            // mono Float32 for a mono mixdown); the converter brings it to 16 kHz.
+            // The tap follows the output hardware (typically 48 kHz stereo).
+            // The converter mixdowns to 16 kHz mono for Whisper / AEC.
             let asbd = try readTapFormat()
             try rebuildConverter(from: asbd)
 
@@ -77,6 +81,7 @@ final class SystemAudioTap {
                 kAudioAggregateDeviceNameKey: "Parrot System Audio",
                 kAudioAggregateDeviceUIDKey: UUID().uuidString,
                 kAudioAggregateDeviceIsPrivateKey: true,
+                kAudioAggregateDeviceIsStackedKey: false,
                 kAudioAggregateDeviceTapAutoStartKey: true,
                 kAudioAggregateDeviceTapListKey: [
                     [kAudioSubTapUIDKey: description.uuid.uuidString,
@@ -145,9 +150,10 @@ final class SystemAudioTap {
     /// immediately; the prompt resolves asynchronously and its answer cannot
     /// be read back.
     static func fireAuthorizationPrompt() {
-        let description = CATapDescription(monoGlobalTapButExcludeProcesses: [])
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.name = "Parrot System Audio"
         description.isPrivate = true
+        description.isMono = false
         var probeTapID = AudioObjectID(kAudioObjectUnknown)
         if AudioHardwareCreateProcessTap(description, &probeTapID) == noErr,
            probeTapID != kAudioObjectUnknown {

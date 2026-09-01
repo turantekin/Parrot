@@ -4,6 +4,7 @@ import SwiftData
 /// Which pane the live side panel shows.
 enum LiveSideTab: String {
     case transcript
+    case translation
     case notes
 }
 
@@ -23,8 +24,19 @@ struct LiveRecordingView: View {
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("liveSideTab") private var sideTabRaw = LiveSideTab.transcript.rawValue
     @AppStorage("liveSideCollapsed") private var sideCollapsed = false
+    @AppStorage(FeatureProcessing.translationEnabledKey) private var translationEnabled = false
 
-    private var sideTab: LiveSideTab { LiveSideTab(rawValue: sideTabRaw) ?? .transcript }
+    private var translationActive: Bool {
+        recordingManager.translationSession || translationEnabled
+    }
+
+    private var sideTab: LiveSideTab {
+        let tab = LiveSideTab(rawValue: sideTabRaw) ?? .transcript
+        if tab == .translation && !translationActive { return .transcript }
+        return tab
+    }
+
+    private var translationToggleVisible: Bool { true }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,6 +73,15 @@ struct LiveRecordingView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: recordingManager.currentMeeting?.segments.count) {
+            displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
+        }
+        .task(id: recordingManager.currentMeeting?.id) {
+            displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
+        }
+        .onChange(of: recordingManager.translationSession) { _, session in
+            if session { sideTabRaw = LiveSideTab.translation.rawValue }
+        }
     }
 
     // MARK: - Recording Header
@@ -73,7 +94,7 @@ struct LiveRecordingView: View {
                     .fill(Theme.Colors.stop)
                     .frame(width: 10, height: 10)
 
-                Text("Recording")
+                Text(recordingManager.translationSession ? "Translating" : "Recording")
                     .font(.appHeadline)
                     .foregroundStyle(Theme.Colors.stop)
             }
@@ -87,6 +108,37 @@ struct LiveRecordingView: View {
             Spacer()
 
             // Copilot panel toggle
+            if translationActive {
+                Picker("Into", selection: Binding(
+                    get: { recordingManager.translationStore.targetCode },
+                    set: { recordingManager.setTranslationTarget($0, segments: displayedSegments) }
+                )) {
+                    ForEach(TranslationLanguage.allCases) { language in
+                        Text(language.label).tag(language.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+                .help("The Translation tab shows every line in this language.")
+            }
+
+            if translationToggleVisible && !recordingManager.translationSession {
+                Toggle("Translate", isOn: Binding(
+                    get: { translationEnabled },
+                    set: { on in
+                        translationEnabled = on
+                        if on {
+                            sideTabRaw = LiveSideTab.translation.rawValue
+                        } else if sideTabRaw == LiveSideTab.translation.rawValue {
+                            sideTabRaw = LiveSideTab.transcript.rawValue
+                        }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("Open a Translation tab next to Transcript. Spoken lines stay on Transcript.")
+            }
+
             if copilotEnabled {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -119,6 +171,10 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Theme.Metrics.pad)
         .padding(.vertical, 12)
+        .modifier(LiveTranslationHost(
+            store: recordingManager.translationStore,
+            segments: displayedSegments,
+            active: translationActive))
     }
 
     // MARK: - Device Bar
@@ -177,6 +233,21 @@ struct LiveRecordingView: View {
                     .font(.appCaption2)
                     .foregroundStyle(Theme.Colors.warn)
             }
+            if let notice = recordingManager.translationStore.notice {
+                Label(notice, systemImage: "globe")
+                    .font(.appCaption2)
+                    .foregroundStyle(Theme.Colors.warn)
+            }
+            if let notice = recordingManager.hybridRefiner.notice {
+                Label(notice, systemImage: "sparkles")
+                    .font(.appCaption2)
+                    .foregroundStyle(Theme.Colors.warn)
+            }
+            if let notice = recordingManager.persistenceNotice {
+                Label(notice, systemImage: "externaldrive.badge.xmark")
+                    .font(.appCaption2)
+                    .foregroundStyle(Theme.Colors.warn)
+            }
 
             Spacer()
 
@@ -191,7 +262,7 @@ struct LiveRecordingView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Side panel (Transcript | Notes)
+    // MARK: - Side panel (Transcript | Translation | Notes)
 
     private var sidePanelBody: some View {
         VStack(spacing: 0) {
@@ -201,6 +272,9 @@ struct LiveRecordingView: View {
                     set: { sideTabRaw = $0.rawValue }
                 )) {
                     Text("Transcript").tag(LiveSideTab.transcript)
+                    if translationActive {
+                        Text("Translation").tag(LiveSideTab.translation)
+                    }
                     Text("Notes").tag(LiveSideTab.notes)
                 }
                 .pickerStyle(.segmented)
@@ -220,11 +294,17 @@ struct LiveRecordingView: View {
             Divider()
 
             switch sideTab {
-            case .transcript: transcriptArea
+            case .transcript: bubbleArea(mode: .spoken)
+            case .translation: bubbleArea(mode: .translated)
             case .notes: notesArea
             }
         }
         .background(Theme.Colors.panel)
+        .onChange(of: copilotJumpTarget) { _, target in
+            guard target != nil else { return }
+            sideTabRaw = LiveSideTab.transcript.rawValue
+            sideCollapsed = false
+        }
     }
 
     /// Slim rail shown when the side panel is collapsed — one click reopens
@@ -241,6 +321,19 @@ struct LiveRecordingView: View {
             }
             .buttonStyle(.plain)
             .help("Show transcript")
+
+            if translationActive {
+                Button {
+                    sideTabRaw = LiveSideTab.translation.rawValue
+                    withAnimation(.easeInOut(duration: 0.2)) { sideCollapsed = false }
+                } label: {
+                    Image(systemName: "globe")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+                .buttonStyle(.plain)
+                .help("Show translation")
+            }
 
             Button {
                 sideTabRaw = LiveSideTab.notes.rawValue
@@ -287,9 +380,14 @@ struct LiveRecordingView: View {
         }
     }
 
-    // MARK: - Transcript (chat bubbles)
+    // MARK: - Transcript / Translation (chat bubbles)
 
-    private var transcriptArea: some View {
+    private enum LiveBubbleMode {
+        case spoken
+        case translated
+    }
+
+    private func bubbleArea(mode: LiveBubbleMode) -> some View {
         GeometryReader { viewport in
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
@@ -299,27 +397,35 @@ struct LiveRecordingView: View {
                             ChatBubbleRow(
                                 segment: segment,
                                 isFirstOfGroup: index == 0
-                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel
+                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel,
+                                translation: mode == .translated
+                                    ? recordingManager.translationStore.lines[segment.id]
+                                    : nil,
+                                showTranslation: mode == .translated
                             )
                             .id(segment.id)
                         }
 
-                        // The Granola-style "typing" bubble: shows while speech is
-                        // landing — pulsing dots as soon as someone talks, interim
-                        // text when the backend streams it (chunked backends like
-                        // Groq have no interims, so dots carry the liveness).
-                        if !recordingManager.transcriptionEngine.currentText.isEmpty
-                            || recordingManager.transcriptionEngine.isHearingSpeech {
-                            TypingBubble(text: recordingManager.transcriptionEngine.currentText,
-                                         speaker: recordingManager.transcriptionEngine.currentSpeaker)
+                        // Spoken tab: interim text + dots. Translation tab: dots
+                        // only — interims are not translated until the line commits.
+                        if recordingManager.transcriptionEngine.isHearingSpeech
+                            || (mode == .spoken
+                                && !recordingManager.transcriptionEngine.currentText.isEmpty) {
+                            TypingBubble(
+                                text: mode == .spoken
+                                    ? recordingManager.transcriptionEngine.currentText
+                                    : "",
+                                speaker: recordingManager.transcriptionEngine.currentSpeaker)
                                 .id("currentText")
                                 .padding(.top, 8)
                         }
 
-                        if recordingManager.currentMeeting?.segments.isEmpty == true
+                        if displayedSegments.isEmpty
                             && recordingManager.transcriptionEngine.currentText.isEmpty
                             && !recordingManager.transcriptionEngine.isHearingSpeech {
-                            Text("Parrot is listening...")
+                            Text(mode == .translated
+                                 ? "Translations appear as speech is committed."
+                                 : "Parrot is listening...")
                                 .font(Theme.Typography.body)
                                 .foregroundStyle(Theme.Colors.ink3)
                                 .italic()
@@ -327,10 +433,6 @@ struct LiveRecordingView: View {
                                 .padding(.top, 20)
                         }
 
-                        // Live-edge sentinel: a stable scroll anchor that also
-                        // measures how far below the fold the bottom is, so a
-                        // manual scroll-up pauses auto-scroll instead of the view
-                        // yanking back down mid-read (CopilotPanelView pattern).
                         Color.clear
                             .frame(height: 1)
                             .id("liveEdge")
@@ -346,16 +448,9 @@ struct LiveRecordingView: View {
                     }
                     .padding(12)
                 }
-                // Native chat-style behavior: content stays pinned to the live
-                // edge while the user is at the bottom, and holds position when
-                // they scroll up. Replaces the per-segment scrollTo, which
-                // fought the user's own scrolling (and broke entirely when the
-                // window was resized — "can't reach the latest lines").
                 .defaultScrollAnchor(.bottom)
                 .coordinateSpace(name: "liveTranscript")
                 .onPreferenceChange(BottomDistancePreferenceKey.self) { distance in
-                    // Drives only the "Resume live" pill now (with hysteresis so
-                    // a freshly appended row doesn't flicker it).
                     if distance > 150 {
                         autoScroll = false
                     } else if distance < 60 {
@@ -363,7 +458,6 @@ struct LiveRecordingView: View {
                     }
                 }
 
-                // After jumping to a past moment, offer a way back to the live edge.
                 if !autoScroll {
                     Button {
                         autoScroll = true
@@ -383,36 +477,27 @@ struct LiveRecordingView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            .onChange(of: recordingManager.currentMeeting?.segments.count) {
-                // A new segment was committed — refresh the cached sorted list
-                // (the only place the sort runs now). Scrolling is handled by
-                // defaultScrollAnchor(.bottom); no programmatic scroll here.
-                displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
-            }
-            .task(id: recordingManager.currentMeeting?.id) {
-                // Seed on appear and reseed if the meeting changes (e.g. navigating
-                // back into a live recording).
-                displayedSegments = recordingManager.currentMeeting?.sortedSegments ?? []
-            }
-            .onChange(of: copilotJumpTarget) { _, target in
-                guard let target,
-                      let meeting = recordingManager.currentMeeting else { return }
-                // Jumping to the transcript implies wanting to SEE it.
-                sideTabRaw = LiveSideTab.transcript.rawValue
-                sideCollapsed = false
-                // Nearest segment at or before the insight's moment.
-                let segment = meeting.sortedSegments.last { $0.startTime <= target }
-                    ?? meeting.sortedSegments.first
-                if let segment {
-                    autoScroll = false
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(segment.id, anchor: .center)
-                    }
-                }
-                copilotJumpTarget = nil
+            .onAppear { jumpIfNeeded(proxy: proxy, mode: mode) }
+            .onChange(of: copilotJumpTarget) { _, _ in
+                jumpIfNeeded(proxy: proxy, mode: mode)
             }
         }
         }
+    }
+
+    private func jumpIfNeeded(proxy: ScrollViewProxy, mode: LiveBubbleMode) {
+        guard mode == .spoken,
+              let target = copilotJumpTarget,
+              let meeting = recordingManager.currentMeeting else { return }
+        let segment = meeting.sortedSegments.last { $0.startTime <= target }
+            ?? meeting.sortedSegments.first
+        if let segment {
+            autoScroll = false
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(segment.id, anchor: .center)
+            }
+        }
+        copilotJumpTarget = nil
     }
 }
 
@@ -433,6 +518,8 @@ private struct BottomDistancePreferenceKey: PreferenceKey {
 struct ChatBubbleRow: View {
     let segment: TranscriptSegment
     let isFirstOfGroup: Bool
+    var translation: String? = nil
+    var showTranslation: Bool = false
 
     private var isMe: Bool { segment.speakerLabel == "Me" }
 
@@ -451,16 +538,32 @@ struct ChatBubbleRow: View {
                 .padding(isMe ? .trailing : .leading, 6)
             }
 
-            Text(segment.text)
-                .font(Theme.Typography.body)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    isMe ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.chip,
-                    in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
-                )
+            VStack(alignment: isMe ? .trailing : .leading, spacing: 4) {
+                if showTranslation {
+                    if let translation, !translation.isEmpty {
+                        Text(translation)
+                            .font(Theme.Typography.body)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Translating…")
+                            .font(Theme.Typography.body)
+                            .italic()
+                            .foregroundStyle(Theme.Colors.ink3)
+                    }
+                } else {
+                    Text(segment.text)
+                        .font(Theme.Typography.body)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                isMe ? Theme.Colors.accent.opacity(0.12) : Theme.Colors.chip,
+                in: RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+            )
         }
         .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
         .transition(.opacity.combined(with: .move(edge: .bottom)))

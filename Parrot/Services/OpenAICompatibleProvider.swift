@@ -57,8 +57,11 @@ enum OllamaCatalog {
     }
 
     static let models: [Model] = [
-        Model(id: "llama3.2:3b", label: "llama3.2:3b — fastest, good default", sizeLabel: "2.0 GB"),
+        Model(id: "gemma3:1b", label: "gemma3:1b — fastest, Translation default", sizeLabel: "815 MB"),
+        Model(id: "qwen2.5:1.5b", label: "qwen2.5:1.5b — smaller multilingual", sizeLabel: "986 MB"),
+        Model(id: "qwen2.5:3b", label: "qwen2.5:3b — strongest small multilingual", sizeLabel: "1.9 GB"),
         Model(id: "gemma3:4b", label: "gemma3:4b — better writing & languages", sizeLabel: "3.3 GB"),
+        Model(id: "llama3.2:3b", label: "llama3.2:3b — fastest, good default", sizeLabel: "2.0 GB"),
     ]
 
     static var ids: [String] { models.map(\.id) }
@@ -154,7 +157,8 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
         let sys = ClaudeAnalysisProvider.systemPrompt(
             persona: request.persona, kinds: request.kinds,
-            gauges: request.gauges, counterpart: request.counterpart)
+            gauges: request.gauges, counterpart: request.counterpart,
+            translation: request.translation)
         let userContent = ClaudeAnalysisProvider.analysisUserContent(request)
         let schemaObj = ClaudeAnalysisProvider.schema(kinds: request.kinds, gauges: request.gauges)
 

@@ -27,15 +27,14 @@ final class TranscriptionEngine {
     private var audioBuffers: [AudioSource: [Float]] = [.me: [], .them: []]
     private let bufferLock = OSAllocatedUnfairLock()
     private var transcriptionTask: Task<Void, Never>?
-    /// Live Deepgram sockets, one per source, when the deepgram backend is
-    /// active. Audio routes straight to them instead of the chunk buffers.
-    /// Same benign cross-thread pattern as `isCapturing`.
-    private var deepgramStreamers: [AudioSource: DeepgramStreamer] = [:]
-    /// Sources whose Deepgram socket has failed: their audio falls back to the
+    /// Live Deepgram / Gemini sockets, one per source. Audio routes straight
+    /// to them instead of the chunk buffers. Same benign cross-thread pattern
+    /// as `isCapturing`.
+    private var liveStreamers: [AudioSource: any LiveAudioStreamer] = [:]
+    /// Sources whose live socket has failed: their audio falls back to the
     /// local buffer/loop path for the rest of the session. Per-source, so one
-    /// dead socket (a mic that stopped feeding it) doesn't take the other,
-    /// healthy stream off Deepgram with it. Guarded by `bufferLock`.
-    private var deepgramFailedSources: Set<AudioSource> = []
+    /// dead socket doesn't take the other stream with it. Guarded by `bufferLock`.
+    private var liveFailedSources: Set<AudioSource> = []
     /// Offset added to locally-derived timestamps, per source. Sample counts
     /// don't measure dead time: when a stream falls off Deepgram mid-call (or
     /// the mic restarts after a device change) the counter is way behind the
@@ -81,6 +80,10 @@ final class TranscriptionEngine {
 
     /// Called when a finalized transcript segment is ready
     var onSegment: ((TranscriptionResult) -> Void)?
+    /// Local / Hybrid translation into English: a second Whisper decode with
+    /// `task: .translate`. Language stays the spoken language — Whisper cannot
+    /// translate into German, Urdu, or Hindi.
+    var whisperTranslateEnabled = false
 
     enum ModelState {
         case notLoaded
@@ -96,6 +99,8 @@ final class TranscriptionEngine {
         let startTime: TimeInterval
         let endTime: TimeInterval
         let confidence: Float?
+        /// Whisper speech→English when `whisperTranslateEnabled`. Nil otherwise.
+        var translation: String? = nil
     }
 
     // MARK: - Model Management
@@ -300,8 +305,8 @@ final class TranscriptionEngine {
         }
 
         // Streaming backend: straight to the socket, no chunk buffering.
-        let streamer: DeepgramStreamer? = bufferLock.withLock {
-            deepgramFailedSources.contains(source) ? nil : deepgramStreamers[source]
+        let streamer: (any LiveAudioStreamer)? = bufferLock.withLock {
+            liveFailedSources.contains(source) ? nil : liveStreamers[source]
         }
         if let streamer {
             streamer.send(samples)
@@ -478,16 +483,16 @@ final class TranscriptionEngine {
         // need their key; anything missing falls back to on-device with a
         // visible notice. (Deepgram streaming lands separately; until then it
         // behaves as local.)
-        var backend = TranscriptionBackend.selected
+        var backend = TranscriptionBackend.liveEngine()
         var groqKey: String?
         cloudNotice = nil
         self.meetingStartTime = meetingStartTime
         bufferLock.withLock {
-            deepgramFailedSources = []
+            liveFailedSources = []
             localClockOffset = [:]
             consumedSamples = [.me: 0, .them: 0]
         }
-        deepgramStreamers = [:]
+        liveStreamers = [:]
         if backend == .groq {
             groqKey = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!)
             if groqKey?.isEmpty != false {
@@ -506,6 +511,14 @@ final class TranscriptionEngine {
             } else {
                 backend = .local
                 cloudNotice = "Deepgram key missing — using on-device Whisper"
+            }
+        }
+        if backend == .gemini {
+            if let key = CloudVendor.gemini.speechKey() {
+                startGeminiLive(apiKey: key, language: language)
+            } else {
+                backend = .local
+                cloudNotice = "Gemini key missing — using on-device Whisper"
             }
         }
         var decodeOptions = DecodingOptions(
@@ -719,6 +732,22 @@ final class TranscriptionEngine {
                             pieces = try await decodeLocally()
                         }
 
+                        var spokenEnglish: String?
+                        if whisperTranslateEnabled, let whisperKit {
+                            var translateOptions = decodeOptions
+                            translateOptions.task = .translate
+                            translateOptions.promptTokens = nil
+                            translateOptions.usePrefillPrompt = false
+                            if let rows = try? await whisperKit.transcribe(
+                                audioArray: decodeSamples,
+                                decodeOptions: translateOptions
+                            ) {
+                                let english = Self.cleaned(rows.map(\.text).joined(separator: " "))
+                                if !english.isEmpty { spokenEnglish = english }
+                            }
+                        }
+
+                        var attachedEnglish = false
                         for piece in pieces {
                             let cleaned = Self.cleaned(piece.text)
                             if Self.loopTrace {
@@ -741,6 +770,13 @@ final class TranscriptionEngine {
                             guard let text = self.glossaryActive
                                 ? Self.strippingGlossaryEcho(cleaned) : cleaned else { continue }
 
+                            let translation: String?
+                            if !attachedEnglish, let spokenEnglish {
+                                translation = spokenEnglish
+                                attachedEnglish = true
+                            } else {
+                                translation = nil
+                            }
                             await MainActor.run {
                                 // Clear the interim line — the text lives in the
                                 // committed segment now; leaving it here kept a
@@ -752,7 +788,8 @@ final class TranscriptionEngine {
                                     source: source,
                                     startTime: startTime,
                                     endTime: endTime,
-                                    confidence: piece.confidence
+                                    confidence: piece.confidence,
+                                    translation: translation
                                 ))
                             }
                         }
@@ -811,14 +848,55 @@ final class TranscriptionEngine {
                 NSLog("Parrot: Deepgram stream failed (\(source.label)) — \(message)")
                 // Only this stream falls back to local; the other socket keeps
                 // streaming. Re-anchor before the first fallback sample lands.
-                self.bufferLock.withLock { _ = self.deepgramFailedSources.insert(source) }
+                self.bufferLock.withLock { _ = self.liveFailedSources.insert(source) }
                 self.reanchorLocalClock(source: source)
                 Task { @MainActor in
                     self.cloudNotice = "Deepgram error — \(source.label) stream now on on-device Whisper"
                 }
             }
             streamer.connect(apiKey: apiKey, language: language)
-            deepgramStreamers[source] = streamer
+            liveStreamers[source] = streamer
+        }
+    }
+
+    /// Wire up one Gemini Transcribe Live socket per audio source.
+    private func startGeminiLive(apiKey: String, language: String?) {
+        let vocabulary = GeminiGlossary.terms(
+            from: UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
+        for source in AudioSource.allCases {
+            let streamer = GeminiLiveStreamer()
+            streamer.onInterim = { [weak self] text in
+                let partial = Self.cleaned(text)
+                guard !partial.isEmpty else { return }
+                Task { @MainActor in
+                    self?.currentText = partial
+                    self?.currentSpeaker = source
+                }
+            }
+            streamer.onFinal = { [weak self] text, start, end in
+                guard let self else { return }
+                let cleanedText = Self.cleaned(text)
+                guard !cleanedText.isEmpty,
+                      !Self.isLikelyHallucination(cleanedText, energy: 1.0) else { return }
+                Task { @MainActor in
+                    self.currentText = ""
+                    self.currentSpeaker = nil
+                    self.onSegment?(TranscriptionResult(
+                        text: cleanedText, source: source,
+                        startTime: start, endTime: end, confidence: nil))
+                }
+            }
+            streamer.onError = { [weak self] message in
+                guard let self else { return }
+                NSLog("Parrot: Gemini Live failed (\(source.label)) — \(message)")
+                self.bufferLock.withLock { _ = self.liveFailedSources.insert(source) }
+                self.reanchorLocalClock(source: source)
+                Task { @MainActor in
+                    self.cloudNotice = "Gemini Live error — \(source.label) stream now on on-device Whisper"
+                }
+            }
+            streamer.connect(apiKey: apiKey, language: language, vocabulary: vocabulary)
+            liveStreamers[source] = streamer
         }
     }
 
@@ -935,32 +1013,62 @@ final class TranscriptionEngine {
         }
     }
 
+    /// Wall-clock cap on the stop drain. A hung Whisper pass used to freeze Stop.
+    static var stopDrainCapSeconds: TimeInterval = 20
+
+    /// True when `work` did not finish before `cap` elapsed.
+    static func drainTimedOut(cap: TimeInterval, work: @escaping () async -> Void) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await work()
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(cap))
+                return true
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+    }
+
+    func postNotice(_ message: String) {
+        cloudNotice = message
+    }
+
     /// Stop transcription, draining the buffered backlog first so the final words
     /// of the call (previously always dropped — the loop needed ≥2 s buffered)
     /// make it into the transcript. Await this before assembling the transcript.
-    // ponytail: drain is uncapped — a hung whisper pass hangs stop; upgrade path
-    // is a wall-clock cap + surfaced timeout.
     @MainActor
     func stopTranscribing() async {
         // Streaming backend: flush finals, then tear down. When the stream is
         // healthy, the chunk buffers only hold pre-connection audio — clear
         // them so the drain can't re-emit the call's first words at the end.
-        if !deepgramStreamers.isEmpty {
-            for streamer in deepgramStreamers.values { streamer.finish() }
+        if !liveStreamers.isEmpty {
+            for streamer in liveStreamers.values { streamer.finish() }
             try? await Task.sleep(for: .seconds(1.2))  // grace for final results
-            for streamer in deepgramStreamers.values { streamer.close() }
+            for streamer in liveStreamers.values { streamer.close() }
             // Clear the pre-connection buffers of streams that stayed on
-            // Deepgram; a fallen-back stream's buffered tail still needs draining.
+            // the live socket; a fallen-back stream's buffered tail still needs draining.
             bufferLock.withLock {
-                for source in AudioSource.allCases where !deepgramFailedSources.contains(source) {
+                for source in AudioSource.allCases where !liveFailedSources.contains(source) {
                     audioBuffers[source] = []
                 }
             }
-            deepgramStreamers = [:]
+            liveStreamers = [:]
         }
 
         isTranscribing = false          // flips the loop into drain mode
-        await transcriptionTask?.value  // deliberately not cancel(): let it finish
+        if let task = transcriptionTask {
+            let timedOut = await Self.drainTimedOut(cap: Self.stopDrainCapSeconds) {
+                await task.value
+            }
+            if timedOut {
+                task.cancel()
+                cloudNotice = "Finalizing timed out — earlier lines are saved."
+            }
+        }
         transcriptionTask = nil
 
         bufferLock.withLock {

@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Lives under the Ollama model picker in Settings → Copilot: shows whether the
-/// selected model is ready on this Mac and offers a one-click download when it
-/// isn't. Talks only to the local Ollama server (localhost:11434) — checking
-/// installed models via /api/tags and pulling with streamed progress via
-/// /api/pull. Never touches the network beyond loopback.
+/// Lives under the Ollama model picker in Settings → Copilot and Translation:
+/// shows whether the selected model is ready on this Mac and offers a one-click
+/// download when it isn't. Talks only to the local Ollama server
+/// (localhost:11434) — checking installed models via /api/tags and pulling
+/// with streamed progress via /api/pull. Never touches the network beyond
+/// loopback.
 struct OllamaModelStatusView: View {
     let model: String
 
@@ -132,5 +133,129 @@ struct OllamaModelStatusView: View {
         } catch {
             status = .failed(error.localizedDescription)
         }
+    }
+}
+
+/// Catalog picker + download row. Used by Copilot and Translation.
+struct OllamaModelPicker: View {
+    @Binding var model: String
+    var title: String = "Model"
+    var hint: String?
+    @State private var customEditing = false
+
+    var body: some View {
+        Picker(title, selection: selection) {
+            ForEach(OllamaCatalog.models, id: \.id) { entry in
+                Text(entry.label).tag(entry.id)
+            }
+            Divider()
+            Text("Custom…").tag("custom")
+        }
+        .pickerStyle(.menu)
+
+        if showsCustomField {
+            LabeledContent("Model name") {
+                TextField("", text: $model, prompt: Text("model:tag"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+            }
+            if let hint {
+                Hint(hint)
+            }
+        }
+
+        OllamaModelStatusView(model: model)
+    }
+
+    private var selection: Binding<String> {
+        Binding(
+            get: {
+                if customEditing { return "custom" }
+                return OllamaCatalog.ids.contains(model) ? model : "custom"
+            },
+            set: { picked in
+                if picked == "custom" {
+                    customEditing = true
+                } else {
+                    customEditing = false
+                    model = picked
+                }
+            }
+        )
+    }
+
+    private var showsCustomField: Bool {
+        customEditing || !OllamaCatalog.ids.contains(model)
+    }
+}
+
+/// Download / load status for the in-process translation model (Whisper-style).
+struct LocalTextModelStatusView: View {
+    var modelID: String
+    private var engine: LocalTextModel { LocalTextModel.shared }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch engine.state {
+            case .idle:
+                if LocalTextModel.isInstalled(modelID) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.good)
+                    Text("Downloaded — Local translation loads it when a session starts.")
+                        .foregroundStyle(Theme.Colors.ink2)
+                    Button("Load") { Task { await engine.download(modelID) } }
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundStyle(Theme.Colors.ink2)
+                    Text("Not downloaded yet.")
+                        .foregroundStyle(Theme.Colors.ink2)
+                    Button("Download (\(LocalTextCatalog.entry(id: modelID)?.sizeLabel ?? "size varies"))") {
+                        Task { await engine.download(modelID) }
+                    }
+                    .controlSize(.small)
+                }
+            case .missing:
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(Theme.Colors.ink2)
+                Text("Not downloaded yet.")
+                    .foregroundStyle(Theme.Colors.ink2)
+                Button("Download (\(LocalTextCatalog.entry(id: modelID)?.sizeLabel ?? "size varies"))") {
+                    Task { await engine.download(modelID) }
+                }
+                .controlSize(.small)
+            case .downloading(let progress):
+                ProgressView(value: progress)
+                    .frame(width: 140)
+                Text("\(Int(progress * 100))%")
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .font(Theme.Typography.mono(11))
+            case .loading:
+                ProgressView().controlSize(.small)
+                Text("Preparing \(modelID)…")
+                    .foregroundStyle(Theme.Colors.ink2)
+            case .ready:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.Colors.good)
+                Text("Ready — unloads when the Local translation pass finishes.")
+                    .foregroundStyle(Theme.Colors.ink2)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.Colors.warn)
+                Text(message)
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .lineLimit(2)
+                Button("Retry") { Task { await engine.download(modelID) } }
+                    .buttonStyle(.link)
+            case .unsupported:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.Colors.warn)
+                Text("On-device translation needs Apple Silicon.")
+                    .foregroundStyle(Theme.Colors.ink2)
+            }
+        }
+        .font(Theme.Typography.caption)
+        .task(id: modelID) { engine.refresh(modelID) }
     }
 }

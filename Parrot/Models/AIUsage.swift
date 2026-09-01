@@ -45,9 +45,11 @@ struct AIUsage: Codable {
     var transcriptionSeconds: Double = 0
     /// Billable audio tracks (mic + system = 2; 1 when the mic never recorded).
     var transcriptionTracks = 2
-    /// Post-call Groq polish: seconds of audio re-transcribed, all tracks
-    /// summed. 0 when polish didn't run.
+    /// Post-call / mid-call refine+polish: seconds of audio re-transcribed,
+    /// all tracks summed. 0 when neither ran.
     var polishSeconds: Double = 0
+    /// CloudVendor rawValue for the polish/refine line. nil = Groq (legacy).
+    var polishVendor: String?
 
     struct LineItem: Equatable {
         let label: String
@@ -77,16 +79,31 @@ struct AIUsage: Codable {
         case .local: 0
         case .groq: billedSeconds / 3600 * AIPricing.groqUSDPerAudioHour
         case .deepgram: billedSeconds / 3600 * AIPricing.deepgramUSDPerAudioHour
+        case .gemini: 0
         }
         items.append(LineItem(
             label: "Transcription \(backend.label)",
             detail: backend == .local ? "on-device" : Self.compactMinutes(billedSeconds),
             usd: transcriptionUSD))
         if polishSeconds > 0 {
-            items.append(LineItem(
-                label: "Polish Groq",
-                detail: Self.compactMinutes(polishSeconds),
-                usd: polishSeconds / 3600 * AIPricing.groqUSDPerAudioHour))
+            let vendor = polishVendor.flatMap(CloudVendor.init(rawValue:)) ?? .groq
+            let usd: Double
+            let label: String
+            switch vendor {
+            case .groq:
+                usd = polishSeconds / 3600 * AIPricing.groqUSDPerAudioHour
+                label = "Polish Groq"
+            case .gemini:
+                usd = 0
+                label = "Polish Gemini"
+            case .custom:
+                usd = 0
+                label = "Polish Custom"
+            }
+            let detail = vendor == .groq
+                ? Self.compactMinutes(polishSeconds)
+                : Self.compactMinutes(polishSeconds) + " · rates not tracked"
+            items.append(LineItem(label: label, detail: detail, usd: usd))
         }
         return items
     }

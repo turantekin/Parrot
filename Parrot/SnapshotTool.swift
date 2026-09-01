@@ -201,7 +201,7 @@ enum HelpShots {
 
         // Shared world: in-memory store with the built-in profiles and a few
         // meetings, plus managers that look mid-flight.
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         guard let container = try? ModelContainer(
             for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
         ) else { print("help-shots: container failed"); exit(1) }
@@ -705,7 +705,8 @@ enum AnalyzeTest {
             persona: profile?.persona ?? "You assist a sales professional during live calls.",
             counterpart: "the prospect",
             kinds: profile?.kinds ?? [],
-            gauges: profile?.gauges ?? []
+            gauges: profile?.gauges ?? [],
+            translation: nil
         )
 
         var exitCode: Int32 = 1
@@ -749,7 +750,7 @@ enum AnalyzeTest {
 @MainActor
 enum SidebarSnapshot {
     static func write(to path: String) {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         guard let container = try? ModelContainer(
             for: schema,
             configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]

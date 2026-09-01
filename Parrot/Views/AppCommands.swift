@@ -17,6 +17,12 @@ extension Notification.Name {
     static let parrotFocusSearch = Notification.Name("parrotFocusSearch")
     /// Help → Report a Bug… opens the report sheet (same as the corner button).
     static let parrotReportBug = Notification.Name("parrotReportBug")
+    /// A dictation / transform hotkey was recorded or cleared.
+    static let parrotHotkeysChanged = Notification.Name("parrotHotkeysChanged")
+    /// Floating bar → Settings, on the Create page.
+    static let parrotShowTranscriptionSettings = Notification.Name("parrotShowTranscriptionSettings")
+    /// One shortcut chip is listening — others must stop.
+    static let parrotHotkeyListen = Notification.Name("parrotHotkeyListen")
 }
 
 // MARK: - Shared meeting actions
@@ -153,6 +159,17 @@ struct ParrotCommands: Commands {
             }
             .keyboardShortcut(".")
             .disabled(!recordingManager.isRecording || recordingManager.isStopping)
+
+            Divider()
+            Button(recordingManager.dictation.phase == .listening ? "Stop Dictation" : "Start Dictation") {
+                recordingManager.dictation.toggle()
+            }
+            Button("Transform Local") {
+                recordingManager.transforms.run(destination: .local)
+            }
+            Button("Transform Cloud") {
+                recordingManager.transforms.run(destination: .cloud)
+            }
         }
 
         // Help: the bundled Apple Help Book (searchable, offline), plus the

@@ -8,6 +8,10 @@ struct ContentView: View {
     @State private var selectedMeeting: Meeting?
     @State private var showDashboard = true
     @State private var showSettings = false
+    @State private var showDictations = false
+    @State private var showTransforms = false
+    @State private var showTranslate = false
+    @State private var selectedDictation: DictationNote?
     @State private var searchText = ""
     @State private var hasLoadedModel = false
     /// File → Import Audio… (⌘O); the dashboard has its own importer button.
@@ -23,32 +27,52 @@ struct ContentView: View {
                 selectedMeeting: $selectedMeeting,
                 showDashboard: $showDashboard,
                 showSettings: $showSettings,
+                showDictations: $showDictations,
+                showTransforms: $showTransforms,
+                showTranslate: $showTranslate,
                 searchText: $searchText
             )
             .navigationSplitViewColumnWidth(min: 215, ideal: 236, max: 320)
         } detail: {
-            if recordingManager.isRecording {
+            switch MainDetailPane.resolve(
+                isRecording: recordingManager.isRecording,
+                showTranslate: showTranslate,
+                showDictations: showDictations,
+                showTransforms: showTransforms,
+                showSettings: showSettings,
+                showDashboard: showDashboard,
+                hasMeeting: selectedMeeting != nil
+            ) {
+            case .live:
                 LiveRecordingView()
-            } else if showSettings {
+            case .translate:
+                TranslateSetupView()
+            case .dictations:
+                DictationListView(selected: $selectedDictation)
+            case .transforms:
+                TransformsView()
+            case .settings:
                 settingsPane
-            } else if showDashboard {
+            case .dashboard:
                 DashboardView(
                     selectedMeeting: $selectedMeeting,
                     showDashboard: $showDashboard
                 )
-            } else if let meeting = selectedMeeting {
-                // .id forces a fresh view identity per meeting: @State (title/name
-                // drafts, audio players, tab) must not leak from one meeting to the
-                // next, and onAppear/onDisappear must re-fire to stop playback.
-                MeetingDetailView(meeting: meeting, onDelete: {
-                    // Clear the selection first so the detail view is gone
-                    // before its model object is deleted.
-                    selectedMeeting = nil
-                    showDashboard = true
-                    recordingManager.delete(meeting)
-                })
-                .id(meeting.id)
-            } else {
+            case .meeting:
+                if let meeting = selectedMeeting {
+                    // .id forces a fresh view identity per meeting: @State (title/name
+                    // drafts, audio players, tab) must not leak from one meeting to the
+                    // next, and onAppear/onDisappear must re-fire to stop playback.
+                    MeetingDetailView(meeting: meeting, onDelete: {
+                        selectedMeeting = nil
+                        showDashboard = true
+                        recordingManager.delete(meeting)
+                    })
+                    .id(meeting.id)
+                } else {
+                    EmptyStateView()
+                }
+            case .empty:
                 EmptyStateView()
             }
         }
@@ -63,14 +87,25 @@ struct ContentView: View {
                     ImportingBanner(progress: progress)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if recordingManager.isRecording, !showingLiveCall {
+                    RecordingAwayBanner(
+                        elapsed: recordingManager.formattedElapsedTime,
+                        stopping: recordingManager.isStopping,
+                        onShow: { openLiveCall() },
+                        onStop: {
+                            Task { @MainActor in
+                                await recordingManager.stopRecording()
+                            }
+                        }
+                    )
+                }
+                ProcessingHUD(text: recordingManager.dictation.phase.hud)
+                ProcessingHUD(text: recordingManager.transforms.phase.hud)
             }
             .padding(.top, 12)
         }
-        // Always reachable, except mid-call: a live recording is the one time
-        // the window is nobody else's business (and it keeps the button out of
-        // call screenshots).
         .overlay(alignment: .bottomTrailing) {
-            if !recordingManager.isRecording {
+            if !showingLiveCall {
                 BugReportButton { presentBugReport() }
                     .padding(16)
                     .transition(.opacity)
@@ -86,6 +121,43 @@ struct ContentView: View {
         // Mirror the selection for the File → Export menu items.
         .onChange(of: selectedMeeting) { _, meeting in
             appSession.selectedMeeting = meeting
+        }
+        .onChange(of: recordingManager.isRecording) { _, recording in
+            if recording {
+                if MainDetailPane.shouldOpenLiveOnStart(
+                    showTranslate: showTranslate,
+                    showDictations: showDictations,
+                    showTransforms: showTransforms,
+                    showSettings: showSettings,
+                    showDashboard: showDashboard,
+                    hasMeeting: selectedMeeting != nil
+                ) {
+                    openLiveCall()
+                }
+            } else if MainDetailPane.shouldRevealMeetingOnStop(
+                showTranslate: showTranslate,
+                showDictations: showDictations,
+                showTransforms: showTransforms,
+                showSettings: showSettings,
+                showDashboard: showDashboard,
+                hasMeeting: selectedMeeting != nil
+            ) {
+                if let meeting = recordingManager.currentMeeting {
+                    selectedMeeting = meeting
+                    showDashboard = false
+                } else {
+                    showDashboard = true
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotShowTranscriptionSettings)) { _ in
+            SettingsSection.pending = .create
+            showSettings = true
+            showDashboard = false
+            selectedMeeting = nil
+            showDictations = false
+            showTransforms = false
+            showTranslate = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .parrotImportAudio)) { _ in
             if !recordingManager.isRecording { showMenuImporter = true }
@@ -103,6 +175,27 @@ struct ContentView: View {
         }
     }
 
+    private var showingLiveCall: Bool {
+        MainDetailPane.resolve(
+            isRecording: recordingManager.isRecording,
+            showTranslate: showTranslate,
+            showDictations: showDictations,
+            showTransforms: showTransforms,
+            showSettings: showSettings,
+            showDashboard: showDashboard,
+            hasMeeting: selectedMeeting != nil
+        ) == .live
+    }
+
+    private func openLiveCall() {
+        showSettings = false
+        showDictations = false
+        showTransforms = false
+        showTranslate = false
+        selectedMeeting = nil
+        showDashboard = false
+    }
+
     private func presentBugReport() {
         reportScreenshot = BugReport.captureWindow()
         showBugReport = true
@@ -113,6 +206,9 @@ struct ContentView: View {
         selectedMeeting = meeting
         showDashboard = false
         showSettings = false
+        showDictations = false
+        showTransforms = false
+        showTranslate = false
     }
 
     /// Settings in the main pane — the old sheet was a cramped 520pt popup.
@@ -135,6 +231,104 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Colors.canvas)
+    }
+}
+
+/// Which detail pane wins. Sidebar destinations beat the live call so Settings
+/// and dictation stay reachable while a recording runs.
+enum MainDetailPane: Equatable {
+    case live, translate, dictations, transforms, settings, dashboard, meeting, empty
+
+    static func resolve(
+        isRecording: Bool,
+        showTranslate: Bool,
+        showDictations: Bool,
+        showTransforms: Bool,
+        showSettings: Bool,
+        showDashboard: Bool,
+        hasMeeting: Bool
+    ) -> MainDetailPane {
+        if showTranslate { return .translate }
+        if showDictations { return .dictations }
+        if showTransforms { return .transforms }
+        if showSettings { return .settings }
+        if hasMeeting { return .meeting }
+        if showDashboard { return .dashboard }
+        if isRecording { return .live }
+        return .empty
+    }
+
+    /// Start Recording from the menu bar should not yank Settings / a meeting.
+    static func shouldOpenLiveOnStart(
+        showTranslate: Bool,
+        showDictations: Bool,
+        showTransforms: Bool,
+        showSettings: Bool,
+        showDashboard: Bool,
+        hasMeeting: Bool
+    ) -> Bool {
+        switch resolve(
+            isRecording: false,
+            showTranslate: showTranslate,
+            showDictations: showDictations,
+            showTransforms: showTransforms,
+            showSettings: showSettings,
+            showDashboard: showDashboard,
+            hasMeeting: hasMeeting
+        ) {
+        case .dashboard, .empty: true
+        default: false
+        }
+    }
+
+    /// Only the live call pane jumps to the finished meeting on Stop.
+    static func shouldRevealMeetingOnStop(
+        showTranslate: Bool,
+        showDictations: Bool,
+        showTransforms: Bool,
+        showSettings: Bool,
+        showDashboard: Bool,
+        hasMeeting: Bool
+    ) -> Bool {
+        resolve(
+            isRecording: true,
+            showTranslate: showTranslate,
+            showDictations: showDictations,
+            showTransforms: showTransforms,
+            showSettings: showSettings,
+            showDashboard: showDashboard,
+            hasMeeting: hasMeeting
+        ) == .live
+    }
+}
+
+private struct RecordingAwayBanner: View {
+    let elapsed: String
+    var stopping: Bool
+    var onShow: () -> Void
+    var onStop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Theme.Colors.stop)
+                .frame(width: 8, height: 8)
+            Text(elapsed)
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.ink)
+            Button("Show call", action: onShow)
+                .buttonStyle(.link)
+                .font(Theme.Typography.secondary)
+            Button(stopping ? "Finalizing…" : "Stop", action: onStop)
+                .buttonStyle(.link)
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.stop)
+                .disabled(stopping)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.Colors.panel, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.Colors.line))
     }
 }
 

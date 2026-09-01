@@ -22,6 +22,9 @@ let package = Package(
         // to copy it into Contents/Frameworks itself — `swift build` links it
         // but never embeds it (see the bundle step).
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.5"),
+        // In-process LLM (Translation Local). Pinned to 2.29.x — later tags
+        // need Swift 6.2. Same download-then-load pattern as WhisperKit.
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMinor(from: "2.29.1")),
     ],
     targets: [
         .executableTarget(
@@ -31,6 +34,8 @@ let package = Package(
                 .product(name: "FluidAudio", package: "FluidAudio"),
                 .product(name: "CSpeexDSP", package: "CSpeexDSP"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
             ],
             path: "Parrot",
             linkerSettings: [

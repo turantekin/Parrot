@@ -120,6 +120,9 @@ bundle: build
 	@# SwiftPM resource bundles + the UI fonts (Info.plist sets ATSApplicationFontsPath ".")
 	cp -R $(BINDIR)/*.bundle $(APP)/Contents/Resources/
 	cp Parrot/Fonts/*.otf $(APP)/Contents/Resources/
+	@# mlx-swift needs compiled Metal shaders. swift build never emits them;
+	@# without this bundle the app dies at launch (library not found).
+	@scripts/build-mlx-metallib.sh $(BINDIR)/mlx.metallib $(APP)
 	@# Sparkle is a binary XCFramework: swift build links against it but never
 	@# embeds it, so it has to be copied in by hand. The executable's rpath
 	@# points at ../Frameworks (see Package.swift linkerSettings).

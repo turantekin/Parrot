@@ -6,7 +6,10 @@ import UniformTypeIdentifiers
 /// page on the right. Content rules: controls at body size, hints one line at
 /// secondary size — long explanations live in the control's own label instead.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, recording, transcription, copilot, apiKeys, knowledge, profiles
+    case general, recording, create, transcription, copilot, apiKeys, knowledge, profiles
+
+    /// Set before opening Settings so the Create page is selected.
+    static var pending: SettingsSection?
 
     var id: String { rawValue }
 
@@ -14,6 +17,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .recording: "Recording"
+        case .create: "Create"
         case .transcription: "Transcription"
         case .copilot: "Copilot"
         case .apiKeys: "API Keys"
@@ -26,6 +30,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .recording: "mic"
+        case .create: "keyboard"
         case .transcription: "text.quote"
         case .copilot: "sparkles"
         case .apiKeys: "key"
@@ -58,15 +63,22 @@ struct SettingsView: View {
     @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
     @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
     @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
-    /// True after picking "Custom…" in the Ollama model dropdown, so the free
-    /// text field stays visible even while the typed name matches nothing.
-    @State private var ollamaCustomModelEditing = false
+    @AppStorage(FeatureProcessing.translationOllamaModelKey) private var translationOllamaModel = FeatureProcessing.translationOllamaDefault
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "auto"
     @AppStorage("customVocabulary") private var customVocabulary = ""
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @AppStorage("polishAfterCall") private var polishAfterCall = false
     @AppStorage("livePreview") private var livePreview = true
+    @AppStorage(FeatureProcessing.callModeKey) private var callMode = ProcessingMode.local.rawValue
+    @AppStorage(FeatureProcessing.polishModeKey) private var polishMode = ProcessingMode.local.rawValue
+    @AppStorage(FeatureProcessing.translationModeKey) private var translationMode = ProcessingMode.local.rawValue
+    @AppStorage(FeatureProcessing.dictationModeKey) private var dictationMode = ProcessingMode.local.rawValue
+    @AppStorage(FeatureProcessing.cloudVendorKey) private var cloudVendor = CloudVendor.gemini.rawValue
+    @AppStorage(FeatureProcessing.refineIntervalKey) private var refineInterval = 120.0
+    @AppStorage(FeatureProcessing.showBarKey) private var showProcessingBar = true
+    @AppStorage(FeatureProcessing.autoPasteKey) private var autoPaste = true
+    @AppStorage(FeatureProcessing.appleTranslationKey) private var useAppleTranslation = false
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
@@ -95,7 +107,11 @@ struct SettingsView: View {
     private var settingsFingerprint: String {
         "\(selectedModel)|\(appearance)|\(copilotEnabled)|\(transcriptionLanguage)|"
             + "\(customVocabulary)|\(echoCancellation)|\(transcriptionBackend)|\(polishAfterCall)|"
-            + "\(copilotPace)|\(copilotWindow)|\(livePreview)"
+            + "\(copilotPace)|\(copilotWindow)|\(livePreview)|\(callMode)|\(polishMode)|"
+            + "\(translationMode)|\(dictationMode)|"
+            + "\(cloudVendor)|\(refineInterval)|\(useAppleTranslation)|\(translationOllamaModel)|"
+            + "\(showProcessingBar)|\(autoPaste)|"
+            + "\(recordingManager.translationStore.targetCode)"
     }
 
     private func flashSavedToast() {
@@ -142,6 +158,7 @@ struct SettingsView: View {
                 switch section {
                 case .general: generalPage
                 case .recording: recordingPage
+                case .create: createPage
                 case .transcription: transcriptionPage
                 case .copilot: copilotPage
                 case .apiKeys: apiKeysPage
@@ -153,6 +170,15 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onChange(of: settingsFingerprint) { flashSavedToast() }
+        .onAppear {
+            if let pending = SettingsSection.pending {
+                section = pending
+                SettingsSection.pending = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotShowTranscriptionSettings)) { _ in
+            section = .create
+        }
         .overlay(alignment: .bottom) {
             if showSavedToast {
                 Label("Saved", systemImage: "checkmark.circle.fill")
@@ -246,6 +272,54 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Create & key bindings
+
+    private var createPage: some View {
+        Form {
+            Section("Floating bar") {
+                Toggle("Show floating bar", isOn: $showProcessingBar)
+                    .onChange(of: showProcessingBar) { _, show in
+                        ProcessingBarController.shared.setVisible(show)
+                    }
+                Hint("A pill at the bottom of every screen. Click the mic for hands-free dictation.")
+            }
+
+            Section("Auto-paste") {
+                Toggle("Auto-paste into the focused field", isOn: $autoPaste)
+                Hint("When a dictation or transform finishes, insert the text where the cursor is. Off copies only.")
+                if !FocusText.isTrusted {
+                    Button("Allow Accessibility so Parrot can type into the focused field") {
+                        _ = FocusText.ensureTrusted()
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+
+            Section("Key Bindings") {
+                HotkeyRecorderRow(title: "Press and hold to dictate", slot: .dictationHold)
+                Hint("Hold to speak. Release to transcribe and paste into the focused field.")
+                HotkeyRecorderRow(title: "Hands-free dictation", slot: .dictation)
+                Hint("Press once to start, press again to stop and paste. Same idea as Wispr Flow.")
+                HotkeyRecorderRow(title: "Paste last transcript", slot: .pasteLast)
+                Hint("Re-inserts the last dictation into the focused field.")
+            }
+
+            Section("Transforms") {
+                HotkeyRecorderRow(title: "Transform — local", slot: .transformLocal)
+                HotkeyRecorderRow(title: "Transform — cloud", slot: .transformCloud)
+                Hint("Rewrites the selected text, or the clipboard if nothing is selected. Unbound until you record a shortcut.")
+                Picker("Default transform", selection: Binding(
+                    get: { recordingManager.transforms.itemID },
+                    set: { recordingManager.transforms.itemID = $0 }
+                )) {
+                    ForEach(TransformCatalog.all()) { item in
+                        Text(item.name).tag(item.id)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Transcription
 
     private var transcriptionPage: some View {
@@ -255,11 +329,15 @@ struct SettingsView: View {
                     Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
                     Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
                     Text("Deepgram cloud — word-by-word streaming, ~$1/hr").tag(TranscriptionBackend.deepgram.rawValue)
+                    Text("Gemini Live — streaming meetings & translation").tag(TranscriptionBackend.gemini.rawValue)
                 }
                 .pickerStyle(.radioGroup)
 
                 if transcriptionBackend == TranscriptionBackend.local.rawValue {
                     Hint("Every second of audio stays on this Mac.")
+                    if callMode == ProcessingMode.cloud.rawValue && cloudVendor == CloudVendor.gemini.rawValue {
+                        Hint("Cloud + Gemini still uses Gemini Live for the meeting, not Whisper.")
+                    }
                 } else {
                     HStack(spacing: 6) {
                         Hint("Cloud engines need a key, and fall back to on-device if it's missing.")
@@ -269,13 +347,66 @@ struct SettingsView: View {
                     }
                 }
 
-                Divider()
+            }
 
-                Toggle("Polish transcript after each call", isOn: $polishAfterCall)
-                Hint("Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.")
+            Section("Processing") {
+                    modePicker("Call", selection: $callMode, allowCloud: cloudSpeechReady)
+                    modePicker("Polish", selection: $polishMode, allowCloud: cloudSpeechReady)
+                    modePicker("Dictation", selection: $dictationMode, allowCloud: cloudSpeechReady)
+                    Picker("Cloud vendor", selection: $cloudVendor) {
+                        Text("Gemini").tag(CloudVendor.gemini.rawValue)
+                        Text("Groq").tag(CloudVendor.groq.rawValue)
+                        Text("Custom server").tag(CloudVendor.custom.rawValue)
+                    }
+                    if cloudVendor == CloudVendor.custom.rawValue {
+                        Hint("Custom is for text transforms only. Call, Polish, and Dictation Hybrid/Cloud need Gemini or Groq.")
+                    }
+                    if callMode != ProcessingMode.local.rawValue {
+                        Picker("Refine window", selection: $refineInterval) {
+                            Text("60 s").tag(60.0)
+                            Text("120 s").tag(120.0)
+                            Text("180 s").tag(180.0)
+                        }
+                    }
+                if !cloudSpeechReady {
+                    Hint("Add a Gemini or Groq key to enable Hybrid and Cloud speech.")
+                }
+                Button("Open API Keys") { section = .apiKeys }
+                    .buttonStyle(.link)
+            }
 
-                Divider()
+            Section("Translation") {
+                Picker("Translate into", selection: Binding(
+                    get: { recordingManager.translationStore.targetCode },
+                    set: { recordingManager.setTranslationTarget($0) }
+                )) {
+                    ForEach(TranslationLanguage.allCases) { language in
+                        Text(language.label).tag(language.rawValue)
+                    }
+                }
+                modePicker("Translation", selection: $translationMode, allowCloud: translationCloudReady, translation: true)
+                Hint("Hybrid and Cloud send the call's audio to Gemini. Local never does.")
+                if translationMode != ProcessingMode.cloud.rawValue {
+                    Picker("Local model", selection: $translationOllamaModel) {
+                        ForEach(LocalTextCatalog.models) { entry in
+                            Text(entry.label).tag(entry.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    LocalTextModelStatusView(modelID: translationOllamaModel)
+                }
+                if AppleTranslationGate.isSupported {
+                    Toggle("Apple Translation", isOn: $useAppleTranslation)
+                    Hint("Optional. Parrot asks once to download that language pack. Meetings never show that dialog.")
+                }
+                if !translationCloudReady {
+                    Hint("Add a Gemini key in API Keys to turn on Hybrid or Cloud translation.")
+                    Button("Open API Keys") { section = .apiKeys }
+                        .buttonStyle(.link)
+                }
+            }
 
+            Section {
                 Toggle("Show words as they're spoken", isOn: $livePreview)
                 Hint("Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.")
             }
@@ -360,6 +491,7 @@ struct SettingsView: View {
                     Text("Japanese").tag("ja")
                     Text("Korean").tag("ko")
                     Text("Hindi").tag("hi")
+                    Text("Urdu").tag("ur")
                 }
                 Hint("Applies to the next recording. Pick a language only if auto-detect keeps guessing wrong.")
             }
@@ -372,6 +504,9 @@ struct SettingsView: View {
                 Hint("Names and jargon Whisper mis-hears — comma or line separated (e.g. LaunchEase, Uygar).")
             }
         }
+        .modifier(AppleTranslationPrep(
+            targetCode: recordingManager.translationStore.targetCode,
+            enabled: AppleTranslationGate.shouldPrepPack))
     }
 
     @ViewBuilder
@@ -482,29 +617,9 @@ struct SettingsView: View {
                             .font(Theme.Typography.secondary)
                     }
                 case .ollama:
-                    Picker("Model", selection: ollamaModelSelection) {
-                        ForEach(OllamaCatalog.models, id: \.id) { entry in
-                            Text(entry.label).tag(entry.id)
-                        }
-                        Divider()
-                        Text("Custom…").tag("custom")
-                    }
-                    .pickerStyle(.menu)
-
-                    if showsOllamaCustomField {
-                        LabeledContent("Model name") {
-                            // Empty title + prompt: a titled TextField in a Form
-                            // renders its title as a second trailing label.
-                            TextField("", text: $copilotOllamaModel, prompt: Text("model:tag"))
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 220)
-                        }
-                        Hint("Any model from ollama.com/library — prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards.")
-                    }
-
-                    OllamaModelStatusView(model: copilotOllamaModel)
-
+                    OllamaModelPicker(
+                        model: $copilotOllamaModel,
+                        hint: "Any model from ollama.com/library — prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards.")
                     Hint("Runs entirely on this Mac — free, private, no key, works offline. Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
                 case .custom:
                     LabeledContent("Server URL") {
@@ -528,27 +643,29 @@ struct SettingsView: View {
                 }
     }
 
-    /// Dropdown selection for the Ollama model: catalog id, or "custom" when the
-    /// stored model isn't in the catalog (or the user picked Custom…).
-    private var ollamaModelSelection: Binding<String> {
-        Binding(
-            get: {
-                if ollamaCustomModelEditing { return "custom" }
-                return OllamaCatalog.ids.contains(copilotOllamaModel) ? copilotOllamaModel : "custom"
-            },
-            set: { picked in
-                if picked == "custom" {
-                    ollamaCustomModelEditing = true
-                } else {
-                    ollamaCustomModelEditing = false
-                    copilotOllamaModel = picked
-                }
-            }
-        )
+    private func modePicker(_ title: String, selection: Binding<String>, allowCloud: Bool, translation: Bool = false) -> some View {
+        Picker(title, selection: selection) {
+            Text(translation ? "Local — in-app model" : "Local — downloaded model only")
+                .tag(ProcessingMode.local.rawValue)
+            Text(translation ? "Hybrid — in-app, then Gemini" : "Hybrid — downloaded model, then cloud enhances")
+                .tag(ProcessingMode.hybrid.rawValue)
+                .disabled(!allowCloud)
+            Text(translation ? "Cloud — Gemini only" : "Cloud — vendor only, no local model")
+                .tag(ProcessingMode.cloud.rawValue)
+                .disabled(!allowCloud)
+        }
+        .pickerStyle(.radioGroup)
     }
 
-    private var showsOllamaCustomField: Bool {
-        ollamaCustomModelEditing || !OllamaCatalog.ids.contains(copilotOllamaModel)
+    /// Hybrid/Cloud speech needs Gemini or Groq with a key. Custom is text-only.
+    private var cloudSpeechReady: Bool {
+        let vendor = CloudVendor.resolved(cloudVendor)
+        return vendor != .custom && vendor.speechKey() != nil
+    }
+
+    /// Translation Hybrid / Cloud always means Gemini, including the audio pass.
+    private var translationCloudReady: Bool {
+        CloudVendor.gemini.speechKey() != nil
     }
 
     // MARK: - API Keys
@@ -579,6 +696,15 @@ struct SettingsView: View {
                     account: TranscriptionBackend.deepgram.keychainAccount!,
                     placeholder: "40-character hex key",
                     hint: "Billed per audio track. New accounts include $200 credit. Keys: console.deepgram.com"
+                )
+            }
+
+            Section("Gemini — live meetings, refine & post-call translation") {
+                ProviderKeyField(
+                    label: "Gemini API key",
+                    account: CloudVendor.gemini.keychainAccount,
+                    placeholder: "AIza…",
+                    hint: "Powers Gemini Live during a call and Live Translate after Stop. Keys: aistudio.google.com/apikey"
                 )
             }
 

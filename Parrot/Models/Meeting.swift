@@ -52,6 +52,10 @@ final class Meeting {
     var speakerNamesData: Data? = nil
     /// One-time "name the voices" card dismissed. Defaulted → old rows migrate.
     var speakerPromptDismissed: Bool = false
+    /// Started from Translate. Shows the post-call Translation tab. Defaulted.
+    var isTranslationRecording: Bool = false
+    /// Dropdown language for this meeting's translations. Defaulted.
+    var translationTargetCode: String = ""
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]

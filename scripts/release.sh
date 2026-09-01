@@ -69,6 +69,10 @@ plutil -replace LSMinimumSystemVersion    -string "14.0"            "$PLIST"
 cp -R .build/release/*.bundle "$APP/Contents/Resources/"
 cp Parrot/Fonts/*.otf "$APP/Contents/Resources/"
 
+# mlx-swift needs compiled Metal shaders. swift build never emits them;
+# without this bundle the app dies at launch (library not found).
+scripts/build-mlx-metallib.sh .build/release/mlx.metallib "$APP"
+
 # Sparkle is a binary XCFramework — swift build links it but never embeds it.
 mkdir -p "$APP/Contents/Frameworks"
 cp -R .build/release/Sparkle.framework "$APP/Contents/Frameworks/"

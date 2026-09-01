@@ -43,6 +43,12 @@ struct MenuBarView: View {
 
         Divider()
 
+        Button((UserDefaults.standard.object(forKey: FeatureProcessing.showBarKey) as? Bool ?? true)
+               ? "Hide Dictation Bar" : "Show Dictation Bar") {
+            let show = !(UserDefaults.standard.object(forKey: FeatureProcessing.showBarKey) as? Bool ?? true)
+            ProcessingBarController.shared.setVisible(show)
+        }
+
         Button("Open Parrot") {
             NSApp.activate(ignoringOtherApps: true)
             if let window = NSApp.windows.first(where: { $0.title != "Item-0" }) {

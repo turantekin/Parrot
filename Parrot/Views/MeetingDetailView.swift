@@ -4,6 +4,7 @@ import AVFoundation
 /// Which pane of the post-meeting report is showing.
 enum ReportTab: String, CaseIterable, Identifiable {
     case report = "Report"
+    case translation = "Translation"
     case transcript = "Transcript"
     case insights = "Insights"
     case notes = "Notes"
@@ -11,6 +12,7 @@ enum ReportTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .report: "doc.text"
+        case .translation: "globe"
         case .transcript: "text.bubble"
         case .insights: "sparkles"
         case .notes: "square.and.pencil"
@@ -71,13 +73,13 @@ struct MeetingDetailView: View {
             // Tabs — each gets the full pane with a single scroll, instead of the
             // old stack of fixed-height mini-scrollers.
             Picker("View", selection: $tab) {
-                ForEach(ReportTab.allCases) { t in
+                ForEach(visibleTabs) { t in
                     Label(t.rawValue, systemImage: t.icon).tag(t)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 380)
+            .frame(maxWidth: meeting.isTranslationRecording ? 520 : 380)
             .padding(.horizontal)
             .padding(.vertical, 8)
 
@@ -86,6 +88,7 @@ struct MeetingDetailView: View {
             Group {
                 switch tab {
                 case .report: reportTab
+                case .translation: translationTab
                 case .transcript: transcriptTab
                 case .insights: insightsTab
                 case .notes: notesTab
@@ -99,6 +102,9 @@ struct MeetingDetailView: View {
             titleText = meeting.title
             themNameText = meeting.themName ?? ""
             prepareAudioPlayer()
+            if tab == .translation && !meeting.isTranslationRecording {
+                tab = .report
+            }
         }
         .onDisappear {
             stopPlayback()
@@ -326,6 +332,10 @@ struct MeetingDetailView: View {
         .padding(.vertical, 8)
     }
 
+    private var visibleTabs: [ReportTab] {
+        ReportTab.allCases.filter { $0 != .translation || meeting.isTranslationRecording }
+    }
+
     // MARK: - Report tab (Summary + Coaching)
 
     private var reportTab: some View {
@@ -374,6 +384,69 @@ struct MeetingDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
         .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+    }
+
+    // MARK: - Translation tab
+
+    private var isTranslatingThisMeeting: Bool {
+        recordingManager.translatingMeetingID == meeting.id
+    }
+
+    private var translationTab: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Picker("Translate into", selection: Binding(
+                    get: {
+                        meeting.translationTargetCode.isEmpty
+                            ? recordingManager.translationStore.targetCode
+                            : meeting.translationTargetCode
+                    },
+                    set: { meeting.translationTargetCode = $0 }
+                )) {
+                    ForEach(TranslationLanguage.allCases) { language in
+                        Text(language.label).tag(language.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+
+                Button {
+                    Task { await recordingManager.translateTranscript(meeting: meeting, replaceExisting: true) }
+                } label: {
+                    Label(isTranslatingThisMeeting
+                          ? "Translating…"
+                          : (hasTranslations ? "Translate again" : "Translate transcript"),
+                          systemImage: "globe")
+                }
+                .disabled(isTranslatingThisMeeting || meeting.sortedSegments.isEmpty)
+                .help("Run the Translation mode over every line, the same way the report is processed after the call.")
+
+                Spacer()
+            }
+            .padding(.horizontal, Theme.Metrics.pad)
+            .padding(.vertical, 8)
+
+            if let notice = recordingManager.transcriptTranslateNotice, !notice.isEmpty {
+                Text(notice)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.warn)
+                    .padding(.horizontal, Theme.Metrics.pad)
+                    .padding(.bottom, 6)
+            }
+
+            if isTranslatingThisMeeting {
+                reportGeneratingRow("Translating the transcript…")
+                    .padding(.horizontal, Theme.Metrics.pad)
+            } else if !hasTranslations {
+                emptyTabState("No translation yet. Translate transcript runs the selected Local, Hybrid, or Cloud mode over every line.")
+            } else {
+                transcriptList
+            }
+        }
+    }
+
+    private var hasTranslations: Bool {
+        meeting.segments.contains { !$0.translation.isEmpty }
     }
 
     /// Me's share of the words, for the talk-balance bar.
@@ -861,9 +934,17 @@ struct TranscriptSegmentRow: View {
             }
 
             // Text
-            Text(segment.text)
-                .font(Theme.Typography.body)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(segment.text)
+                    .font(Theme.Typography.body)
+                    .textSelection(.enabled)
+                if !segment.translation.isEmpty {
+                    Text(segment.translation)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .textSelection(.enabled)
+                }
+            }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

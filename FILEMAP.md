@@ -22,7 +22,9 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Models/KindStyle.swift` | 84 | Maps insight kinds to icon/color; `Color` helpers |
 | `Models/KnowledgeBase.swift` | 54 | KB document/chunk/reference value types |
 | `Models/AIUsage.swift` | 131 | Token accounting and per-model price table |
+| `Models/ProcessingMode.swift` | 140 | Per-feature Local / Hybrid / Cloud; same model rule everywhere |
 | `Models/SpeakerProfile.swift` | 30 | Remembered voice: name + running-mean embedding (opt-in, local) |
+| `Models/DictationNote.swift` | 24 | Saved dictation utterance for the sidebar list |
 
 ## Services
 
@@ -33,7 +35,16 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/SystemAudioTap.swift` | 250 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
 | `Services/TranscriptionEngine.swift` | 947 | On-device WhisperKit; `AudioSource` routing; live preview decode |
-| `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
+| `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode + ranged CAF |
+| `Services/GeminiTranscription.swift` | 320 | Gemini 3.5 Transcribe Interactions client + hybrid window refiner |
+| `Services/GeminiLive.swift` | 360 | Gemini Transcribe Live sockets + post-call Live Translate |
+| `Services/TextRewriter.swift` | 241 | Local/cloud rewrite + clipboard helper (transforms, cloud translation) |
+| `Services/LocalTextModel.swift` | 220 | In-process MLX translation; Local mode auto-loads and unloads |
+| `Services/TranslationService.swift` | 280 | Translation store; Apple packs asked once before a call |
+| `Services/HotkeyCenter.swift` | 200 | Carbon hotkeys: hold, hands-free, paste last, two transforms |
+| `Services/DictationController.swift` | 200 | Hold / hands-free dictation → focused field or clipboard |
+| `Services/FocusText.swift` | 70 | AX selected-text read/write + ⌘V fallback |
+| `Services/TransformController.swift` | 70 | Local vs cloud rewrite; clipboard out; busy guard |
 | `Services/DiarizationEngine.swift` | 105 | FluidAudio offline pyannote diarization (CoreML): labels + per-speaker embeddings |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |
@@ -54,13 +65,13 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/ContentView.swift` | 190 | Root split view + empty state + corner bug button |
 | `Views/SidebarView.swift` | 361 | Meeting list, rows, talk-ratio strip |
 | `Views/DashboardView.swift` | 329 | Landing stats + recent meetings |
-| `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
+| `Views/LiveRecordingView.swift` | 664 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 729 | Live insight cards, pinned blockers, suggested replies |
-| `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
+| `Views/MeetingDetailView.swift` | 900 | Post-call tabs: report, translation, transcript, insights, notes |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
-| `Views/SettingsView.swift` | 829 | All settings sections, provider keys, KB docs |
+| `Views/SettingsView.swift` | 920 | Settings pages including Create (bar, auto-paste, key bindings) |
 | `Views/ProfilesSettingsView.swift` | 689 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
@@ -68,6 +79,10 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/AppCommands.swift` | 240 | `AppSession`, menu commands, context menus, notifications |
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
 | `Views/Theme.swift` | 151 | Single source of colors, fonts, metrics |
+| `Views/DictationHUD.swift` | 220 | Wispr-style floating mic, HUD, hotkey chips |
+| `Views/DictationListView.swift` | 80 | History of finished dictations |
+| `Views/TransformsView.swift` | 120 | Manage built-in and custom rewrite presets |
+| `Views/TranslateSetupView.swift` | 70 | Pre-call language picker for a translation recording |
 
 ## Build & non-source
 
@@ -78,6 +93,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Package.swift` | SwiftPM deps (WhisperKit, vendored CSpeexDSP) |
 | `scripts/release.sh` | Release packaging; mirrors the Makefile's bundle step |
 | `scripts/assemble-help.sh` | Builds the Apple Help Book into the .app from `docs/help/` (both builders call it) |
+| `scripts/build-mlx-metallib.sh` | Compiles mlx-swift `mlx.metallib` — `swift build` never emits it |
 | `docs/help/` | User guide: one HTML set serving GitHub Pages AND the in-app Help menu |
 | `Vendor/CSpeexDSP/` | Vendored C echo canceller — do not modify |
 | `docs/IMPROVEMENT-ROADMAP.md` | Roadmap + build notes (incl. the Xcode race) |

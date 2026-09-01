@@ -23,6 +23,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.5"
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    from: "2.29.1"
 
 targets:
   Parrot:
@@ -62,6 +65,10 @@ targets:
         product: CSpeexDSP
       - package: Sparkle
         product: Sparkle
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
     entitlements:
       path: Parrot/Parrot.entitlements
       properties:

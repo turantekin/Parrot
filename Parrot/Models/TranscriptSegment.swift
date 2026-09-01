@@ -10,6 +10,9 @@ final class TranscriptSegment {
     var text: String
     var speakerLabel: String?
     var confidence: Float?
+    /// Target-language line. Empty when translation was off. Defaulted so
+    /// older meetings migrate.
+    var translation: String = ""
 
     init(
         startTime: TimeInterval,

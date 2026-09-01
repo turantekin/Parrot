@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Cloud transcription backends (bring-your-own-key). On-device Whisper stays
 /// the default and the always-available fallback; these exist for users who
@@ -11,6 +12,8 @@ enum TranscriptionBackend: String, CaseIterable {
     case groq
     /// Deepgram Nova-3 streaming — word-by-word, ~300 ms latency.
     case deepgram
+    /// Gemini 3.5 Transcribe Live — streaming meetings and live translation.
+    case gemini
 
     static let defaultsKey = "transcriptionBackend"
 
@@ -18,11 +21,25 @@ enum TranscriptionBackend: String, CaseIterable {
         TranscriptionBackend(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .local
     }
 
+    /// Engine that will actually run this call. Cloud + Gemini vendor streams
+    /// through Transcribe Live even when the picker still says Whisper.
+    static func liveEngine() -> TranscriptionBackend {
+        let picked = selected
+        if picked == .local,
+           FeatureProcessing.call == .cloud,
+           CloudVendor.selected == .gemini,
+           CloudVendor.gemini.speechKey() != nil {
+            return .gemini
+        }
+        return picked
+    }
+
     var label: String {
         switch self {
         case .local: "On-device Whisper"
         case .groq: "Groq cloud"
         case .deepgram: "Deepgram cloud"
+        case .gemini: "Gemini Live"
         }
     }
 
@@ -32,6 +49,7 @@ enum TranscriptionBackend: String, CaseIterable {
         case .local: nil
         case .groq: "groq-api-key"
         case .deepgram: "deepgram-api-key"
+        case .gemini: CloudVendor.gemini.keychainAccount
         }
     }
 }
@@ -173,7 +191,7 @@ enum WAVEncoder {
 /// Sends 16 kHz mono linear16 PCM continuously; receives interim transcripts
 /// (word-by-word, ~300 ms) and finals with stream-relative timestamps — which
 /// equal meeting-relative here, since streaming starts with the recording.
-final class DeepgramStreamer {
+final class DeepgramStreamer: LiveAudioStreamer {
     private var task: URLSessionWebSocketTask?
 
     /// Called off-main with the latest interim transcript for the live line.
@@ -298,57 +316,100 @@ enum TranscriptPolisher {
     /// Throws on any API failure — caller keeps the live transcript.
     static func polish(systemPath: String?, micPath: String?,
                        language: String?, apiKey: String) async throws -> [PolishedSegment] {
-        var out: [PolishedSegment] = []
-        for (path, speaker) in [(systemPath, "Them"), (micPath, "Me")] {
-            guard let path, FileManager.default.fileExists(atPath: path) else { continue }
-            guard let samples = try? AudioFileLoader.load16kMono(url: URL(fileURLWithPath: path)) else {
-                NSLog("Parrot: polish skipped \(speaker) track — unsupported format")
-                continue
-            }
-            let partLength = 16000 * partSeconds
-            var offset = 0
-            while offset < samples.count {
-                let part = Array(samples[offset ..< min(offset + partLength, samples.count)])
-                let shift = Double(offset) / 16000.0
-                let segments = try await GroqTranscriber.transcribeFile(
-                    WAVEncoder.encode(samples: part, sampleRate: 16000),
-                    fileName: "part.wav", language: language, apiKey: apiKey)
-                for s in segments {
-                    let text = TranscriptionEngine.cleaned(s.text)
-                    guard !text.isEmpty else { continue }
-                    out.append(PolishedSegment(text: text, start: s.start + shift,
-                                               end: s.end + shift, speaker: speaker))
-                }
-                offset += partLength
-            }
+        try await HybridRefiner.polishTracks(systemPath: systemPath, micPath: micPath, smart: true)
+    }
+
+    /// Insert replacements, save, then delete rows in `[windowStart, windowEnd)`.
+    /// Earlier windows and the hot tail stay. Returns false if the first save
+    /// failed — old rows stay.
+    @discardableResult
+    static func applyWindow(_ polished: [PolishedSegment], to meeting: Meeting,
+                            windowStart: Double = 0, windowEnd: Double,
+                            context: ModelContext) -> Bool {
+        guard !polished.isEmpty else { return true }
+        let old = meeting.segments.filter {
+            $0.startTime >= windowStart && $0.startTime < windowEnd
         }
-        return out.sorted { $0.start < $1.start }
+        var created: [TranscriptSegment] = []
+        for s in polished {
+            let segment = TranscriptSegment(
+                startTime: s.start, endTime: s.end,
+                text: s.text, speakerLabel: s.speaker, confidence: nil)
+            context.insert(segment)
+            segment.meeting = meeting
+            created.append(segment)
+        }
+        do {
+            try context.save()
+        } catch {
+            for row in created { context.delete(row) }
+            NSLog("Parrot: polish save failed — keeping live segments — \(error.localizedDescription)")
+            return false
+        }
+        for row in old { context.delete(row) }
+        do {
+            try context.save()
+        } catch {
+            NSLog("Parrot: polish cleanup save failed — \(error.localizedDescription)")
+        }
+        return true
+    }
+
+    /// Whole-transcript replace used by full Cloud polish. Same save-first rule.
+    @discardableResult
+    static func replaceAll(_ polished: [PolishedSegment], on meeting: Meeting,
+                           context: ModelContext) -> Bool {
+        applyWindow(polished, to: meeting, windowEnd: .greatestFiniteMagnitude, context: context)
     }
 }
 
-/// Loads a recorded .caf as 16 kHz mono floats.
+/// Loads a recorded .caf as 16 kHz mono floats, optionally a time range.
 enum AudioFileLoader {
     enum LoadError: Error { case unsupportedFormat }
+
+    static func durationSeconds(url: URL) throws -> Double {
+        let file = try AVAudioFile(forReading: url)
+        guard file.fileFormat.sampleRate > 0 else { throw LoadError.unsupportedFormat }
+        return Double(file.length) / file.fileFormat.sampleRate
+    }
+
+    /// Whole-file convenience. Prefer `read16kMono(from:duration:)` on long calls.
+    static func load16kMono(url: URL) throws -> [Float] {
+        try read16kMono(url: url, from: 0, duration: .greatestFiniteMagnitude)
+    }
 
     // ponytail: fast path only — our recordings are written as 16 kHz mono by
     // construction; the rare non-16k system track (already surfaced by the
     // echo-canceller notice) skips polish rather than growing a converter loop.
-    static func load16kMono(url: URL) throws -> [Float] {
+    static func read16kMono(url: URL, from startSeconds: Double, duration: Double) throws -> [Float] {
         let file = try AVAudioFile(forReading: url)
         let format = file.processingFormat
         guard format.sampleRate == 16000, format.channelCount == 1 else {
             throw LoadError.unsupportedFormat
         }
+        let startFrame = AVAudioFramePosition(max(0, startSeconds) * format.sampleRate)
+        guard startFrame < file.length else { return [] }
+        file.framePosition = startFrame
+        let remaining = file.length - startFrame
+        let want: AVAudioFrameCount
+        if duration.isInfinite || duration >= Double(remaining) / format.sampleRate {
+            want = AVAudioFrameCount(remaining)
+        } else {
+            want = AVAudioFrameCount(max(0, duration) * format.sampleRate)
+        }
         var samples: [Float] = []
-        samples.reserveCapacity(Int(file.length))
+        samples.reserveCapacity(Int(want))
         let block: AVAudioFrameCount = 1 << 18
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: block) else {
             throw LoadError.unsupportedFormat
         }
-        while file.framePosition < file.length {
-            try file.read(into: buffer, frameCount: block)
+        var left = want
+        while left > 0, file.framePosition < file.length {
+            let n = min(block, left)
+            try file.read(into: buffer, frameCount: n)
             guard buffer.frameLength > 0, let ch = buffer.floatChannelData?[0] else { break }
             samples.append(contentsOf: UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
+            left -= buffer.frameLength
         }
         return samples
     }

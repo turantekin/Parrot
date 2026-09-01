@@ -106,6 +106,9 @@ final class CallAnalysisEngine {
 
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
+    /// Live translation target. Re-read each pass so a mid-call language switch
+    /// is on the next copilot request.
+    var translationContext: (() -> TranslationContext?)?
 
     let provider: AnalysisProvider
     private var callBrief = ""
@@ -315,7 +318,8 @@ final class CallAnalysisEngine {
             persona: profile?.persona ?? "",
             counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
-            gauges: profile?.gauges ?? []
+            gauges: profile?.gauges ?? [],
+            translation: translationContext?()
         )
 
         do {

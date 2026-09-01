@@ -6,6 +6,7 @@ struct ParrotMain {
     /// Entry point. `--snapshot <path>` renders the report offscreen to a PNG for
     /// design verification (see SnapshotTool.swift); otherwise the normal app runs.
     static func main() {
+        FeatureProcessing.migrateIfNeeded()
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             MainActor.assumeIsolated { ReportSnapshot.write(to: args[i + 1]) }
@@ -95,7 +96,7 @@ struct ParrotApp: App {
     @AppStorage("appearance") private var appearance = Appearance.system
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self, DictationNote.self])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false
@@ -121,6 +122,7 @@ struct ParrotApp: App {
                 .onAppear {
                     applyAppearance()
                     appDelegate.recordingManager = recordingManager
+                    ProcessingBarController.shared.attach(manager: recordingManager)
                 }
                 .onChange(of: appearance) { applyAppearance() }
         }
