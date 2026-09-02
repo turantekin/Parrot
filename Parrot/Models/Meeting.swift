@@ -53,6 +53,15 @@ final class Meeting {
     /// One-time "name the voices" card dismissed. Defaulted → old rows migrate.
     var speakerPromptDismissed: Bool = false
 
+    /// When the user last trimmed the tail off this transcript, nil if never.
+    /// Drives the footer note — a transcript that stops mid-call should say why
+    /// it stops there. Defaulted → old rows migrate.
+    var truncatedAt: Date? = nil
+    /// Call time of the last line kept by that trim.
+    var truncatedAfterTime: TimeInterval = 0
+    /// Lines removed, summed over every trim on this meeting.
+    var truncatedLineCount: Int = 0
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
@@ -90,6 +99,56 @@ final class Meeting {
 
     var sortedSegments: [TranscriptSegment] {
         segments.sorted { $0.startTime < $1.startTime }
+    }
+
+    /// The tail of the transcript below `segment` — what a truncate removes.
+    /// Judged by start time, the order the user is reading, not by insertion
+    /// order. A line sharing the anchor's exact start time stays: nothing above
+    /// the clicked line should ever disappear.
+    func segments(after segment: TranscriptSegment) -> [TranscriptSegment] {
+        segments.filter { $0.startTime > segment.startTime }
+    }
+
+    /// Drops everything after `segment`, for the run of invented text Whisper
+    /// produces when a recording is left running on an empty room. The audio
+    /// file is deliberately left alone — storage is cheap, and it means a
+    /// mis-clicked line costs the transcript, not the recording. Returns how
+    /// many lines went.
+    @discardableResult
+    func truncate(after segment: TranscriptSegment, in context: ModelContext) -> Int {
+        // A meeting still being transcribed is having segments appended to it as
+        // we work — a cut would be undone by the next batch to land, leaving a
+        // receipt that lies about what the transcript holds. Enforced here, not
+        // just in the menu, so no caller can get it wrong.
+        guard status == .done else { return 0 }
+        // Snapshot first: deleting mutates the relationship we're filtering.
+        let tail = segments(after: segment)
+        guard !tail.isEmpty else { return 0 }
+        for stale in tail { context.delete(stale) }
+        // Stamped so the transcript can say why it stops where it stops. Trims
+        // accumulate: the count is every line this meeting has lost, the time is
+        // the most recent cut — which is always the earliest one.
+        truncatedAt = .now
+        truncatedAfterTime = segment.startTime
+        truncatedLineCount += tail.count
+        try? context.save()
+        return tail.count
+    }
+
+    static func noteLines(_ count: Int) -> String {
+        count == 1 ? "1 line" : "\(count) lines"
+    }
+
+    /// Footer line for a trimmed transcript; nil when nothing was ever cut.
+    /// The call time is formatted like the transcript rows (mm:ss, minutes
+    /// running past 60) so it names a timestamp the user can actually see.
+    var truncationNote: String? {
+        guard let truncatedAt, truncatedLineCount > 0 else { return nil }
+        let stamp = String(format: "%02d:%02d",
+                           Int(truncatedAfterTime) / 60, Int(truncatedAfterTime) % 60)
+        let lines = Self.noteLines(truncatedLineCount)
+        let when = truncatedAt.formatted(date: .abbreviated, time: .shortened)
+        return "You deleted \(lines) after \(stamp) on \(when). The recording still has the full audio."
     }
 
     var snapshotKinds: [ProfileKind] {

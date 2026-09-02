@@ -42,6 +42,8 @@ struct MeetingDetailView: View {
     @State private var showCostBreakdown = false
     @State private var cardNamingLabel: String?
     @State private var clipStopTask: Task<Void, Never>?
+    /// The line a pending "delete everything after this" is anchored to.
+    @State private var truncateAnchor: TranscriptSegment?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -488,24 +490,70 @@ struct MeetingDetailView: View {
     // MARK: - Transcript List
 
     private var transcriptList: some View {
-        ScrollView {
+        let ordered = meeting.sortedSegments
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(meeting.sortedSegments) { segment in
+                ForEach(ordered) { segment in
                     TranscriptSegmentRow(
                         segment: segment,
                         isActive: segment.id == activeSegmentID,
                         themName: meeting.themName,
                         meeting: meeting,
                         playClip: playClip,
-                        onReassign: { segment.speakerLabel = $0 }
+                        onReassign: { segment.speakerLabel = $0 },
+                        // A meeting still transcribing is being appended to as
+                        // we look at it — offer the cut once it has settled.
+                        onTruncate: meeting.status == .done
+                            ? { truncateAnchor = segment } : nil,
+                        isLastLine: segment.id == ordered.last?.id
                     )
                     .onTapGesture {
                         seekTo(segment.startTime)
                     }
                 }
+
+                if let note = meeting.truncationNote {
+                    truncationFooter(note)
+                }
             }
             .padding(Theme.Metrics.pad)
         }
+        .confirmationDialog(
+            "Delete the rest of this transcript?",
+            isPresented: Binding(
+                get: { truncateAnchor != nil },
+                set: { if !$0 { truncateAnchor = nil } }
+            ),
+            presenting: truncateAnchor
+        ) { anchor in
+            Button(truncateButtonTitle(for: anchor), role: .destructive) {
+                meeting.truncate(after: anchor, in: modelContext)
+                truncateAnchor = nil
+            }
+        } message: { anchor in
+            Text("Everything after \(anchor.formattedTimestamp) is removed from the transcript. The recording is kept, so the audio still plays in full.")
+        }
+    }
+
+    /// Explains why a transcript stops where it stops. Deliberately quiet —
+    /// it is a receipt, not a warning, and it sits below the last kept line.
+    private func truncationFooter(_ note: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "scissors")
+            Text(note)
+            Spacer(minLength: 0)
+        }
+        .font(Theme.Typography.caption)
+        .foregroundStyle(Theme.Colors.ink3)
+        // Same horizontal inset the rows use, so the note hangs off the same
+        // left edge as the lines it is talking about.
+        .padding(.horizontal, 8)
+        .padding(.top, 12)
+    }
+
+    private func truncateButtonTitle(for anchor: TranscriptSegment) -> String {
+        let count = meeting.segments(after: anchor).count
+        return count == 1 ? "Delete 1 Line" : "Delete \(count) Lines"
     }
 
     /// The confirm-first step needs the user's action, so the card has to be
@@ -802,6 +850,10 @@ struct TranscriptSegmentRow: View {
     var meeting: Meeting? = nil
     var playClip: ((TimeInterval, TimeInterval) -> Void)? = nil
     var onReassign: ((String) -> Void)? = nil
+    /// Set when this line can anchor a truncate; the parent owns the confirm.
+    var onTruncate: (() -> Void)? = nil
+    /// Bottom of the transcript: nothing below it to cut.
+    var isLastLine: Bool = false
     @State private var naming = false
 
     /// Muted adaptive palette for the other side of the call — "Me" is always
@@ -822,6 +874,10 @@ struct TranscriptSegmentRow: View {
     }
 
     private var isMe: Bool { segment.speakerLabel == "Me" }
+
+    /// Whether the "this line is" reassign menu shows — the truncate item's
+    /// divider only earns its place when there is something above it.
+    private var canReassign: Bool { meeting != nil && onReassign != nil && !isMe }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -883,6 +939,20 @@ struct TranscriptSegmentRow: View {
                         }
                     }
                 }
+            }
+
+            // Leaving a recording running produces a tail of text Whisper
+            // invents from near-silence. Cutting it is a transcript-only
+            // edit — the audio file stays whole.
+            if let onTruncate {
+                if canReassign { Divider() }
+                // Greyed rather than hidden on the last line. Hiding it left an
+                // empty menu, and macOS draws nothing at all for one — a
+                // right-click that silently does nothing reads as a broken app.
+                Button("Delete Everything After This Line…", role: .destructive) {
+                    onTruncate()
+                }
+                .disabled(isLastLine)
             }
         }
     }
