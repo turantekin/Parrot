@@ -40,6 +40,7 @@ enum ProfileTest {
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
+        testTranscriptTruncate()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -661,6 +662,94 @@ enum ProfileTest {
         check("sample count grows", profile?.sampleCount == 2)
         SpeakerProfileStore.deleteAll(in: ctx)
         check("deleteAll empties", SpeakerProfileStore.profiles(in: ctx).isEmpty)
+    }
+
+    // Trimming the tail of text Whisper invents when a recording is left
+    // running on an empty room (#50).
+    @MainActor
+    static func testTranscriptTruncate() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
+            check("truncate container builds", false); return
+        }
+        let ctx = ModelContext(container)
+        let m = Meeting(title: "t")
+        ctx.insert(m)
+
+        // Inserted out of order on purpose: the cut must follow the timeline the
+        // user reads, not the order rows happened to arrive in.
+        var rows: [Double: TranscriptSegment] = [:]
+        for (start, label, text) in [(30.0, "Me", "junk three"), (0.0, "Speaker 1", "real one"),
+                                     (20.0, "Me", "junk two"), (10.0, "Me", "real two"),
+                                     (25.0, "Speaker 2", "junk one")] {
+            let s = TranscriptSegment(startTime: start, endTime: start + 2, text: text, speakerLabel: label)
+            ctx.insert(s); s.meeting = m
+            rows[start] = s
+        }
+        // A line sharing the anchor's exact start time — diarization splits a
+        // turn into two rows often enough that this is not a synthetic case.
+        let tie = TranscriptSegment(startTime: 10.0, endTime: 11.0, text: "tied", speakerLabel: "Me")
+        ctx.insert(tie); tie.meeting = m
+        // An insight from the junk stretch: v1 trims the transcript only, so it
+        // has to survive the cut that removes the lines it points at.
+        let insight = CallInsight(from: Insight(kindKey: "blocker", title: "late flag",
+                                                detail: "d", callTime: 25, source: nil))
+        ctx.insert(insight); insight.meeting = m
+        m.systemAudioPath = "/tmp/parrot-test.caf"
+
+        guard let lastReal = rows[10.0], let last = rows[30.0], let first = rows[0.0] else {
+            check("truncate fixtures built", false); return
+        }
+
+        // The guard is in the model, not just the menu: a meeting still being
+        // transcribed is having segments appended to it as we cut.
+        check("truncate refuses while the meeting is unfinished",
+              m.truncate(after: lastReal, in: ctx) == 0)
+        check("refused truncate leaves the transcript whole", m.segments.count == 6)
+        check("refused truncate leaves no receipt", m.truncationNote == nil)
+        m.status = .done
+
+        check("tail counted by start time", m.segments(after: lastReal).count == 3)
+        check("a line sharing the anchor's start time is kept",
+              !m.segments(after: lastReal).contains { $0.id == tie.id })
+        check("tail excludes the anchor", !m.segments(after: lastReal).contains { $0.id == lastReal.id })
+        check("truncating after the last line is a no-op", m.segments(after: last).isEmpty)
+
+        check("truncate reports what it removed", m.truncate(after: lastReal, in: ctx) == 3)
+        check("transcript keeps everything up to the anchor",
+              Set(m.sortedSegments.map(\.text)) == ["real one", "real two", "tied"])
+        check("segments are gone from the store",
+              ((try? ctx.fetch(FetchDescriptor<TranscriptSegment>()))?.count ?? -1) == 3)
+        // v1 is a transcript edit: the audio and the insights are left alone so
+        // a mis-clicked line costs nothing that cannot be read back.
+        check("the recording is untouched", m.systemAudioPath == "/tmp/parrot-test.caf")
+        check("insights survive the cut",
+              m.insights.count == 1 && m.sortedInsights.first?.callTime == 25)
+        // The junk tail was the only place "Speaker 2" spoke — derived views
+        // (speaker count, the naming card) have to shrink with it.
+        check("speaker labels recompute after truncate", m.otherSpeakerLabels == ["Speaker 1"])
+        check("speaker count recomputes after truncate", m.speakerCount == 2)
+
+        check("second truncate at the same line removes nothing",
+              m.truncate(after: lastReal, in: ctx) == 0)
+
+        // The footer note: a trimmed transcript has to say why it stops there.
+        check("fresh meeting has no truncation note", Meeting(title: "u").truncationNote == nil)
+        check("note counts the removed lines", m.truncationNote?.contains("3 lines") == true)
+        check("note names the cut point as the rows show it",
+              m.truncationNote?.contains("after 00:10") == true)
+        let stampedAt = m.truncatedAt
+        check("truncate stamps a date", stampedAt != nil)
+        check("a no-op truncate leaves the stamp alone", m.truncatedAt == stampedAt)
+
+        check("truncating to the first line leaves one",
+              m.truncate(after: first, in: ctx) == 2 && m.segments.count == 1)
+        check("trims accumulate their line count", m.truncatedLineCount == 5)
+        check("note moves to the newest cut point",
+              m.truncationNote?.contains("after 00:00") == true)
+        check("note singularizes one line",
+              Meeting.noteLines(1) == "1 line" && Meeting.noteLines(2) == "2 lines")
     }
 
     static func testDiarizedLabel() {
