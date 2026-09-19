@@ -411,3 +411,15 @@ said:
 - **Live run.** A two-voice synthetic call through the speakers measured
   1.8 to 2.5 s from the prospect's last word to the excerpt and 6 to 9 s to
   Claude's card; see docs/PERFORMANCE.md.
+- **Reserved embedding slots, question-first Haiku references.** A generic
+  "how much does it cost to set one up" shares no words with the pricing
+  chunks; a third of the candidate slots now go to the top embedding matches
+  and the chunk reaches Jev (0.98) and Haiku. Haiku's references lead with
+  the latest question from the other side rather than the 8-line window,
+  which mic-bleed small talk had polluted in the live run. Precision at the
+  gate 0.92, zero false positives, top-4 retrieval unchanged at 50 of 71.
+- **Deepgram.** Its "Them" socket died about 15 s in on quiet system audio
+  (10 s no-audio close); a KeepAlive every 5 s fixed it, the close reason is
+  now logged publicly, and our own teardown is no longer reported as a
+  failure. With Deepgram streaming the transcript lands before the prospect
+  finishes and the excerpt was on screen 0.2 s before the audio ended.

@@ -73,7 +73,8 @@ nearer 0.95.
 | Embedding cosine only, top 8 (before) | 14 / 71 |
 | BM25 exact-word only, top 8 (prototype) | 55 / 71 |
 | Hybrid BM25 + cosine, equal-weight rank fusion, 12 candidates | 51 / 71, 32 within the top 4 |
-| BM25 first with stop words, embeddings fill the rest, 12 candidates (shipped) | 58 / 71, 50 within the top 4 |
+| BM25 first with stop words, embeddings fill the rest, 12 candidates | 58 / 71, 50 within the top 4 |
+| Same, with a third of the slots reserved for embedding matches (shipped) | 58 / 71, 50 within the top 4; a generic "how much does it cost to set one up" goes from missing to a hit |
 
 Where the chunk is in the list, Jev picks it: with cosine-only retrieval it
 hit 11 of the 13 questions it answered, with zero false positives. Equal
@@ -86,12 +87,12 @@ improved too: 50 of 71 in the top 4 instead of 12.
 
 | Threshold | shown | hits | wrong (by substring) | false positives (uncovered) | precision | recall |
 |---|---|---|---|---|---|---|
-| 0.50 | 58 | 52 | 6 | 0 | 0.90 | 0.73 |
-| 0.75 (shipped) | 55 | 50 | 5 | 0 | 0.91 | 0.70 |
-| 0.90 | 48 | 44 | 4 | 0 | 0.92 | 0.62 |
+| 0.50 | 55 | 51 | 4 | 0 | 0.93 | 0.72 |
+| 0.75 (shipped) | 53 | 49 | 4 | 0 | 0.92 | 0.69 |
+| 0.90 | 45 | 43 | 2 | 0 | 0.96 | 0.61 |
 
 Precision barely moves across the range, so raising the gate mostly loses
-recall; 0.75 stays. English recall at 0.75: 46 / 56. Turkish: 4 / 15 (English
+recall; 0.75 stays. English recall at 0.75: 44 / 56. Turkish: 5 / 15 (English
 product words carry; 0 / 15 before the hybrid search), no false positives on
 the two uncovered Turkish questions. One request with all candidates and one
 request per candidate reached the same ceiling; the single request had the
@@ -186,3 +187,10 @@ hidden behind a redacted NSLog. The streamer now sends a KeepAlive every
 5 s and logs the close code and reason publicly. The mic also produced junk
 "Me" lines from speaker bleed, which headphones avoid; that is the known AEC
 residual, not the copilot.
+
+Follow-up from the live run: the 8-line window Haiku searched with was full
+of mic-bleed small talk and buried the pricing chunk, so Haiku improvised
+"£X per month". The live pass now searches the other side's latest question
+first (two references) and fills from the window; with the reserved
+embedding slots the pricing FAQ chunk reaches both Jev and Haiku for that
+question (0.98).
