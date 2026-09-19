@@ -39,6 +39,7 @@ enum ProfileTest {
         testCopilotBudget()
         testJevMatcher()
         testDocExcerpt()
+        testReplayParser()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -979,5 +980,25 @@ enum ProfileTest {
         check("not superseded by an unrelated card", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelated]))
         check("not superseded by a stem match without a reply", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stemNoReply]))
         check("not superseded by nothing", !E.excerptSuperseded(question: "q", document: "d", by: []))
+    }
+
+    @MainActor
+    static func testReplayParser() {
+        let text = """
+        === Transcript ===
+
+        [00:12] Them: So walk me through the migration?
+        [00:31] Me: Great question.
+        [01:02] Speaker 2: And the price feels steep.
+        junk line without a stamp
+        [01:40]  Alice : Is the data in the EU?
+        [02:05] Them:
+        """
+        let lines = CopilotReplay.parse(text)
+        check("replay parses four stamped lines", lines.count == 4)
+        check("replay first line time and speaker", lines.first?.time == 12 && lines.first?.source == .them)
+        check("replay Me maps to .me", lines[1].source == .me && lines[1].text == "Great question.")
+        check("replay diarized speaker maps to .them", lines[2].source == .them && lines[2].time == 62)
+        check("replay tolerates spaces around the label", lines[3].text == "Is the data in the EU?")
     }
 }

@@ -42,6 +42,20 @@ struct ParrotMain {
             CaptureTest.run(seconds: seconds)
             return
         }
+        if let i = args.firstIndex(of: "--kb-add"), i + 1 < args.count {
+            MainActor.assumeIsolated { KBAddTool.run(path: args[i + 1]) }
+            return
+        }
+        if let i = args.firstIndex(of: "--doc-answer-eval"), i + 1 < args.count {
+            let shape = (i + 2 < args.count) ? args[i + 2] : "single"
+            DocAnswerEval.run(labelsPath: args[i + 1], shape: shape)
+            return
+        }
+        if let i = args.firstIndex(of: "--copilot-replay"), i + 1 < args.count {
+            let rest = Array(args[(i + 2)...])
+            MainActor.assumeIsolated { CopilotReplay.run(transcriptPath: args[i + 1], args: rest) }
+            return
+        }
         if args.contains("--profile-test") {
             MainActor.assumeIsolated { ProfileTest.run() }
             return

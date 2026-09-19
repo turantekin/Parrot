@@ -501,7 +501,7 @@ final class CallAnalysisEngine {
     var docMatcher: JevDocMatcher?
     /// Best-noul gate for showing an excerpt. Tuned by --doc-answer-eval on the
     /// 2026-09-19 label set (see docs/PERFORMANCE.md). Precision first.
-    static var docAnswerThreshold = 0.75
+    nonisolated static let docAnswerThreshold = 0.75
     /// Dev harness observation hook (--copilot-replay): every insertion, wall time.
     var onInsightInserted: ((Insight) -> Void)?
     private(set) var fastPathStats: (attempts: Int, hits: Int, failures: Int) = (0, 0, 0)
