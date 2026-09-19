@@ -193,19 +193,28 @@ final class KnowledgeBaseService {
             }
     }
 
-    /// Exact-word matches first, in BM25 order; embedding matches only fill
-    /// the slots the words did not reach. Equal-weight fusion was measured
+    /// Exact-word matches first, in BM25 order, with a third of the slots
+    /// (at least one, none below three) reserved for the top embedding
+    /// matches, then whatever is left fills. Equal-weight fusion was measured
     /// worse than BM25 alone (answer in the top 4 for 32 vs 47 of 71
     /// questions): the sentence embeddings rank near noise on factual
-    /// questions yet still outvoted a lone exact-word hit.
+    /// questions yet outvoted a lone exact-word hit. The reserve exists for
+    /// questions that share no words with their answer ("how much does it
+    /// cost" against "Launchese fee $11.99"), where words cannot help at all.
     nonisolated static func hybridOrder(lexical: [Int], cosine: [Int], topK: Int) -> [Int] {
+        let reserve = topK >= 3 ? max(1, topK / 3) : 0
         var seen = Set<Int>()
         var order: [Int] = []
-        for index in lexical + cosine where !seen.contains(index) {
-            seen.insert(index)
-            order.append(index)
-            if order.count == topK { break }
+        func take(_ candidates: [Int], upTo limit: Int) {
+            for index in candidates where !seen.contains(index) && order.count < limit {
+                seen.insert(index)
+                order.append(index)
+            }
         }
+        take(lexical, upTo: topK - reserve)
+        take(cosine, upTo: order.count + reserve)
+        take(lexical, upTo: topK)
+        take(cosine, upTo: topK)
         return order
     }
 

@@ -987,6 +987,13 @@ enum ProfileTest {
               E.excerptDisplayText("### 12.3 The paid route\n- **Standard** £50\n| a | b |\n|---|---|")
                 == "12.3 The paid route\n- Standard £50\na · b")
         check("excerpt display leaves plain text alone", E.excerptDisplayText("Plain line.\nSecond.") == "Plain line.\nSecond.")
+        // Haiku's reference search leads with the latest question from the other side.
+        let window: [(text: String, source: AudioSource)] = [
+            ("How much is express?", .them), ("Ninety-nine pounds.", .me), ("Do you take cards?", .them), ("Yes.", .me),
+        ]
+        check("latest question is the newest Them question", E.latestQuestion(in: window) == "Do you take cards?")
+        check("latest question ignores the user's own questions", E.latestQuestion(in: [("Ready?", .me), ("Sure.", .them)]) == nil)
+        check("latest question nil without one", E.latestQuestion(in: [("Hello there.", .them)]) == nil)
     }
 
     @MainActor
@@ -1027,6 +1034,15 @@ enum ProfileTest {
               K.hybridOrder(lexical: [2, 0], cosine: [1, 0, 3], topK: 3) == [2, 0, 1])
         check("hybrid order with no lexical hits is the cosine order", K.hybridOrder(lexical: [], cosine: [3, 1], topK: 5) == [3, 1])
         check("hybrid order respects topK", K.hybridOrder(lexical: [5, 4, 3], cosine: [], topK: 2) == [5, 4])
+        // A minority of slots is reserved for embedding matches so a question
+        // that shares no words with its answer ("how much does it cost" vs
+        // "Launchese fee $11.99") can still reach the candidates.
+        check("hybrid order reserves a slot for the top cosine hit",
+              K.hybridOrder(lexical: [5, 4, 3, 2], cosine: [9, 8], topK: 4) == [5, 4, 3, 9])
+        check("hybrid order reserves a third of a long list for cosine",
+              K.hybridOrder(lexical: Array(10..<30), cosine: Array(0..<5), topK: 12) == Array(10..<18) + Array(0..<4))
+        check("hybrid order never leaves a slot empty",
+              K.hybridOrder(lexical: [1, 2, 3, 4], cosine: [], topK: 4) == [1, 2, 3, 4])
     }
 
     static func testChunker() {

@@ -229,20 +229,26 @@ final class DeepgramStreamer {
     /// Ask Deepgram to flush remaining finals; caller waits a short grace
     /// period before tearing down.
     func finish() {
+        // Deepgram answers CloseStream with a normal close, which the receive
+        // loop sees as a failure; that is our own teardown, not an error.
+        closing = true
         task?.send(.string(#"{"type":"CloseStream"}"#)) { _ in }
     }
 
     func close() {
+        closing = true
         keepAlive?.cancel()
         keepAlive = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
     }
 
+    private var closing = false
+
     private var keepAlive: Task<Void, Never>?
     private var failed = false
     private func fail(_ message: String) {
-        guard !failed else { return }
+        guard !failed, !closing else { return }
         failed = true
         keepAlive?.cancel()
         // The close code and reason are where Deepgram puts the real cause

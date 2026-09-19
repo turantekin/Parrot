@@ -349,8 +349,22 @@ final class CallAnalysisEngine {
         let anchorTime = window.last?.time ?? 0
 
         // Retrieve knowledge base material matching the most recent speech.
-        let query = segments.suffix(8).map(\.text).joined(separator: " ")
-        var references = await knowledgeBase?.search(query: query, profileID: profile?.id) ?? []
+        // Two searches: the latest question from the other side leads (sharp,
+        // and it is what the next card must answer; an 8-line window full of
+        // small talk buried the pricing chunk in the 2026-09-19 live run), the
+        // recent window fills the rest.
+        let recent = segments.suffix(8)
+        var references: [KBReference] = []
+        if let kb = knowledgeBase {
+            if let question = Self.latestQuestion(in: recent.map { ($0.text, $0.source) }) {
+                references = await kb.search(query: question, profileID: profile?.id, topK: 2)
+            }
+            let windowQuery = recent.map(\.text).joined(separator: " ")
+            for reference in await kb.search(query: windowQuery, profileID: profile?.id)
+            where !references.contains(where: { $0.text == reference.text }) {
+                references.append(reference)
+            }
+        }
         // Pin the chunks Jev picked since the last pass, so Haiku reasons over
         // the same evidence the user is already looking at (it only sees the
         // cosine top 4; Jev looked at 8).
@@ -704,8 +718,13 @@ final class CallAnalysisEngine {
             .filter { $0.count > 2 && !stopWords.contains($0) })
     }
 
+    /// The newest thing the other side asked in a window, if anything.
+    nonisolated static func latestQuestion(in window: [(text: String, source: AudioSource)]) -> String? {
+        window.last { $0.source == .them && looksLikeQuestion($0.text) }?.text
+    }
+
     /// Cheap detector that fast-tracks analysis when someone asks something.
-    static func looksLikeQuestion(_ text: String) -> Bool {
+    nonisolated static func looksLikeQuestion(_ text: String) -> Bool {
         if text.contains("?") { return true }
         let lowered = text.lowercased()
         let openers = [
