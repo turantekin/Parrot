@@ -239,24 +239,55 @@ final class KnowledgeBaseService {
     }
 
     /// Splits text into ~900-character chunks along paragraph boundaries.
-    private nonisolated static func chunkText(_ text: String) -> [String] {
+    /// Markdown headings are glued onto the paragraph that follows them and
+    /// "---" separators are dropped, so a chunk is never a bare heading (the
+    /// 2026-09-19 eval found Jev rating "## 17. How Launchese works" at 0.66
+    /// for a price question). A paragraph over the cap, typically a table or
+    /// a long list, is split on its lines and every piece carries the section
+    /// heading, so "### Close a company (£75)" stays with its rows.
+    nonisolated static func chunkText(_ text: String, cap: Int = 900) -> [String] {
         let paragraphs = text
             .components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && $0 != "---" }
 
         var result: [String] = []
         var current = ""
+        var heading: String?   // waiting to be glued onto the next paragraph
+        var section: String?   // last heading seen; prefixed onto split pieces
+        func flush() {
+            if !current.isEmpty { result.append(current) }
+            current = ""
+        }
         for paragraph in paragraphs {
-            if current.count + paragraph.count > 900, !current.isEmpty {
-                result.append(current)
-                current = ""
+            if paragraph.hasPrefix("#") {
+                heading = paragraph
+                section = paragraph
+                continue
             }
-            current += current.isEmpty ? paragraph : "\n\n" + paragraph
+            var piece = paragraph
+            if let pending = heading {
+                piece = pending + "\n" + piece
+                heading = nil
+            }
+            if piece.count > cap {
+                flush()
+                let prefix = section.map { $0 + "\n" } ?? ""
+                var part = prefix
+                for line in piece.split(separator: "\n").map(String.init) where line != section {
+                    if part.count + line.count > cap, part != prefix {
+                        result.append(part.trimmingCharacters(in: .whitespacesAndNewlines))
+                        part = prefix
+                    }
+                    part += line + "\n"
+                }
+                if part != prefix { result.append(part.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                continue
+            }
+            if current.count + piece.count > cap, !current.isEmpty { flush() }
+            current += current.isEmpty ? piece : "\n\n" + piece
         }
-        if !current.isEmpty {
-            result.append(current)
-        }
+        flush()
         return result.filter { $0.count >= 40 }
     }
 

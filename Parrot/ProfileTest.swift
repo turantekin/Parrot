@@ -41,6 +41,7 @@ enum ProfileTest {
         testDocExcerpt()
         testReplayParser()
         testHybridRetrieval()
+        testChunker()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -1016,5 +1017,37 @@ enum ProfileTest {
         check("bm25 empty query yields nothing", K.bm25Order(query: [], documents: docs).isEmpty)
         check("rrf fuses two rankings", K.reciprocalRankFusion([[0, 1, 2], [0, 2]]) == [0, 2, 1])
         check("rrf of one ranking is that ranking", K.reciprocalRankFusion([[2, 0]]) == [2, 0])
+    }
+
+    static func testChunker() {
+        typealias K = KnowledgeBaseService
+        let items = (1...40).map { "- item \($0) costs £\($0) and is billed one-off with notes attached" }.joined(separator: "\n")
+        let doc = """
+        ## 13. Services
+
+        ---
+
+        ### 13.12 Close a company (£75)
+
+        Voluntary dissolution. The £75 includes the £13 fee. If the company is more than one year old, its tax return must be filed before it can be closed.
+
+        ### 13.13 Big list
+
+        \(items)
+
+        ### Trailing heading with nothing after it
+        """
+        let chunks = K.chunkText(doc)
+        check("chunker never emits a heading-only chunk",
+              chunks.allSatisfy { $0.split(separator: "\n").contains { !$0.hasPrefix("#") && $0 != "---" } })
+        check("chunker drops separators", !chunks.contains { $0.contains("---") })
+        check("chunker glues the heading to its paragraph",
+              chunks.contains { $0.hasPrefix("### 13.12 Close a company (£75)\n") && $0.contains("Voluntary dissolution") })
+        check("chunker splits an oversized paragraph", chunks.filter { $0.contains("item ") }.count >= 2)
+        check("chunker keeps every chunk under the cap", chunks.allSatisfy { $0.count <= 1000 })
+        check("chunker carries the section heading into split pieces",
+              chunks.filter { $0.contains("item ") }.allSatisfy { $0.hasPrefix("### 13.13 Big list\n") })
+        check("chunker keeps the whole content", chunks.joined(separator: "\n").contains("item 40 costs £40"))
+        check("chunker short plain text is one chunk", K.chunkText("Just one short paragraph that is long enough to keep.").count == 1)
     }
 }

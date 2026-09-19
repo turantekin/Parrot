@@ -162,6 +162,8 @@ final class CallAnalysisEngine {
         fastTask = nil
         pendingExcerpts = []
         consecutiveFastFailures = 0
+        fastPathPausedUntil = .distantPast
+        fastPathLastError = nil
         fastPathStats = (0, 0, 0)
         isPaused = false
         meCharacters = 0
@@ -507,17 +509,21 @@ final class CallAnalysisEngine {
     private(set) var fastPathStats: (attempts: Int, hits: Int, failures: Int) = (0, 0, 0)
     private var fastTask: Task<Void, Never>?
     private var consecutiveFastFailures = 0
+    /// Three failures in a row pause the path for a minute (a network blip
+    /// must not cost the whole call); dev harnesses read the last reason.
+    private var fastPathPausedUntil = Date.distantPast
+    private(set) var fastPathLastError: String?
     /// Excerpts shown since the last Haiku pass: their chunk is pinned into
     /// Haiku's references, and a grounded Haiku card supersedes them.
     private var pendingExcerpts: [(id: UUID, chunk: KBReference, question: String)] = []
 
-    /// Claude mode with a TypeSafe key and documents; three failures in a row
-    /// switch it off for the rest of the call. Ollama and custom stay local.
+    /// Claude mode with a TypeSafe key and documents, and not in a failure
+    /// cool-down. Ollama and custom stay local.
     private var fastPathAvailable: Bool {
         docMatcher?.isConfigured == true
             && CopilotProviderKind.selected == .claude
             && knowledgeBase.map { !$0.isEmpty } == true
-            && consecutiveFastFailures < 3
+            && Date.now >= fastPathPausedUntil
     }
 
     private func fastDocAnswer(question: String, before: String, at time: TimeInterval) async {
@@ -541,9 +547,14 @@ final class CallAnalysisEngine {
             onInsightInserted?(card)
         } catch {
             // Silent by design: Haiku is still coming. The panel never shows a
-            // fast-path error; three in a row disable it (fastPathAvailable).
+            // fast-path error; three in a row pause it for a minute.
             consecutiveFastFailures += 1
             fastPathStats.failures += 1
+            fastPathLastError = error.localizedDescription
+            if consecutiveFastFailures >= 3 {
+                fastPathPausedUntil = Date.now.addingTimeInterval(60)
+                consecutiveFastFailures = 0
+            }
         }
     }
 

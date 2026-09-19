@@ -451,6 +451,11 @@ enum CopilotSnapshot {
         // Newest first — index 0 becomes the hero. The unhandled objection is
         // filtered into the pinned zone regardless of position.
         let insights: [Insight] = [
+            // The Jev fast path's excerpt card: shown within a second of the
+            // question, replaced when Haiku's grounded card lands.
+            Insight(kindKey: Insight.docExcerptKind, title: "\u{201C}How much is the express verification\u{201D}",
+                    detail: "### 12.3 The Launchese paid route\nLaunchese Ltd, as ACSP AP020671, verifies identity and files the verification with Companies House. Standard: £50 per person, completed within one week of receiving all documents. Express: £99 per person, completed the same working day once all documents are in. One-off payments in pounds. Both include filing with Companies House. Nothing renews. No VAT is added.",
+                    callTime: 761, source: "pricing.md"),
             Insight(kindKey: "suggestion", title: "Answer the security question",
                     detail: "“All audio stays on your Mac — only transcript text goes to the API, and we can sign a DPA this week if that helps.”",
                     callTime: 754, source: "security-faq.pdf"),
@@ -492,12 +497,14 @@ enum CopilotSnapshot {
             KindResolver.style(forKey: insight.kindKey, profile: profile, snapshot: [])
         }
         let history = VStack(spacing: 6) {
-            PinnedBlockerRow(insight: insights[4], startExpanded: true, onHandled: {}, onJump: {})
+            PinnedBlockerRow(insight: insights[5], startExpanded: true, onHandled: {}, onJump: {})
             InsightCard(insight: insights[1], kindStyle: kindStyle(insights[1]),
-                        isCollapsed: true, onToggleCollapse: {}, onJump: {}, onDismiss: {})
-            InsightCard(insight: insights[2], kindStyle: kindStyle(insights[2]),
                         isCollapsed: false, onToggleCollapse: {}, onJump: {}, onDismiss: {})
+            InsightCard(insight: insights[2], kindStyle: kindStyle(insights[2]),
+                        isCollapsed: true, onToggleCollapse: {}, onJump: {}, onDismiss: {})
             InsightCard(insight: insights[3], kindStyle: kindStyle(insights[3]),
+                        isCollapsed: false, onToggleCollapse: {}, onJump: {}, onDismiss: {})
+            InsightCard(insight: insights[4], kindStyle: kindStyle(insights[4]),
                         isCollapsed: true, onToggleCollapse: {}, onJump: {}, onDismiss: {})
         }
         .padding(12)

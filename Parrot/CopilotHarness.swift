@@ -280,11 +280,17 @@ enum CopilotReplay {
             var pendingQuestions: [(text: String, at: Date)] = []
             var results: [(question: String, seconds: Double, path: String)] = []
             engine.onInsightInserted = { insight in
-                guard let q = pendingQuestions.first else { return }
+                // Attribute by content, not arrival order: the stub titles its
+                // card with the question and the excerpt card quotes it. A
+                // card about no pending question is ignored.
+                let title = insight.title.lowercased()
+                guard let index = pendingQuestions.firstIndex(where: {
+                    title.contains(String($0.text.prefix(40)).lowercased())
+                }) else { return }
+                let q = pendingQuestions.remove(at: index)
                 let path = insight.kindKey == Insight.docExcerptKind ? "excerpt" : "haiku"
                 let seconds = Date().timeIntervalSince(q.at)
                 results.append((q.text, seconds, path))
-                pendingQuestions.removeFirst()
                 print(String(format: "  %5.2fs %-7@ ← %@", seconds, path, String(q.text.prefix(60))))
             }
             engine.start(profile: profile)
@@ -302,6 +308,7 @@ enum CopilotReplay {
             let minutes = max(1, (lines.last?.time ?? 60) / 60)
             report(results, calls: engine.provider.usageTotals.calls, minutes: minutes,
                    stats: engine.fastPathStats, unanswered: pendingQuestions.count)
+            if let error = engine.fastPathLastError { print("last fast-path error: \(error)") }
             exit(0)
         }
         dispatchMain()
