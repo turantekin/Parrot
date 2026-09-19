@@ -137,21 +137,92 @@ final class KnowledgeBaseService {
                 queryVectors[raw] = Self.embed(query, language: NLLanguage(rawValue: raw))
             }
 
-            let scored: [(KBChunk, Double)] = snapshot.compactMap { chunk in
-                guard let queryVector = queryVectors[chunk.languageRaw] else { return nil }
-                return (chunk, Self.cosineSimilarity(queryVector, chunk.embedding))
+            let cosine: [Double] = snapshot.map { chunk in
+                queryVectors[chunk.languageRaw].map { Self.cosineSimilarity($0, chunk.embedding) } ?? 0
             }
+            let cosineOrder = cosine.indices
+                .filter { cosine[$0] > 0.3 }
+                .sorted { cosine[$0] > cosine[$1] }
 
-            return scored
-                .filter { $0.1 > 0.3 }
-                .sorted { $0.1 > $1.1 }
+            // Hybrid ranking. Sentence embeddings alone miss most factual
+            // questions on a long document: on the 2026-09-19 eval the answering
+            // chunk sat in the cosine top 8 for 14 of 71 questions and in the
+            // BM25 top 8 for 55. Exact words ("express", "£99", "confirmation
+            // statement") are the signal a price or policy question carries, so
+            // an exact-word ranking is fused with the embedding one. Chunks with
+            // neither signal stay out.
+            let lexicalOrder = Self.bm25Order(
+                query: Self.lexicalTokens(query),
+                documents: snapshot.map { Self.lexicalTokens($0.text) })
+
+            return Self.reciprocalRankFusion([lexicalOrder, cosineOrder])
                 .prefix(topK)
-                .map(\.0)
+                .map { snapshot[$0] }
         }.value
 
         return best.map { chunk in
             let note = notesByDocument[chunk.documentName]?.nilIfEmpty
             return KBReference(documentName: chunk.documentName, note: note, text: chunk.text)
+        }
+    }
+
+    // MARK: - Lexical retrieval (BM25 + rank fusion)
+
+    /// Lowercased alphanumeric tokens of two or more characters; alphabetic
+    /// tokens longer than five keep their first five letters, a cheap stem so
+    /// "verification" and "verified" meet. Numbers stay whole ("99", "2026").
+    nonisolated static func lexicalTokens(_ text: String) -> [String] {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 2 }
+            .map { token in
+                token.count > 5 && token.allSatisfy(\.isLetter) ? String(token.prefix(5)) : token
+            }
+    }
+
+    /// Document indices ordered by BM25 score for the query tokens (k1 = 1.2,
+    /// b = 0.75); documents sharing no term with the query are left out.
+    nonisolated static func bm25Order(query: [String], documents: [[String]]) -> [Int] {
+        guard !query.isEmpty, !documents.isEmpty else { return [] }
+        let n = Double(documents.count)
+        let averageLength = documents.reduce(0) { $0 + Double($1.count) } / n
+        var documentFrequency: [String: Int] = [:]
+        for document in documents {
+            for term in Set(document) { documentFrequency[term, default: 0] += 1 }
+        }
+        let k1 = 1.2, b = 0.75
+        var scored: [(index: Int, score: Double)] = []
+        for (index, document) in documents.enumerated() {
+            var counts: [String: Int] = [:]
+            for term in document { counts[term, default: 0] += 1 }
+            var score = 0.0
+            for term in query {
+                guard let count = counts[term] else { continue }
+                let df = Double(documentFrequency[term] ?? 0)
+                let idf = log(1 + (n - df + 0.5) / (df + 0.5))
+                let tf = Double(count)
+                score += idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * Double(document.count) / averageLength))
+            }
+            if score > 0 { scored.append((index, score)) }
+        }
+        return scored.sorted { $0.score > $1.score }.map(\.index)
+    }
+
+    /// Reciprocal rank fusion (k = 60): an item high in any ranking rises, an
+    /// item present in several rises most. Ties keep first-appearance order.
+    nonisolated static func reciprocalRankFusion(_ rankings: [[Int]], k: Double = 60) -> [Int] {
+        var score: [Int: Double] = [:]
+        var firstSeen: [Int: Int] = [:]
+        var counter = 0
+        for ranking in rankings {
+            for (rank, item) in ranking.enumerated() {
+                score[item, default: 0] += 1 / (k + Double(rank + 1))
+                if firstSeen[item] == nil { firstSeen[item] = counter; counter += 1 }
+            }
+        }
+        return score.keys.sorted { a, b in
+            if score[a]! != score[b]! { return score[a]! > score[b]! }
+            return firstSeen[a]! < firstSeen[b]!
         }
     }
 

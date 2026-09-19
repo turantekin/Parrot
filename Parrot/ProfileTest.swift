@@ -40,6 +40,7 @@ enum ProfileTest {
         testJevMatcher()
         testDocExcerpt()
         testReplayParser()
+        testHybridRetrieval()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -1000,5 +1001,20 @@ enum ProfileTest {
         check("replay Me maps to .me", lines[1].source == .me && lines[1].text == "Great question.")
         check("replay diarized speaker maps to .them", lines[2].source == .them && lines[2].time == 62)
         check("replay tolerates spaces around the label", lines[3].text == "Is the data in the EU?")
+    }
+
+    static func testHybridRetrieval() {
+        typealias K = KnowledgeBaseService
+        check("lexical tokens lowercase, stem long words to 5, keep numbers",
+              K.lexicalTokens("Express £99 verification, same-day!") == ["expre", "99", "verif", "same", "day"])
+        check("lexical tokens drop single characters", K.lexicalTokens("a £ b 7 ok") == ["ok"])
+        let docs = [["expre", "verif", "99"], ["suppo", "hours", "monda"], ["expre", "same", "day"]]
+        let order = K.bm25Order(query: K.lexicalTokens("express verification price"), documents: docs)
+        check("bm25 ranks the two-term match first", order.first == 0)
+        check("bm25 keeps the one-term match second", order.count == 2 && order[1] == 2)
+        check("bm25 drops zero-score documents", !order.contains(1))
+        check("bm25 empty query yields nothing", K.bm25Order(query: [], documents: docs).isEmpty)
+        check("rrf fuses two rankings", K.reciprocalRankFusion([[0, 1, 2], [0, 2]]) == [0, 2, 1])
+        check("rrf of one ranking is that ranking", K.reciprocalRankFusion([[2, 0]]) == [2, 0])
     }
 }

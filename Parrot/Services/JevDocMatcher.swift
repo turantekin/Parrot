@@ -15,7 +15,7 @@ enum JevError: LocalizedError {
 }
 
 /// TypeSafe AI "Jev" client behind the copilot's fast document-answer path.
-/// Jev never writes text: given the other side's question and up to eight
+/// Jev never writes text: given the other side's question and up to twelve
 /// knowledge-base chunks, it returns one probability per chunk that the chunk
 /// states what was asked. The engine shows the best chunk as a "From your
 /// docs" excerpt while Haiku is still writing. Claude mode only; the path
@@ -27,7 +27,10 @@ enum JevError: LocalizedError {
 final class JevDocMatcher {
     static let model = "jev-latest"
     static let keychainAccount = "typesafe-api-key"
-    static let maxCandidates = 8
+    /// Twelve, not eight: the hybrid search puts the answering chunk in the
+    /// top 8 for 77% of questions and the top 16 for 87% (2026-09-19 eval);
+    /// twelve chunks are still only ~3k tokens and add no latency.
+    static let maxCandidates = 12
     /// Whole round trip. Measured from this Mac 2026-09-19: 0.27–0.34 s on a
     /// warm connection, 0.61–0.74 s cold (TLS handshake), hence warmUp().
     static let budget: TimeInterval = 0.7
