@@ -13,6 +13,9 @@ enum AIPricing {
     /// claude-haiku-4-5: $1.00 / 1M input tokens, $5.00 / 1M output tokens.
     static let haikuInputUSDPerMTok = 1.00
     static let haikuOutputUSDPerMTok = 5.00
+    /// TypeSafe jev-latest: $0.042 per 1M input tokens, output free
+    /// (docs.typesafe.ai/models, verified 2026-09-19).
+    static let typesafeInputUSDPerMTok = 0.042
     /// Groq whisper-large-v3-turbo: $0.04 per audio hour.
     static let groqUSDPerAudioHour = 0.04
     /// Deepgram Nova-3 streaming: $0.29 per audio hour per stream — matches the
@@ -39,6 +42,10 @@ struct AIUsage: Codable {
     var reportsModel: String?
     var reportsProvider: String?
     var reports: AITokenTotals?
+    /// Jev fast document answers (Claude mode + TypeSafe key). nil on older
+    /// meetings and whenever the path never ran.
+    var docAnswerModel: String?
+    var docAnswers: AITokenTotals?
     /// Live transcription engine (TranscriptionBackend rawValue).
     var transcriptionBackend = TranscriptionBackend.local.rawValue
     /// Audio duration per track, seconds.
@@ -70,6 +77,12 @@ struct AIUsage: Codable {
             items.append(Self.modelLine(
                 prefix: "Reports",
                 model: reportsModel ?? "", provider: reportsProvider, totals: reports))
+        }
+        if let docAnswers, docAnswers.calls > 0 {
+            items.append(LineItem(
+                label: "Doc answers \(docAnswerModel ?? "")",
+                detail: "\(docAnswers.calls) calls · \(Self.compactTokens(docAnswers.inputTokens)) in",
+                usd: Double(docAnswers.inputTokens) / 1_000_000 * AIPricing.typesafeInputUSDPerMTok))
         }
         let backend = TranscriptionBackend(rawValue: transcriptionBackend) ?? .local
         let billedSeconds = transcriptionSeconds * Double(transcriptionTracks)

@@ -37,6 +37,8 @@ enum ProfileTest {
         testSegmenter()
         testQuietMic()
         testCopilotBudget()
+        testJevMatcher()
+        testDocExcerpt()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -384,6 +386,21 @@ enum ProfileTest {
         check("split round-trips", splitDecoded?.reports == split.reports && splitDecoded?.reportsProvider == "ollama")
 
 
+        var withDocs = AIUsage()
+        withDocs.copilotModel = "claude-haiku-4-5"
+        withDocs.copilot = AITokenTotals(inputTokens: 1000, outputTokens: 100, calls: 1)
+        withDocs.docAnswerModel = JevDocMatcher.model
+        withDocs.docAnswers = AITokenTotals(inputTokens: 1_000_000, outputTokens: 0, calls: 300)
+        let docLine = withDocs.costBreakdown().first { $0.label.hasPrefix("Doc answers") }
+        check("doc answers line exists when calls > 0", docLine != nil)
+        check("doc answers priced at $0.042 per MTok input", docLine.map { abs($0.usd - 0.042) < 0.0001 } == true)
+        check("doc answers line names the model and calls", docLine?.label.contains("jev-latest") == true && docLine?.detail.contains("300 calls") == true)
+        check("no doc answers line without calls", usage.costBreakdown().contains { $0.label.hasPrefix("Doc answers") } == false)
+        let encodedDocs = try? JSONEncoder().encode(withDocs)
+        let decodedDocs = encodedDocs.flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
+        check("doc answers round-trip", decodedDocs?.docAnswers?.calls == 300)
+        let legacyUsage = try? JSONDecoder().decode(AIUsage.self, from: Data(#"{"copilotModel":"m","copilot":{"inputTokens":1,"outputTokens":1,"calls":1},"transcriptionBackend":"local","transcriptionSeconds":1,"transcriptionTracks":2,"polishSeconds":0}"#.utf8))
+        check("legacy usage decodes without doc answers", legacyUsage != nil && legacyUsage?.docAnswers == nil)
     }
 
     // The issue-#12 mic watchdog: sustained exact-zero input means the OS cut
@@ -773,8 +790,18 @@ enum ProfileTest {
     static func testCopilotBudget() {
         // Fast must be the original constants exactly — the default changes nothing.
         let fast = CopilotPace.fast.timing
-        check("pace fast is the original timing",
-              fast.question == 1 && fast.idle == 8 && fast.floor == 5 && fast.staleness == 15)
+        check("pace fast keeps the original idle/floor/staleness",
+              fast.question == 0.3 && fast.idle == 8 && fast.floor == 5 && fast.staleness == 15)
+        // Question floor: a "Them" question waits a short per-pace floor, never
+        // the full one, and never longer on a quicker pace.
+        check("fast question floor is 2s", CopilotPace.fast.timing.questionFloor == 2)
+        check("balanced question floor is 5s", CopilotPace.balanced.timing.questionFloor == 5)
+        check("relaxed question floor is 15s", CopilotPace.relaxed.timing.questionFloor == 15)
+        for pace in CopilotPace.allCases {
+            check("pace \(pace.rawValue) question floor never exceeds the floor",
+                  pace.timing.questionFloor <= pace.timing.floor)
+        }
+        check("fast question debounce is 0.3s", CopilotPace.fast.timing.question == 0.3)
         // Every slower pace waits at least as long on every timer.
         for (quicker, slower) in [(CopilotPace.fast, CopilotPace.balanced), (.balanced, .relaxed)] {
             let a = quicker.timing, b = slower.timing
@@ -903,5 +930,54 @@ enum ProfileTest {
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: false) == .openSettings)
         check("sysaudio: after prompt + Settings it stops gatekeeping",
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: true) == .granted)
+    }
+
+    static func testJevMatcher() {
+        typealias J = JevDocMatcher
+        let body = J.buildBody(asked: "how much is express", before: "Them: hi",
+                               candidates: ["Express £99", "Support hours"])
+        check("jev body model", body["model"] as? String == "jev-latest")
+        let state = body["state"] as? [String: String]
+        check("jev state carries asked/before", state?["asked"] == "how much is express" && state?["before"] == "Them: hi")
+        check("jev state names chunks c0..", state?["c0"] == "Express £99" && state?["c1"] == "Support hours")
+        let questions = body["questions"] as? [String: [String: Any]]
+        check("jev one noul per chunk", questions?.count == 2 && questions?["c1"]?["type"] as? String == "noul")
+        check("jev instructions name the chunk", (questions?["c1"]?["instructions"] as? String)?.contains("`c1`") == true)
+        // Serialized bytes must be stable across runs (sortedKeys) so requests are diffable.
+        let a = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        let b = try? JSONSerialization.data(withJSONObject: J.buildBody(asked: "how much is express", before: "Them: hi", candidates: ["Express £99", "Support hours"]), options: [.sortedKeys])
+        check("jev body serializes deterministically", a != nil && a == b)
+
+        let json = #"{"model":"jev-1.13.0","answers":{"c0":{"type":"noul","noul":0.98},"c1":{"type":"noul","noul":0.02}},"usage":{"input_tokens":598,"output_tokens":38}}"#
+        let scores = try? J.parse(Data(json.utf8), count: 2)
+        check("jev parse returns one score per chunk in order", scores == [0.98, 0.02])
+        let short = try? J.parse(Data(#"{"answers":{"c0":{"type":"noul","noul":0.5}}}"#.utf8), count: 3)
+        check("jev parse fills missing answers with 0", short == [0.5, 0, 0])
+        check("jev parse rejects garbage", (try? J.parse(Data("nope".utf8), count: 1)) == nil)
+        check("jev empty candidates builds no questions", (J.buildBody(asked: "x", before: "", candidates: [])["questions"] as? [String: Any])?.isEmpty == true)
+        check("jev unconfigured without a key", !J(apiKey: "").isConfigured)
+    }
+
+    static func testDocExcerpt() {
+        typealias E = CallAnalysisEngine
+        check("excerpt kind is reserved", Insight.docExcerptKind == "doc_excerpt")
+        let style = KindResolver.fallbackStyle(forKey: Insight.docExcerptKind)
+        check("excerpt style label", style.label == "From your docs")
+        check("excerpt style not pinned", !style.isPinned)
+        check("best candidate picks the max over threshold", E.bestCandidate(scores: [0.1, 0.9, 0.4], threshold: 0.75)?.index == 1)
+        check("best candidate nil under threshold", E.bestCandidate(scores: [0.1, 0.6], threshold: 0.75) == nil)
+        check("best candidate nil on empty", E.bestCandidate(scores: [], threshold: 0.5) == nil)
+        check("excerpt title quotes and capitalizes", E.excerptTitle(for: "  how much is express verification ") == "\u{201C}How much is express verification\u{201D}")
+        let long = String(repeating: "word ", count: 40)
+        check("excerpt title truncates at a word", E.excerptTitle(for: long).count <= 96 && E.excerptTitle(for: long).hasSuffix("\u{2026}\u{201D}"))
+        let cite = InsightDraft(kindKey: "suggestion", title: "Answer the pricing question", detail: "x", source: "pricing.md", reply: "It is £99.")
+        let stem = InsightDraft(kindKey: "suggestion", title: "Express verification costs £99", detail: "Say the price.", source: nil, reply: "Express is £99, same working day.")
+        let unrelated = InsightDraft(kindKey: "buying_signal", title: "Wants to start next week", detail: "Timeline signal", source: nil, reply: nil)
+        let stemNoReply = InsightDraft(kindKey: "question", title: "Express verification timing unclear", detail: "y", source: nil, reply: nil)
+        check("superseded by a card citing the same document", E.excerptSuperseded(question: "how much is express verification", document: "Pricing.MD", by: [cite]))
+        check("superseded by an answer sharing a topic stem", E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stem]))
+        check("not superseded by an unrelated card", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelated]))
+        check("not superseded by a stem match without a reply", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stemNoReply]))
+        check("not superseded by nothing", !E.excerptSuperseded(question: "q", document: "d", by: []))
     }
 }

@@ -13,6 +13,9 @@ final class RecordingManager {
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
     let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
+    /// TypeSafe client for the copilot's "From your docs" excerpts; inert
+    /// without a key (see CallAnalysisEngine.fastPathAvailable).
+    let docMatcher = JevDocMatcher()
     let profileStore = ProfileStore()
 
     /// Optional one-line context for the next call, set from the dashboard.
@@ -55,6 +58,7 @@ final class RecordingManager {
 
     init() {
         callAnalysisEngine.knowledgeBase = knowledgeBase
+        callAnalysisEngine.docMatcher = docMatcher
     }
 
     /// Dev-harness only (--help-shots): seed a live-looking session so
@@ -230,6 +234,7 @@ final class RecordingManager {
         // Start transcription and the copilot loop
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
         callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
+        docMatcher.resetUsage()
         callAnalysisEngine.start(profile: profile, brief: nextCallBrief)
 
         currentMeeting = meeting
@@ -276,7 +281,9 @@ final class RecordingManager {
 
             // Persist the copilot's insights so they survive into the meeting report.
             // Same SwiftData rule as addSegment: insert before setting the relationship.
-            for insight in callAnalysisEngine.insights {
+            // Excerpt cards are the fast path's bridge, not model insights;
+            // the report keeps Haiku's cards only.
+            for insight in callAnalysisEngine.insights where insight.kindKey != Insight.docExcerptKind {
                 let stored = CallInsight(from: insight)
                 modelContext?.insert(stored)
                 stored.meeting = meeting
@@ -602,6 +609,11 @@ final class RecordingManager {
             usage.copilotModel = CopilotProviderKind.activeModelName
             usage.copilotProvider = CopilotProviderKind.selected.rawValue
             usage.copilot = callAnalysisEngine.provider.usageTotals
+        }
+        let docTotals = docMatcher.usageTotals
+        if docTotals.calls > 0 {
+            usage.docAnswerModel = JevDocMatcher.model
+            usage.docAnswers = docTotals
         }
         // ponytail: reads the backend setting at stop time; a mid-call engine
         // switch or cloud→local fallback mislabels one estimated row. Import

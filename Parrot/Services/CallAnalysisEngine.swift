@@ -28,14 +28,20 @@ enum CopilotPace: String, CaseIterable, Identifiable {
         }
     }
 
-    /// (question fast-track, idle debounce, floor between calls, staleness cap).
-    /// Fast MUST stay identical to the original constants — untouched users
-    /// get untouched behavior. The other rows are first guesses; tune here.
-    var timing: (question: TimeInterval, idle: TimeInterval, floor: TimeInterval, staleness: TimeInterval) {
+    /// (question fast-track debounce, idle debounce, floor between calls,
+    /// staleness cap, question floor). Idle/floor/staleness on Fast are the
+    /// original constants. The question floor is the shorter wait a "Them"
+    /// question gets instead of the full floor: it keeps the single-in-flight
+    /// rule and still caps calls per minute, which "bypass the floor" would
+    /// not. The question debounce is short everywhere because utterances are
+    /// already silence-bound: a question is almost always one segment, and the
+    /// next one cannot land for well over a second.
+    var timing: (question: TimeInterval, idle: TimeInterval, floor: TimeInterval,
+                 staleness: TimeInterval, questionFloor: TimeInterval) {
         switch self {
-        case .fast: (1, 8, 5, 15)
-        case .balanced: (3, 15, 20, 45)
-        case .relaxed: (10, 30, 60, 120)
+        case .fast: (0.3, 8, 5, 15, 2)
+        case .balanced: (1, 15, 20, 45, 5)
+        case .relaxed: (3, 30, 60, 120, 15)
         }
     }
 
@@ -117,6 +123,9 @@ final class CallAnalysisEngine {
     private var analysisTask: Task<Void, Never>?
     private var lastAnalysisEnd = Date.distantPast
     private var rerunRequested = false
+    /// A "Them" question arrived since the last scheduled run: the next run
+    /// waits the short question floor. Survives a queued rerun.
+    private var pendingUrgent = false
     private var oldestPendingSince: Date?
 
     /// Timing now comes from the user's pace choice (Settings → Copilot).
@@ -128,6 +137,7 @@ final class CallAnalysisEngine {
     private var questionDebounce: TimeInterval { CopilotPace.selected.timing.question }
     private var minimumInterval: TimeInterval { CopilotPace.selected.timing.floor }
     private var maximumStaleness: TimeInterval { CopilotPace.selected.timing.staleness }
+    private var questionFloor: TimeInterval { CopilotPace.selected.timing.questionFloor }
 
     init(provider: AnalysisProvider = ClaudeAnalysisProvider()) {
         self.provider = provider
@@ -146,7 +156,13 @@ final class CallAnalysisEngine {
         segments = []
         lastAnalyzedCount = 0
         rerunRequested = false
+        pendingUrgent = false
         oldestPendingSince = nil
+        fastTask?.cancel()
+        fastTask = nil
+        pendingExcerpts = []
+        consecutiveFastFailures = 0
+        fastPathStats = (0, 0, 0)
         isPaused = false
         meCharacters = 0
         themCharacters = 0
@@ -155,6 +171,8 @@ final class CallAnalysisEngine {
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
+        // Open the TLS connection now so the first excerpt does not pay it.
+        if fastPathAvailable { docMatcher?.warmUp() }
     }
 
     func stop() {
@@ -163,6 +181,9 @@ final class CallAnalysisEngine {
         debounceTask = nil
         analysisTask?.cancel()
         analysisTask = nil
+        fastTask?.cancel()
+        fastTask = nil
+        pendingExcerpts = []
         status = .off
     }
 
@@ -222,6 +243,21 @@ final class CallAnalysisEngine {
         // Only the other side's questions get the fast track — the user's own
         // questions don't need an instant suggested answer.
         let isUrgent = source == .them && Self.looksLikeQuestion(text)
+        if isUrgent { pendingUrgent = true }
+
+        if isUrgent, fastPathAvailable {
+            // Fork the Jev fast path here, before any debounce: this is the one
+            // place that sees "Them + question" first, and it never touches the
+            // Haiku cadence below. The previous line or two disambiguate a
+            // follow-up ("and for express?").
+            let before = segments.dropLast().suffix(2)
+                .map { "\($0.source.label): \($0.text)" }.joined(separator: "\n")
+            fastTask?.cancel()
+            fastTask = Task { [weak self] in
+                await self?.fastDocAnswer(question: text, before: before, at: time)
+            }
+        }
+
         var delay = isUrgent ? questionDebounce : idleDebounce
         if let pendingSince = oldestPendingSince {
             let remainingBudget = max(0, maximumStaleness - Date.now.timeIntervalSince(pendingSince))
@@ -249,7 +285,11 @@ final class CallAnalysisEngine {
             return
         }
 
-        let wait = minimumInterval - Date.now.timeIntervalSince(lastAnalysisEnd)
+        // A question waits the short question floor, never the full one; the
+        // flag survives a queued rerun so a mid-call question keeps its lane.
+        let floor = pendingUrgent ? questionFloor : minimumInterval
+        pendingUrgent = false
+        let wait = floor - Date.now.timeIntervalSince(lastAnalysisEnd)
         analysisTask = Task { [weak self] in
             if wait > 0 {
                 try? await Task.sleep(for: .seconds(wait))
@@ -297,12 +337,21 @@ final class CallAnalysisEngine {
         let transcript = window
             .map { "\($0.source.label): \($0.text)" }
             .joined(separator: "\n")
-        let knownTitles = insights.prefix(20).map(\.title)
+        // Excerpts are not model insights: listing one as "already shown"
+        // would make Haiku skip the very question it answers.
+        let knownTitles = insights.filter { $0.kindKey != Insight.docExcerptKind }.prefix(20).map(\.title)
         let anchorTime = window.last?.time ?? 0
 
         // Retrieve knowledge base material matching the most recent speech.
         let query = segments.suffix(8).map(\.text).joined(separator: " ")
-        let references = await knowledgeBase?.search(query: query, profileID: profile?.id) ?? []
+        var references = await knowledgeBase?.search(query: query, profileID: profile?.id) ?? []
+        // Pin the chunks Jev picked since the last pass, so Haiku reasons over
+        // the same evidence the user is already looking at (it only sees the
+        // cosine top 4; Jev looked at 8).
+        for pending in pendingExcerpts.reversed()
+        where !references.contains(where: { $0.text == pending.chunk.text }) {
+            references.insert(pending.chunk, at: 0)
+        }
 
         let request = AnalysisRequest(
             transcript: transcript,
@@ -323,6 +372,15 @@ final class CallAnalysisEngine {
             guard isActive, !Task.isCancelled else {
                 if !Task.isCancelled { analysisTask = nil }
                 return
+            }
+            // Excerpts shown since the last pass: a grounded Haiku card on the
+            // same question replaces them; otherwise they stay, still true.
+            let shownExcerpts = pendingExcerpts
+            pendingExcerpts = []
+            for shown in shownExcerpts
+            where Self.excerptSuperseded(question: shown.question, document: shown.chunk.documentName,
+                                         by: result.insights) {
+                insights.removeAll { $0.id == shown.id }
             }
             // Merge model sentiment; overlay the computed talk-balance gauge if present.
             var merged = result.sentiment
@@ -346,7 +404,7 @@ final class CallAnalysisEngine {
             // still open. A real 11-min call produced TEN variants of the same
             // question ("…unknown", "…still unanswered", "…still live") —
             // prompt instructions alone don't stop it, so enforce it here.
-            let openInsights = insights.filter { !$0.isHandled }
+            let openInsights = insights.filter { !$0.isHandled && $0.kindKey != Insight.docExcerptKind }
             let unique = result.insights
                 // The model's own dedup verdict: a non-empty "supersedes" means
                 // it recognized the draft as an already-shown issue (any wording,
@@ -374,6 +432,7 @@ final class CallAnalysisEngine {
                 }
                 .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
+            for inserted in unique { onInsightInserted?(inserted) }
             status = .listening
         } catch let error as AnalysisError {
             if isActive, !Task.isCancelled {
@@ -433,6 +492,84 @@ final class CallAnalysisEngine {
 
     func dismiss(_ insight: Insight) {
         insights.removeAll { $0.id == insight.id }
+        pendingExcerpts.removeAll { $0.id == insight.id }
+    }
+
+    // MARK: - Fast document answers (Jev)
+
+    /// Set by RecordingManager. nil means the path does not exist for this call.
+    var docMatcher: JevDocMatcher?
+    /// Best-noul gate for showing an excerpt. Tuned by --doc-answer-eval on the
+    /// 2026-09-19 label set (see docs/PERFORMANCE.md). Precision first.
+    static var docAnswerThreshold = 0.75
+    /// Dev harness observation hook (--copilot-replay): every insertion, wall time.
+    var onInsightInserted: ((Insight) -> Void)?
+    private(set) var fastPathStats: (attempts: Int, hits: Int, failures: Int) = (0, 0, 0)
+    private var fastTask: Task<Void, Never>?
+    private var consecutiveFastFailures = 0
+    /// Excerpts shown since the last Haiku pass: their chunk is pinned into
+    /// Haiku's references, and a grounded Haiku card supersedes them.
+    private var pendingExcerpts: [(id: UUID, chunk: KBReference, question: String)] = []
+
+    /// Claude mode with a TypeSafe key and documents; three failures in a row
+    /// switch it off for the rest of the call. Ollama and custom stay local.
+    private var fastPathAvailable: Bool {
+        docMatcher?.isConfigured == true
+            && CopilotProviderKind.selected == .claude
+            && knowledgeBase.map { !$0.isEmpty } == true
+            && consecutiveFastFailures < 3
+    }
+
+    private func fastDocAnswer(question: String, before: String, at time: TimeInterval) async {
+        guard let matcher = docMatcher, let kb = knowledgeBase else { return }
+        fastPathStats.attempts += 1
+        let refs = await kb.search(query: question, profileID: activeProfile?.id,
+                                   topK: JevDocMatcher.maxCandidates)
+        guard !refs.isEmpty, isActive, !Task.isCancelled else { return }
+        do {
+            let scores = try await matcher.score(asked: question, before: before,
+                                                 candidates: refs.map(\.text))
+            guard isActive, !Task.isCancelled else { return }
+            consecutiveFastFailures = 0
+            guard let best = Self.bestCandidate(scores: scores, threshold: Self.docAnswerThreshold) else { return }
+            let chunk = refs[best.index]
+            let card = Insight(kindKey: Insight.docExcerptKind, title: Self.excerptTitle(for: question),
+                               detail: chunk.text, callTime: time, source: chunk.documentName)
+            insights.insert(card, at: 0)
+            pendingExcerpts.append((card.id, chunk, question))
+            fastPathStats.hits += 1
+            onInsightInserted?(card)
+        } catch {
+            // Silent by design: Haiku is still coming. The panel never shows a
+            // fast-path error; three in a row disable it (fastPathAvailable).
+            consecutiveFastFailures += 1
+            fastPathStats.failures += 1
+        }
+    }
+
+    nonisolated static func bestCandidate(scores: [Double], threshold: Double) -> (index: Int, probability: Double)? {
+        guard let i = scores.indices.max(by: { scores[$0] < scores[$1] }), scores[i] >= threshold else { return nil }
+        return (i, scores[i])
+    }
+
+    /// The question as heard, quoted and capitalized, cut at a word under ~90 chars.
+    nonisolated static func excerptTitle(for question: String) -> String {
+        var q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let first = q.first { q = first.uppercased() + q.dropFirst() }
+        if q.count > 90 {
+            let cut = q.prefix(88)
+            q = (cut.lastIndex(of: " ").map { String(cut[..<$0]) } ?? String(cut)) + "\u{2026}"
+        }
+        return "\u{201C}\(q)\u{201D}"
+    }
+
+    /// A Haiku card supersedes an excerpt when it cites the same document, or
+    /// when it is an answer (carries a reply) on the same topic as the question.
+    nonisolated static func excerptSuperseded(question: String, document: String, by drafts: [InsightDraft]) -> Bool {
+        drafts.contains { draft in
+            if let source = draft.source, source.lowercased() == document.lowercased() { return true }
+            return draft.reply?.nilIfEmpty != nil && sharesTopicStem(question, "\(draft.title) \(draft.detail)")
+        }
     }
 
     // MARK: - Heuristics
