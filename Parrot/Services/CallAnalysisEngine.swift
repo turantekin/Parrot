@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// How eagerly the copilot calls the model. One knob instead of four raw
 /// timers: Fast is the original always-on behavior; Relaxed spaces requests
@@ -245,7 +246,10 @@ final class CallAnalysisEngine {
         // Only the other side's questions get the fast track — the user's own
         // questions don't need an instant suggested answer.
         let isUrgent = source == .them && Self.looksLikeQuestion(text)
-        if isUrgent { pendingUrgent = true }
+        if isUrgent {
+            pendingUrgent = true
+            Self.log.info("question at \(time, format: .fixed(precision: 1), privacy: .public)s: \(text.prefix(80), privacy: .public)")
+        }
 
         if isUrgent, fastPathAvailable {
             // Fork the Jev fast path here, before any debounce: this is the one
@@ -434,7 +438,10 @@ final class CallAnalysisEngine {
                 }
                 .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
-            for inserted in unique { onInsightInserted?(inserted) }
+            for inserted in unique {
+                Self.log.info("card [\(inserted.kindKey, privacy: .public)] \(inserted.title.prefix(80), privacy: .public)")
+                onInsightInserted?(inserted)
+            }
             status = .listening
         } catch let error as AnalysisError {
             if isActive, !Task.isCancelled {
@@ -499,6 +506,10 @@ final class CallAnalysisEngine {
 
     // MARK: - Fast document answers (Jev)
 
+    /// Timing trail for live tests: `log show --predicate 'subsystem == "com.uygar.parrot" AND category == "copilot"'`.
+    /// Public fields on purpose (NSLog from the sandboxed app is redacted); never key material.
+    private static let log = Logger(subsystem: "com.uygar.parrot", category: "copilot")
+
     /// Set by RecordingManager. nil means the path does not exist for this call.
     var docMatcher: JevDocMatcher?
     /// Best-noul gate for showing an excerpt. Tuned by --doc-answer-eval on the
@@ -545,6 +556,7 @@ final class CallAnalysisEngine {
             insights.insert(card, at: 0)
             pendingExcerpts.append((card.id, chunk, question))
             fastPathStats.hits += 1
+            Self.log.info("excerpt p=\(best.probability, format: .fixed(precision: 2), privacy: .public) from \(chunk.documentName, privacy: .public) for: \(question.prefix(80), privacy: .public)")
             onInsightInserted?(card)
         } catch {
             // Silent by design: Haiku is still coming. The panel never shows a
@@ -552,6 +564,7 @@ final class CallAnalysisEngine {
             consecutiveFastFailures += 1
             fastPathStats.failures += 1
             fastPathLastError = error.localizedDescription
+            Self.log.error("fast path failed: \(error.localizedDescription, privacy: .public)")
             if consecutiveFastFailures >= 3 {
                 fastPathPausedUntil = Date.now.addingTimeInterval(60)
                 consecutiveFastFailures = 0
