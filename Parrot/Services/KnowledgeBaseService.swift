@@ -144,19 +144,17 @@ final class KnowledgeBaseService {
                 .filter { cosine[$0] > 0.3 }
                 .sorted { cosine[$0] > cosine[$1] }
 
-            // Hybrid ranking. Sentence embeddings alone miss most factual
-            // questions on a long document: on the 2026-09-19 eval the answering
-            // chunk sat in the cosine top 8 for 14 of 71 questions and in the
-            // BM25 top 8 for 55. Exact words ("express", "£99", "confirmation
-            // statement") are the signal a price or policy question carries, so
-            // an exact-word ranking is fused with the embedding one. Chunks with
-            // neither signal stay out.
+            // Exact words first. Sentence embeddings alone miss most factual
+            // questions on a long document (2026-09-19 eval: the answering chunk
+            // sat in the cosine top 8 for 14 of 71 questions, in the BM25 top 8
+            // for 55), and fusing the two with equal weight was worse than BM25
+            // alone. So BM25 ranks, and embeddings only fill the slots exact
+            // words did not reach. Chunks with neither signal stay out.
             let lexicalOrder = Self.bm25Order(
                 query: Self.lexicalTokens(query),
                 documents: snapshot.map { Self.lexicalTokens($0.text) })
 
-            return Self.reciprocalRankFusion([lexicalOrder, cosineOrder])
-                .prefix(topK)
+            return Self.hybridOrder(lexical: lexicalOrder, cosine: cosineOrder, topK: topK)
                 .map { snapshot[$0] }
         }.value
 
@@ -168,16 +166,47 @@ final class KnowledgeBaseService {
 
     // MARK: - Lexical retrieval (BM25 + rank fusion)
 
-    /// Lowercased alphanumeric tokens of two or more characters; alphabetic
-    /// tokens longer than five keep their first five letters, a cheap stem so
-    /// "verification" and "verified" meet. Numbers stay whole ("99", "2026").
+    /// English function words: spoken questions are full of them ("what is
+    /// the … for this"), and each one matches every chunk a little, which
+    /// buried the one chunk with the actual answer (2026-09-19 eval).
+    private nonisolated static let lexicalStopWords: Set<String> = [
+        "the", "a", "an", "and", "or", "is", "are", "was", "were", "be", "been", "this", "that",
+        "these", "those", "what", "which", "how", "much", "many", "do", "does", "did", "i", "you",
+        "we", "they", "it", "he", "she", "me", "us", "them", "my", "your", "our", "their", "its",
+        "for", "of", "to", "in", "on", "at", "by", "from", "with", "as", "so", "if", "but", "not",
+        "no", "any", "some", "can", "could", "will", "would", "should", "shall", "may", "might",
+        "about", "into", "over", "under", "than", "then", "there", "here", "when", "where", "who",
+        "whom", "whose", "why", "okay", "ok", "yes", "just", "also", "very", "really", "one",
+        "thing", "things",
+    ]
+
+    /// Lowercased alphanumeric tokens of two or more characters, minus
+    /// function words; alphabetic tokens longer than five keep their first
+    /// five letters, a cheap stem so "verification" and "verified" meet.
+    /// Numbers stay whole ("99", "2026").
     nonisolated static func lexicalTokens(_ text: String) -> [String] {
         text.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { $0.count >= 2 }
+            .filter { $0.count >= 2 && !lexicalStopWords.contains($0) }
             .map { token in
                 token.count > 5 && token.allSatisfy(\.isLetter) ? String(token.prefix(5)) : token
             }
+    }
+
+    /// Exact-word matches first, in BM25 order; embedding matches only fill
+    /// the slots the words did not reach. Equal-weight fusion was measured
+    /// worse than BM25 alone (answer in the top 4 for 32 vs 47 of 71
+    /// questions): the sentence embeddings rank near noise on factual
+    /// questions yet still outvoted a lone exact-word hit.
+    nonisolated static func hybridOrder(lexical: [Int], cosine: [Int], topK: Int) -> [Int] {
+        var seen = Set<Int>()
+        var order: [Int] = []
+        for index in lexical + cosine where !seen.contains(index) {
+            seen.insert(index)
+            order.append(index)
+            if order.count == topK { break }
+        }
+        return order
     }
 
     /// Document indices ordered by BM25 score for the query tokens (k1 = 1.2,
@@ -206,24 +235,6 @@ final class KnowledgeBaseService {
             if score > 0 { scored.append((index, score)) }
         }
         return scored.sorted { $0.score > $1.score }.map(\.index)
-    }
-
-    /// Reciprocal rank fusion (k = 60): an item high in any ranking rises, an
-    /// item present in several rises most. Ties keep first-appearance order.
-    nonisolated static func reciprocalRankFusion(_ rankings: [[Int]], k: Double = 60) -> [Int] {
-        var score: [Int: Double] = [:]
-        var firstSeen: [Int: Int] = [:]
-        var counter = 0
-        for ranking in rankings {
-            for (rank, item) in ranking.enumerated() {
-                score[item, default: 0] += 1 / (k + Double(rank + 1))
-                if firstSeen[item] == nil { firstSeen[item] = counter; counter += 1 }
-            }
-        }
-        return score.keys.sorted { a, b in
-            if score[a]! != score[b]! { return score[a]! > score[b]! }
-            return firstSeen[a]! < firstSeen[b]!
-        }
     }
 
     // MARK: - Text Extraction & Chunking

@@ -200,6 +200,16 @@ final class DeepgramStreamer {
         task = URLSession.shared.webSocketTask(with: request)
         task?.resume()
         receiveLoop()
+        // Deepgram closes a stream that carries no audio for about 10 s
+        // (NET-0001). A quiet system-audio track hits that before the other
+        // side speaks; a KeepAlive every 5 s is Deepgram's documented remedy.
+        keepAlive = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                self?.task?.send(.string(#"{"type":"KeepAlive"}"#)) { _ in }
+            }
+        }
     }
 
     /// Push PCM floats (called from the audio callback thread; WebSocket send
@@ -223,15 +233,23 @@ final class DeepgramStreamer {
     }
 
     func close() {
+        keepAlive?.cancel()
+        keepAlive = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
     }
 
+    private var keepAlive: Task<Void, Never>?
     private var failed = false
     private func fail(_ message: String) {
         guard !failed else { return }
         failed = true
-        onError?(message)
+        keepAlive?.cancel()
+        // The close code and reason are where Deepgram puts the real cause
+        // ("NET-0001" and friends); the URL error alone says nothing.
+        let code = task?.closeCode.rawValue ?? 0
+        let reason = task?.closeReason.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        onError?("\(message) [close \(code) \(reason)]")
     }
 
     private func receiveLoop() {

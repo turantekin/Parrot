@@ -808,7 +808,9 @@ final class TranscriptionEngine {
             }
             streamer.onError = { [weak self] message in
                 guard let self else { return }
-                NSLog("Parrot: Deepgram stream failed (\(source.label)) — \(message)")
+                // Public on purpose: NSLog is redacted in `log show`, and this
+                // is the only place the real Deepgram failure reason exists.
+                AudioCaptureManager.oslog.error("Deepgram stream failed (\(source.label, privacy: .public)): \(message, privacy: .public)")
                 // Only this stream falls back to local; the other socket keeps
                 // streaming. Re-anchor before the first fallback sample lands.
                 self.bufferLock.withLock { _ = self.deepgramFailedSources.insert(source) }

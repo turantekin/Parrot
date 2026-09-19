@@ -1013,15 +1013,20 @@ enum ProfileTest {
         typealias K = KnowledgeBaseService
         check("lexical tokens lowercase, stem long words to 5, keep numbers",
               K.lexicalTokens("Express £99 verification, same-day!") == ["expre", "99", "verif", "same", "day"])
-        check("lexical tokens drop single characters", K.lexicalTokens("a £ b 7 ok") == ["ok"])
+        check("lexical tokens drop single characters", K.lexicalTokens("a £ b 7 fee") == ["fee"])
         let docs = [["expre", "verif", "99"], ["suppo", "hours", "monda"], ["expre", "same", "day"]]
         let order = K.bm25Order(query: K.lexicalTokens("express verification price"), documents: docs)
         check("bm25 ranks the two-term match first", order.first == 0)
         check("bm25 keeps the one-term match second", order.count == 2 && order[1] == 2)
         check("bm25 drops zero-score documents", !order.contains(1))
         check("bm25 empty query yields nothing", K.bm25Order(query: [], documents: docs).isEmpty)
-        check("rrf fuses two rankings", K.reciprocalRankFusion([[0, 1, 2], [0, 2]]) == [0, 2, 1])
-        check("rrf of one ranking is that ranking", K.reciprocalRankFusion([[2, 0]]) == [2, 0])
+        check("lexical tokens drop stop words",
+              K.lexicalTokens("What is the express option for this, and how much does it cost?") == ["expre", "optio", "cost"])
+        // Exact words first, embeddings only fill what the words did not reach.
+        check("hybrid order is lexical first, cosine fills, no repeats",
+              K.hybridOrder(lexical: [2, 0], cosine: [1, 0, 3], topK: 3) == [2, 0, 1])
+        check("hybrid order with no lexical hits is the cosine order", K.hybridOrder(lexical: [], cosine: [3, 1], topK: 5) == [3, 1])
+        check("hybrid order respects topK", K.hybridOrder(lexical: [5, 4, 3], cosine: [], topK: 2) == [5, 4])
     }
 
     static func testChunker() {
