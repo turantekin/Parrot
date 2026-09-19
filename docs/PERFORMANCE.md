@@ -53,3 +53,98 @@ These can't run in the CI container and should be verified on-device:
   uninterrupted monologue — see TranscriptionEngine.Segmenter)
 - UI responsiveness of the insight panel during long calls (LazyVStack should
   keep this flat, but verify with Instruments on a 1-hour session)
+
+## Test 5 — Jev fast document answers + question floor (2026-09-19)
+
+Setup: the user's real knowledge base (a 113 KB, 35-section company document
+chunked to 173 pieces plus two small demo files), 85 labeled questions (56
+English synthetic, 11 English questions transcribed from real sales calls,
+15 Turkish, 14 that the documents do not answer) run through the real KB
+search and TypeSafe `jev-latest` with `--doc-answer-eval`. A label is a
+substring the answering chunk must contain, so "wrong" below over-counts:
+re-reading the seven wrong picks by hand, four contained the answer in other
+words, so the shipped precision is nearer 0.94.
+
+### Retrieval decides everything
+
+| KB search | answering chunk in the candidate list (71 covered questions) |
+|---|---|
+| Embedding cosine only, top 8 (before) | 14 / 71 |
+| BM25 exact-word only, top 8 (prototype) | 55 / 71 |
+| Hybrid BM25 + cosine, rank fusion, 12 candidates (shipped, heading-aware chunks) | 51 / 71, 32 within the top 4 |
+
+Where the chunk is in the list, Jev picks it: with cosine-only retrieval it
+hit 11 of the 13 questions it answered, with zero false positives. Haiku's
+four references come from the same search, so its grounding improved too.
+
+### Precision and recall by threshold, hybrid retrieval, single request with 12 nouls
+
+| Threshold | shown | hits | wrong (by substring) | false positives (uncovered) | precision | recall |
+|---|---|---|---|---|---|---|
+| 0.50 | 53 | 45 | 8 | 0 | 0.85 | 0.63 |
+| 0.75 (shipped) | 49 | 42 | 7 | 0 | 0.86 | 0.59 |
+| 0.85 | 45 | 39 | 6 | 0 | 0.87 | 0.55 |
+| 0.90 | 43 | 38 | 5 | 0 | 0.88 | 0.54 |
+
+Precision barely moves across the range, so raising the gate mostly loses
+recall; 0.75 stays. English recall at 0.75: 37 / 56. Turkish: 5 / 15 (English
+product words carry; 0 / 15 before the hybrid search), no false positives on
+the two uncovered Turkish questions. One request with all candidates and one
+request per candidate reached the same ceiling; the single request had the
+better tail (max 0.65 s vs 0.54 s at p90 0.45 s vs 0.36 s is noise; per
+candidate lost one more at 0.90) and is what ships.
+
+### Round trip
+
+Measured from this Mac: p50 0.32 s, p90 0.42 s, max 0.71 s for 12
+candidates on a warm connection; a cold TLS handshake adds about 0.4 s,
+which is why the client warms the connection when a call starts. Cost: about
+3k input tokens per question, $0.00013; well under $0.02 per call hour.
+
+### What was fixed along the way
+
+- The paragraph chunker left bare headings as their own chunks ("## 17. How
+  Launchese works"), and Jev rated one at 0.66 for a price question.
+  Headings now stay with the paragraph that follows; oversized tables and
+  lists split by line and every piece carries its section heading.
+- Two stale demo documents in the user's knowledge base answered a Launchese
+  pricing question with "from GBP 49". The tooling never deletes user
+  documents; they are flagged for removal.
+
+### Question → first visible card, real call replay
+
+`--copilot-replay` fed the first 5 minutes of a real English sales call (174
+transcript lines, 15 "Them" lines the question heuristic flagged) into the
+real engine at real time, with a fixed 2.5 s stand-in for Haiku that answers
+the newest question in each window, and the real knowledge base plus Jev.
+Times are wall-clock from the finalized utterance reaching `ingest`;
+WhisperKit's 1.6–3.1 s before that is unchanged by any of this.
+
+| Pace | Fast path | Excerpt cards (n, median, max) | Haiku cards (n, median, p90) | Haiku calls/min |
+|---|---|---|---|---|
+| Fast | off | – | 9, 3.70 s, 4.42 s | 5.0 |
+| Fast | on | 3, 0.32 s, 0.60 s | 7, 3.59 s, 3.75 s | 5.0 |
+| Balanced | off | – | 8, 3.77 s, 7.56 s | 2.8 |
+| Balanced | on | 2, 0.34 s, 0.40 s | 7, 7.56 s, 7.61 s | 2.8 |
+| Relaxed | off | – | 3, 10.69 s, 104.7 s max | 0.6 |
+| Relaxed | on | 2, 0.38 s, 0.43 s | 2, 5.70 s, 10.61 s max | 0.6 |
+
+Reading it:
+
+- An excerpt, when the documents answer the question, shows in about a third
+  of a second on every pace; on Relaxed that is a question that would
+  otherwise wait 10 s to 100 s. Zero fast-path failures across the six runs
+  (a first attempt with six replays plus an eval sharing one Mac did hit the
+  700 ms budget three times in a row, which is why three failures now pause
+  the path for a minute instead of the rest of the call).
+- Only 2–3 of the 15 flagged questions were document questions ("what are my
+  obligations to HMRC?"); the rest were conversational ("What then? Am I
+  stuck?") and correctly got no excerpt. The share of document questions on
+  a call bounds what the fast path can do.
+- Haiku's own timing is stand-in dominated (2.5 s fixed) and the question
+  floor's gain over the old 5 s floor was not isolated by this replay; the
+  harness exists for that comparison when a stub with the old constants is
+  worth the run. Calls per minute stayed at the pace caps.
+- The stand-in answers one question per pass, so several questions in one
+  window go "unanswered" by it; the real model emits up to two cards per
+  pass and behaves similarly.

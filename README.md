@@ -51,6 +51,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 | Speech-to-Text (optional, BYO key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
 | Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0) — on-device pyannote-derived models (CC-BY-4.0), ~13 MB downloaded on first use |
 | Copilot & reports (optional, BYO key) | Claude API (Haiku) with structured outputs |
+| Instant document answers (optional, BYO key, Claude mode) | TypeSafe AI `jev-latest`, one probability per matching knowledge-base chunk |
 | Knowledge base | Apple NaturalLanguage embeddings — documents chunked & embedded on-device, never uploaded |
 | System Audio | Core Audio process taps on macOS 15+ · ScreenCaptureKit on macOS 14 (no virtual audio drivers needed) |
 | Microphone | AVAudioEngine |
@@ -75,7 +76,7 @@ The post-call report — summary, coaching, and commitments as section cards:
 Fair question — this is a microphone-and-system-audio app, and you shouldn't have to take my word for anything. The properties you can check yourself:
 
 - **Local by default.** Out of the box there is exactly one network call in the whole app: a once-a-day GitHub check for new releases. Transcription, diarization, embeddings, reports — all on-device.
-- **Cloud features are opt-in, with your own keys.** Groq/Deepgram transcription and the Claude copilot only exist after you paste your key, and they're labelled with exactly what they send (transcript text — audio never leaves the Mac). Keys live in your Keychain, not in files.
+- **Cloud features are opt-in, with your own keys.** Groq/Deepgram transcription, the Claude copilot and the TypeSafe document shortcut only exist after you paste your key, and they're labelled with exactly what they send (transcript text and, for TypeSafe, matching document snippets — audio never leaves the Mac). Keys live in your Keychain, not in files.
 - **No accounts, no telemetry, no analytics.** There's no server for Parrot to phone home to.
 - **Small and auditable.** ~13k lines of Swift, two real dependencies (WhisperKit, plus a vendored SpeexDSP echo canceller). [FILEMAP.md](FILEMAP.md) maps every source file so an afternoon of reading covers the whole thing.
 - **Signed and notarized.** Releases are Developer ID-signed and Apple-notarized — what you download is what was built.
@@ -143,6 +144,8 @@ In **Settings → Transcription** you can trade "audio never leaves the Mac" for
 | On-device Whisper | free | Private. The default. |
 | Groq | ~$0.08 | Large-model accuracy, same latency as local |
 | Deepgram | ~$0.58 | True streaming — words appear as they're spoken |
+
+With a TypeSafe key (Settings → API Keys) and the Copilot on Claude, the moment the other side asks something your documents cover, the matching excerpt shows as a "From your docs" card within about a second, while Claude is still writing. It costs well under $0.02 per call hour and shows on the meeting's cost row as "Doc answers".
 
 There's also a **"Polish transcript after each call"** toggle (needs a Groq key): re-transcribes the saved audio with the large model after you hit Stop and regenerates the reports from the cleaner text (~$0.04 per call hour). Whatever you use, the meeting header shows the estimated cost afterwards.
 

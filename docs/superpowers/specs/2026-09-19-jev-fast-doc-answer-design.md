@@ -1,9 +1,9 @@
 # Jev fast document answers for the Copilot — design (draft)
 
-Date: 2026-09-19. Status: **draft**, blocked on the open questions in §8.
-No code yet. Everything about Jev below was verified against
-docs.typesafe.ai on 2026-09-19; everything about Parrot against the tree at
-`f612b31`.
+Date: 2026-09-19. Status: **implemented on branch
+`claude/jev-parrot-copilot-eval-5b7ca7`** (see §9 for what the eval changed).
+Everything about Jev below was verified against docs.typesafe.ai on
+2026-09-19; everything about Parrot against the tree at `f612b31`.
 
 ## 1. Problem
 
@@ -355,3 +355,49 @@ Merge bar:
 8. Privacy posture: is a US-hosted vendor with standard retention acceptable
    for your own calls and for what the help page promises?
 9. Ephemeral card, or persist it into the meeting's insights?
+
+## 9. What the eval changed (2026-09-19, implementation notes)
+
+The open questions in §8 were answered by the user's instruction to build
+and test autonomously with the Launchese knowledge base (113 KB, 35
+sections) as the document under test. Decisions taken and what the numbers
+said:
+
+- **Retrieval was the bottleneck, not Jev.** With the original cosine search
+  the answering chunk reached the 8 candidates for 14 of 71 covered
+  questions; where it did, Jev picked it 11 times out of 13 with zero false
+  positives. A BM25 exact-word ranking put it in the top 8 for 55 of 71, so
+  `KnowledgeBaseService.search` is now a hybrid: BM25 and embedding rankings
+  fused by reciprocal rank fusion. Haiku's four references come from the same
+  ranking, so its grounding improved as a side effect.
+- **Twelve candidates, not eight.** Top 8 covered 77 % of questions, top 16
+  87 %; twelve chunks are still about 3k tokens and cost no latency.
+- **Single request wins.** One request with twelve named chunks and twelve
+  nouls scored the same retrieval ceiling as one request per chunk, with
+  slightly better precision at 0.90 and lower latency (p50 0.33 s vs 0.30 s
+  is within noise; per-candidate's max was 0.54 s).
+- **Threshold stays 0.75.** Precision is flat from 0.50 to 0.90 (0.81 to
+  0.83 by substring label, about 0.90 after re-reading the "wrong" picks by
+  hand: five of nine contained the answer in other words). Raising the gate
+  only lost recall. The uncovered questions never crossed 0.50.
+- **Heading-only chunks.** The paragraph chunker left bare headings ("## 17.
+  How Launchese works") as their own chunks, and Jev rated one at 0.66 for a
+  price question. Headings are now glued onto the paragraph that follows,
+  separators dropped, and oversized tables or lists split by line with the
+  section heading carried on every piece.
+- **Turkish.** Recall at 0.75 went from 0 of 15 to 5 of 15 with the hybrid
+  search (English product words carry), with no false positives on the two
+  uncovered Turkish questions. No language gate: the path stays precise and
+  merely fires less often.
+- **Stale demo documents.** The user's knowledge base still holds
+  `01-company-formation.md` and `northwind-demo-faq.md`; one answered "a few
+  hundred quid for formation" with "from GBP 49". Flagged for removal in
+  Settings → Knowledge; not deleted by the tooling.
+- **Question debounce.** Shortened on every pace (Fast 0.3 s, Balanced 1 s,
+  Relaxed 3 s), not only Fast: utterances are silence-bound, so the debounce
+  never coalesced a question anyway.
+- **Build environment.** Xcode 27's license is unaccepted on this Mac, so
+  every `/usr/bin` developer shim refuses to run; the work was built by
+  calling the toolchain directly with `swift build --product Parrot`, which
+  also sidesteps a dependency plugin that fails to compile under a macOS 12
+  host target. `sudo xcodebuild -license accept` restores plain `make`.
