@@ -540,7 +540,8 @@ final class CallAnalysisEngine {
             guard let best = Self.bestCandidate(scores: scores, threshold: Self.docAnswerThreshold) else { return }
             let chunk = refs[best.index]
             let card = Insight(kindKey: Insight.docExcerptKind, title: Self.excerptTitle(for: question),
-                               detail: chunk.text, callTime: time, source: chunk.documentName)
+                               detail: Self.excerptDisplayText(chunk.text), callTime: time,
+                               source: chunk.documentName)
             insights.insert(card, at: 0)
             pendingExcerpts.append((card.id, chunk, question))
             fastPathStats.hits += 1
@@ -572,6 +573,24 @@ final class CallAnalysisEngine {
             q = (cut.lastIndex(of: " ").map { String(cut[..<$0]) } ?? String(cut)) + "\u{2026}"
         }
         return "\u{201C}\(q)\u{201D}"
+    }
+
+    /// Chunks are Markdown; the card shows prose. Heading marks and bold
+    /// markers go, table rows become "a · b" lines, rule rows vanish.
+    nonisolated static func excerptDisplayText(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false).compactMap { raw -> String? in
+            var line = String(raw)
+            if line.hasPrefix("#") {
+                line = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+            }
+            line = line.replacingOccurrences(of: "**", with: "")
+            guard line.hasPrefix("|") else { return line }
+            let cells = line.split(separator: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if cells.allSatisfy({ $0.allSatisfy { $0 == "-" || $0 == ":" } }) { return nil }
+            return cells.joined(separator: " · ")
+        }.joined(separator: "\n")
     }
 
     /// A Haiku card supersedes an excerpt when it cites the same document, or

@@ -454,7 +454,7 @@ enum CopilotSnapshot {
             // The Jev fast path's excerpt card: shown within a second of the
             // question, replaced when Haiku's grounded card lands.
             Insight(kindKey: Insight.docExcerptKind, title: "\u{201C}How much is the express verification\u{201D}",
-                    detail: "### 12.3 The Launchese paid route\nLaunchese Ltd, as ACSP AP020671, verifies identity and files the verification with Companies House. Standard: £50 per person, completed within one week of receiving all documents. Express: £99 per person, completed the same working day once all documents are in. One-off payments in pounds. Both include filing with Companies House. Nothing renews. No VAT is added.",
+                    detail: "12.3 The Launchese paid route\nLaunchese Ltd, as ACSP AP020671, verifies identity and files the verification with Companies House. Standard: £50 per person, completed within one week of receiving all documents. Express: £99 per person, completed the same working day once all documents are in. One-off payments in pounds. Both include filing with Companies House. Nothing renews. No VAT is added.",
                     callTime: 761, source: "pricing.md"),
             Insight(kindKey: "suggestion", title: "Answer the security question",
                     detail: "“All audio stays on your Mac — only transcript text goes to the API, and we can sign a DPA this week if that helps.”",

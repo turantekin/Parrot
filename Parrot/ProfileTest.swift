@@ -982,6 +982,11 @@ enum ProfileTest {
         check("not superseded by an unrelated card", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelated]))
         check("not superseded by a stem match without a reply", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stemNoReply]))
         check("not superseded by nothing", !E.excerptSuperseded(question: "q", document: "d", by: []))
+        // Chunks are Markdown; the card shows prose, not markup.
+        check("excerpt display strips heading marks and bold",
+              E.excerptDisplayText("### 12.3 The paid route\n- **Standard** £50\n| a | b |\n|---|---|")
+                == "12.3 The paid route\n- Standard £50\na · b")
+        check("excerpt display leaves plain text alone", E.excerptDisplayText("Plain line.\nSecond.") == "Plain line.\nSecond.")
     }
 
     @MainActor
