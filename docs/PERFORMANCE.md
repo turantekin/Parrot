@@ -62,8 +62,9 @@ English synthetic, 11 English questions transcribed from real sales calls,
 15 Turkish, 14 that the documents do not answer) run through the real KB
 search and TypeSafe `jev-latest` with `--doc-answer-eval`. A label is a
 substring the answering chunk must contain, so "wrong" below over-counts:
-re-reading the seven wrong picks by hand, four contained the answer in other
-words, so the shipped precision is nearer 0.94.
+re-reading the wrong picks by hand, most contained the answer in other words
+or came from the two stale demo documents, so the shipped precision is
+nearer 0.95.
 
 ### Retrieval decides everything
 
@@ -71,23 +72,26 @@ words, so the shipped precision is nearer 0.94.
 |---|---|
 | Embedding cosine only, top 8 (before) | 14 / 71 |
 | BM25 exact-word only, top 8 (prototype) | 55 / 71 |
-| Hybrid BM25 + cosine, rank fusion, 12 candidates (shipped, heading-aware chunks) | 51 / 71, 32 within the top 4 |
+| Hybrid BM25 + cosine, equal-weight rank fusion, 12 candidates | 51 / 71, 32 within the top 4 |
+| BM25 first with stop words, embeddings fill the rest, 12 candidates (shipped) | 58 / 71, 50 within the top 4 |
 
 Where the chunk is in the list, Jev picks it: with cosine-only retrieval it
-hit 11 of the 13 questions it answered, with zero false positives. Haiku's
-four references come from the same search, so its grounding improved too.
+hit 11 of the 13 questions it answered, with zero false positives. Equal
+weight fusion turned out worse than BM25 alone at the top of the list, so
+the words rank and the embeddings only fill what the words did not reach.
+Haiku's four references come from the same search, so its grounding
+improved too: 50 of 71 in the top 4 instead of 12.
 
 ### Precision and recall by threshold, hybrid retrieval, single request with 12 nouls
 
 | Threshold | shown | hits | wrong (by substring) | false positives (uncovered) | precision | recall |
 |---|---|---|---|---|---|---|
-| 0.50 | 53 | 45 | 8 | 0 | 0.85 | 0.63 |
-| 0.75 (shipped) | 49 | 42 | 7 | 0 | 0.86 | 0.59 |
-| 0.85 | 45 | 39 | 6 | 0 | 0.87 | 0.55 |
-| 0.90 | 43 | 38 | 5 | 0 | 0.88 | 0.54 |
+| 0.50 | 58 | 52 | 6 | 0 | 0.90 | 0.73 |
+| 0.75 (shipped) | 55 | 50 | 5 | 0 | 0.91 | 0.70 |
+| 0.90 | 48 | 44 | 4 | 0 | 0.92 | 0.62 |
 
 Precision barely moves across the range, so raising the gate mostly loses
-recall; 0.75 stays. English recall at 0.75: 37 / 56. Turkish: 5 / 15 (English
+recall; 0.75 stays. English recall at 0.75: 46 / 56. Turkish: 4 / 15 (English
 product words carry; 0 / 15 before the hybrid search), no false positives on
 the two uncovered Turkish questions. One request with all candidates and one
 request per candidate reached the same ceiling; the single request had the
@@ -148,3 +152,37 @@ Reading it:
 - The stand-in answers one question per pass, so several questions in one
   window go "unanswered" by it; the real model emits up to two cards per
   pass and behaves similarly.
+
+### Live run: two synthetic voices through the speakers (2026-09-19)
+
+A 15-line scripted sales call (ElevenLabs voices, prospect and salesperson)
+was played through the Mac's speakers into the installed app, Sales
+discovery profile, Copilot on Claude, TypeSafe key present, Deepgram
+transcription selected (its "Them" socket failed at the start and the app
+fell back to on-device Whisper, see below). Times are wall clock from the
+moment the spoken line ended, read from the app's public copilot log
+(`log show --info --predicate 'subsystem == "com.uygar.parrot" AND category == "copilot"'`).
+
+| Prospect line | transcript line lands | "From your docs" excerpt | first Claude card |
+|---|---|---|---|
+| How much does it cost to set one up? | 1.8 s | 2.2 s | 9.0 s |
+| Is the Companies House fee included? | 2.1 s | 2.5 s | 6.5 s |
+| Do I need to come to the UK? | 1.5 s | 1.9 s | – |
+| How long does formation take? | 2.2 s | 2.5 s | 6.5 s |
+| What is identity verification, how much is express? | 1.5 s | none (fixed by the stop-word change, hits at 0.94 offline) | 7.6 s |
+| Can you guarantee a Stripe account? | 1.4 s | 1.8 s | 6.5 s |
+| Can we do Friday at three? (not in the documents) | 1.6 s | none, correctly | 20.5 s (next step card) |
+
+So the excerpt shows about 0.4 s after the transcript line, 1.8 to 2.5 s
+after the prospect stops talking, and Claude's grounded card 6 to 9 s after.
+Two of the excerpts were later replaced by Claude's cards citing the same
+document; the rest stayed because Claude produced no card for that question.
+Claude's replies quoted the right prices and the £100 fee from the document.
+
+Seen along the way: the Deepgram "Them" stream failed around 15 s into both
+runs (the key is valid and the "Me" socket kept working). Deepgram closes a
+stream that carries no audio for about 10 s, and the failure reason was
+hidden behind a redacted NSLog. The streamer now sends a KeepAlive every
+5 s and logs the close code and reason publicly. The mic also produced junk
+"Me" lines from speaker bleed, which headphones avoid; that is the known AEC
+residual, not the copilot.

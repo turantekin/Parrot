@@ -401,3 +401,13 @@ said:
   calling the toolchain directly with `swift build --product Parrot`, which
   also sidesteps a dependency plugin that fails to compile under a macOS 12
   host target. `sudo xcodebuild -license accept` restores plain `make`.
+- **Fusion reversed, stop words added (later the same day).** Equal-weight
+  rank fusion of BM25 and embeddings scored worse than BM25 alone at the top
+  of the list. Now BM25 ranks and embeddings only fill the slots the words
+  did not reach, with English function words dropped from the tokens:
+  answer in the top 4 for 50 of 71 questions (was 32), precision 0.91 and
+  recall 0.70 at the 0.75 gate. Spoken compound questions ("what is this
+  verification and how much is express") went from missing to a 0.94 hit.
+- **Live run.** A two-voice synthetic call through the speakers measured
+  1.8 to 2.5 s from the prospect's last word to the excerpt and 6 to 9 s to
+  Claude's card; see docs/PERFORMANCE.md.
