@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Every colour on the page lives here. Components use the token names only. */
+:root {
+  --paper: #fbfaf6;
+  --ink: #17181a;
+  --ink-2: #5d6067;
+  --ink-3: #9a9ea6;
+  --line: #e7e4dc;
+  --card: #ffffff;
+  --brand-teal: #1a8db5;
+  --brand-green: #34a353;
+  --brand-orange: #f08a24;
+  --brand-coral: #e3503c;
+  --tone: var(--brand-teal);
+  --radius: 0.75rem;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: #f1efe8;
+  --secondary-foreground: var(--ink);
+  --muted: #f1efe8;
+  --muted-foreground: var(--ink-2);
+  --accent: #f1efe8;
+  --accent-foreground: var(--ink);
+  --destructive: var(--brand-coral);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--tone);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121315;
+    --ink: #f1efe9;
+    --ink-2: #a5a8ae;
+    --ink-3: #6d7077;
+    --line: #27292e;
+    --card: #1a1b1f;
+    --brand-teal: #3fb0d6;
+    --brand-green: #52c073;
+    --brand-orange: #f6a04a;
+    --brand-coral: #f0705e;
+    --secondary: #1f2126;
+    --muted: #1f2126;
+    --accent: #1f2126;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-card: var(--card);
+  --color-tone: var(--tone);
+  --color-teal: var(--brand-teal);
+  --color-green: var(--brand-green);
+  --color-orange: var(--brand-orange);
+  --color-coral: var(--brand-coral);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
+}
+
+/* One accent per chapter. A section sets its tone; children use `tone` utilities. */
+.tone-teal { --tone: var(--brand-teal); }
+.tone-green { --tone: var(--brand-green); }
+.tone-orange { --tone: var(--brand-orange); }
+.tone-coral { --tone: var(--brand-coral); }
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { scroll-behavior: smooth; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  ::selection { background: color-mix(in oklab, var(--tone) 25%, transparent); }
+}
+
+/* Scroll reveals only when JS is present; without it everything is visible. */
+.js .reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.js .reveal.is-visible { opacity: 1; transform: none; }
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.js .card-in, .js .bubble-in { animation: pop 0.45s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal { opacity: 1; transform: none; transition: none; }
+  .js .card-in, .js .bubble-in { animation: none; }
+  html { scroll-behavior: auto; }
+}
