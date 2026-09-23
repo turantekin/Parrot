@@ -119,6 +119,13 @@ final class KnowledgeBaseService {
         documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)
     }
 
+    /// The documents the copilot can quote on a call: those tagged into the
+    /// profile, or every document when there is no profile. Mirrors `search`.
+    func documentsInPlay(for profileID: UUID?) -> [String] {
+        guard let profileID else { return documents.map(\.name) }
+        return documentNames(for: profileID)
+    }
+
     // MARK: - Retrieval
 
     /// Returns the best-matching chunks for the recent conversation, joined with

@@ -257,7 +257,8 @@ enum HelpShots {
             ],
             sentiment: ["score": 72, "buying_temperature": 65],
             read: "engaged", coach: "Going well — answer the pricing question, then ask who signs off.",
-            meCharacters: 620, themCharacters: 780)
+            meCharacters: 620, themCharacters: 780,
+            brief: "Renewal call with Acme. Legal wants to know where the data is stored.")
 
         func settings(_ section: SettingsSection) -> some View {
             SettingsView(isEmbedded: false, initialSection: section)
@@ -480,7 +481,8 @@ enum CopilotSnapshot {
             sentiment: ["buying_temperature": 62, "my_dominance": 55, "score": 68],
             read: "warming",
             coach: "Going well — stop listing features and ask who signs off on budget.",
-            meCharacters: 1300, themCharacters: 900
+            meCharacters: 1300, themCharacters: 900,
+            brief: "Renewal call with Northwind. Legal wants to know where the data is stored."
         )
 
         let panel = CopilotPanelView(transcriptJumpTarget: .constant(nil))
@@ -543,7 +545,16 @@ enum CopilotSnapshot {
         let bubblesURL = render(bubbles, dark: false,
                                 to: (path as NSString).deletingPathExtension + "-bubbles.png")
 
-        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path) + \(bubblesURL.path)\n".utf8))
+        // The "Briefed" card open: what the panel shows before the first insight lands.
+        rm.callAnalysisEngine.seedForSnapshot(
+            profile: profile, insights: [], sentiment: [:], read: nil, coach: nil,
+            meCharacters: 0, themCharacters: 0,
+            brief: "Renewal call with Northwind. Legal wants to know where the data is stored.")
+        let briefed = render(
+            CopilotPanelView(transcriptJumpTarget: .constant(nil)).environment(rm).frame(width: 420, height: 460),
+            dark: false, to: (path as NSString).deletingPathExtension + "-briefed.png")
+
+        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path) + \(bubblesURL.path) + \(briefed.path)\n".utf8))
         exit(0)
     }
 

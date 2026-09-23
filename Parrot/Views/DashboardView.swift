@@ -88,8 +88,7 @@ struct DashboardView: View {
                 .padding(.top, 4)
 
             if copilotEnabled {
-                profilePicker
-                callBriefField
+                copilotPrepCard
             }
         }
     }
@@ -148,23 +147,46 @@ struct DashboardView: View {
         .frame(maxWidth: 460)
     }
 
-    /// Optional one-line context the copilot gets from second one of the call.
-    private var callBriefField: some View {
+    /// Everything the copilot knows from second one: the profile, your brief,
+    /// and the documents it can quote. One card, so none of it hides.
+    private var copilotPrepCard: some View {
         @Bindable var recordingManager = recordingManager
-        return HStack(spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.appCaption)
-                .foregroundStyle(Theme.Colors.accent)
+        let docs = recordingManager.knowledgeBase.documentsInPlay(for: profileStore.activeProfile?.id)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.appCaption)
+                    .foregroundStyle(Theme.Colors.accent)
+                Text("Brief the copilot")
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                Spacer()
+                Text("Optional")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink3)
+            }
 
             TextField(
-                "Brief the copilot (optional) — e.g. \"Call with Westfield PM about AC replacement\"",
-                text: $recordingManager.nextCallBrief
+                "Who's on the call and what it's about, e.g. \"Renewal call with Northwind. Legal wants to know where the data is stored.\"",
+                text: $recordingManager.nextCallBrief,
+                axis: .vertical
             )
-            .textFieldStyle(.roundedBorder)
-            .font(.appCaption)
+            .textFieldStyle(.plain)
+            .lineLimit(2...4)
+            .font(Theme.Typography.body)
+            .padding(10)
+            .background(Theme.Colors.canvas, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+
+            profilePicker
+
+            DocumentsInPlayRow(names: docs)
         }
-        .frame(maxWidth: 420)
-        .padding(.top, 4)
+        .padding(14)
+        .frame(maxWidth: 520)
+        .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+        .padding(.top, 8)
     }
 
     // MARK: - Model Status

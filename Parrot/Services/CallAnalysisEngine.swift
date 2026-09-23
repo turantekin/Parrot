@@ -115,7 +115,8 @@ final class CallAnalysisEngine {
     var knowledgeBase: KnowledgeBaseService?
 
     let provider: AnalysisProvider
-    private var callBrief = ""
+    /// The user's one-liner for this call; the prompt carries it as "Brief for this specific call".
+    private(set) var callBrief = ""
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
     private var meCharacters = 0
     private var themCharacters = 0
@@ -517,8 +518,9 @@ final class CallAnalysisEngine {
     /// can be rendered offscreen (`--copilot-snapshot`) without a live call.
     func seedForSnapshot(profile: CallProfile?, insights: [Insight],
                          sentiment: [String: Int], read: String?, coach: String? = nil,
-                         meCharacters: Int, themCharacters: Int) {
+                         meCharacters: Int, themCharacters: Int, brief: String = "") {
         activeProfile = profile
+        callBrief = brief
         self.insights = insights
         self.sentiment = sentiment
         sentimentRead = read
@@ -530,6 +532,11 @@ final class CallAnalysisEngine {
     }
 
     // MARK: - Card Actions
+
+    /// Replaces the brief mid-call. The next analysis request carries it; nothing is re-sent for it alone.
+    func updateBrief(_ text: String) {
+        callBrief = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// Marks a pinned blocker as handled; it moves from the pinned zone into the feed.
     func markHandled(_ insight: Insight) {

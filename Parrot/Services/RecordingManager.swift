@@ -26,6 +26,13 @@ final class RecordingManager {
     private(set) var elapsedTime: TimeInterval = 0
     private(set) var currentMeeting: Meeting?
 
+    /// Edits the brief of the call in progress: the copilot uses it from its
+    /// next request and the meeting keeps the new text.
+    func updateBrief(_ text: String) {
+        callAnalysisEngine.updateBrief(text)
+        currentMeeting?.brief = text.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     /// Guards against a second startRecording slipping in during the `await`s
     /// before isRecording is set — which would start a duplicate transcription
     /// loop and double every segment.

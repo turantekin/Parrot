@@ -166,6 +166,12 @@ struct CopilotPanelView: View {
                 .padding(.horizontal, Theme.Metrics.pad)
                 .padding(.top, 12)
 
+            // What the copilot is working with: open before the first insight,
+            // then a one-line row so the feed keeps the stage.
+            LiveBriefCard()
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, 8)
+
             if engine.insights.isEmpty && errorMessage == nil {
                 emptyState
             } else {

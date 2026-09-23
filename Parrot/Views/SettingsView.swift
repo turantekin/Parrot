@@ -90,6 +90,24 @@ struct SettingsView: View {
         NSHelpManager.shared.openHelpAnchor(anchor, inBook: book)
     }
 
+    /// Deep-links into one section from anywhere (dashboard, live panel): the
+    /// request is parked in defaults, the Settings window is opened or brought
+    /// forward, and whichever SettingsView is showing picks it up in onAppear
+    /// (fresh window) or via the notification (already open).
+    static let requestedSectionKey = "settingsRequestedSection"
+    static func open(_ target: SettingsSection, with openSettings: OpenSettingsAction) {
+        UserDefaults.standard.set(target.rawValue, forKey: requestedSectionKey)
+        openSettings()
+        NotificationCenter.default.post(name: .parrotOpenSettingsSection, object: nil)
+    }
+
+    private func consumeRequestedSection() {
+        guard let raw = UserDefaults.standard.string(forKey: Self.requestedSectionKey),
+              let target = SettingsSection(rawValue: raw) else { return }
+        UserDefaults.standard.removeObject(forKey: Self.requestedSectionKey)
+        section = target
+    }
+
     /// One Equatable snapshot of every auto-saved setting on this screen —
     /// a single onChange instead of one per field.
     private var settingsFingerprint: String {
@@ -152,6 +170,10 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .formStyle(.grouped)
+        .onAppear { consumeRequestedSection() }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotOpenSettingsSection)) { _ in
+            consumeRequestedSection()
+        }
         .onChange(of: settingsFingerprint) { flashSavedToast() }
         .overlay(alignment: .bottom) {
             if showSavedToast {
