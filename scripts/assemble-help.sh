@@ -59,4 +59,15 @@ PLIST
 hiutil -Caf "$LPROJ/Parrot.helpindex" "$LPROJ"
 hiutil -C -a -I corespotlight -f "$LPROJ/Parrot.cshelpindex" "$LPROJ"
 
+# A built book is useless unless the app's Info.plist points at it: without
+# these two keys Help Viewer says "Help isn't available for Parrot" and the
+# Settings → About anchor jump opens the generic macOS help instead. They were
+# lost once already (7be0c1d), so fail the build rather than ship silently.
+for key in CFBundleHelpBookFolder CFBundleHelpBookName; do
+  /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Contents/Info.plist" >/dev/null 2>&1 || {
+    echo "assemble-help: $APP/Contents/Info.plist has no $key; the Help menu would say help isn't available" >&2
+    exit 1
+  }
+done
+
 echo "==> help book assembled ($(ls "$LPROJ"/*.html | wc -l | tr -d ' ') pages, indexed)"

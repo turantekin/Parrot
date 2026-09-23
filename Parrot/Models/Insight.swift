@@ -3,6 +3,11 @@ import SwiftData
 
 /// A single piece of live call intelligence produced by the CallAnalysisEngine.
 struct Insight: Identifiable, Equatable {
+    /// Reserved kind for the Jev fast path's "From your docs" excerpt card.
+    /// Never a profile kind; filtered out of Haiku's known list, the dedup
+    /// set, and persistence. The card is the bridge until Haiku's card lands.
+    static let docExcerptKind = "doc_excerpt"
+
     let id = UUID()
     /// Stable kind key from the active profile (e.g. "suggestion", "objection",
     /// "reflection"). Styling is resolved from this key, never hardcoded.

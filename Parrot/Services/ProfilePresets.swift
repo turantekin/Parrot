@@ -7,6 +7,7 @@ enum ProfilePresets {
     private static let interviewID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!
     private static let supportID  = UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!
     private static let genericID  = UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!
+    private static let vendorID   = UUID(uuidString: "00000000-0000-0000-0000-0000000000C6")!
 
     /// Bump when the built-in preset definitions change (persona, kinds, counterpart).
     /// `ProfileStore` refreshes built-in profiles whose stored version is older,
@@ -15,7 +16,10 @@ enum ProfilePresets {
     /// grey card was for.
     /// v3: "Ask this next" recolored grey → warm gold; grey read as boring for a
     /// card that carries real value (and the parrot is colorful).
-    static let presetVersion = 3
+    /// v4: "Vendor call" preset added — the user is the customer (a bank,
+    /// supplier or agency is pitching or onboarding them). Sales discovery cast
+    /// the bank as "the prospect" on a real call.
+    static let presetVersion = 4
 
     // The hex strings below are persisted in user data — never change them when
     // retheming the app. KindResolver.adaptiveColor maps each one to an adaptive
@@ -124,11 +128,36 @@ enum ProfilePresets {
                     kind("note", "Note", "5F6470", "note.text", "A neutral observation worth capturing."),
                 ],
                 gauges: [gauge("engagement", "Engagement", "Flat", "Engaged", "2F7E96")]),
+            CallProfile(id: vendorID, name: "Vendor call", iconSystemName: "building.columns",
+                summary: "You are the customer: a bank, supplier or agency is pitching or onboarding you.",
+                isBuiltIn: true, sortOrder: 6,
+                persona: vendorPersona,
+                tone: "", counterpart: "the vendor", allowGeneralKnowledge: true,
+                presetVersion: presetVersion,
+                kinds: [
+                    kind("their_commitment", "Their commitment", "3F9168", "checkmark.seal.fill", "The vendor promised something concrete: a timeline, a feature, a fee, a follow-up, a document. Capture it exactly as said."),
+                    kind("my_open_question", "My open question", "C0563B", "questionmark.bubble.fill", "You asked the vendor something and did not get a clear answer, or the vendor moved on. Flag it so you can circle back; the reply is how to ask it again.", pinned: true, priority: 10),
+                    kind("red_flag", "Red flag", "E8943A", "exclamationmark.triangle.fill", "A limitation, risk, fee, hold, exclusion, lock-in or condition the vendor mentioned that could hurt you. Quote the condition.", pinned: true, priority: 9),
+                    kind("pricing_detail", "Pricing detail", "4F6FB0", "tag.fill", "A number the vendor stated: fee, rate, settlement time, limit, minimum, timeline. Record it so it is not lost."),
+                    kind("ask_this", "Ask this", "C29218", "magnifyingglass", "An important thing you have not asked this vendor yet: pricing, timelines, support, exit terms, compliance steps. Phrase the title as the question.", priority: 7),
+                    kind("next_step", "Next step", "2F7E96", "calendar.badge.plus", "A concrete action either side agreed to; say who and when."),
+                ],
+                gauges: [gauge("fit", "Fit", "Poor", "Strong", "3F9168"),
+                         gauge("my_dominance", "You're talking", "Balanced", "Dominating", "5F6470")]),
         ]
     }
 
     /// The framing scaffold the Default profile uses (mirrors today's hardcoded prompt intent).
     private static let defaultPersona = "You are a live call copilot. Draft short, concrete lines the user can say, flag obstacles, and capture commitments."
+
+    /// Vendor call persona — the user is buying, and the copilot protects their side.
+    private static let vendorPersona = """
+    You assist someone who is the CUSTOMER on this call: a bank, payment provider, supplier or agency \
+    is explaining what it offers, answering their questions, or onboarding them. The user is not \
+    selling anything and the other party is never a prospect. Protect the user's interests: capture \
+    exactly what the vendor commits to and what it costs, flag risks, holds, exclusions and unanswered \
+    questions, and suggest what to ask next. Keep the vendor's numbers verbatim.
+    """
 
     /// Sales discovery persona — a real-time coach, not just a suggestion engine.
     private static let salesPersona = """

@@ -30,7 +30,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 - **Transcripts read like people talk** — Lines land as whole sentences when the speaker pauses (not chopped 2-second fragments), with a live preview filling in while they're still mid-sentence. Silence is never transcribed
 - **Forgot to hit stop?** — Right-click a transcript line → **Delete Everything After This Line** and the nonsense tail is gone. The audio recording is kept in full, and a small note under the transcript remembers what you trimmed
 - **Post-call polish pass (optional)** — After you hit Stop, re-transcribe the whole call through Groq's large model and regenerate the reports from the cleaner text, for pennies
-- **Live Call Copilot** — An always-on assistant that watches the conversation: a live coach card with a 0–100 "how is this call going" score, suggested answers grounded in *your* documents, pinned blocker/question cards that auto-resolve when you handle them, and action items captured as you promise them. Opt-in, and you pick the brain: **Claude** (bring your own key), a **local model via Ollama** (fully offline AI), or any OpenAI-compatible server. Transcript text goes to your chosen provider, audio never leaves your Mac
+- **Live Call Copilot** — An always-on assistant that watches the conversation: a live coach card with a 0–100 "how is this call going" score, suggested answers grounded in *your* documents (and, with a TypeSafe AI key, the matching section of a document on screen within about half a second of a question), pinned blocker/question cards that auto-resolve when you handle them, and action items captured as you promise them. Opt-in, and you pick the brain: **Claude** (bring your own key), a **local model via Ollama** (fully offline AI), or any OpenAI-compatible server. Transcript text goes to your chosen provider, audio never leaves your Mac
 - **You control what the Copilot spends** — A pace setting (Relaxed fits free model tiers), a dial for how much conversation each request carries, and a pause button right on the call screen: while paused, nothing is sent and nothing is spent
 - **Call Profiles** — Reshape the copilot per call type (sales discovery, 1:1 coaching, interviews…): each profile has its own insight kinds, sentiment gauges, persona, and tone
 - **Per-call AI cost transparency** — Every meeting shows what the AI actually cost: model, tokens, calls, transcription minutes, and estimated dollars, with a line-by-line breakdown. Local features show $0.00, proudly
@@ -51,6 +51,7 @@ If you find this useful or just think the idea is cool, give it a star. It'll ma
 | Speech-to-Text (optional, BYO key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
 | Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0) — on-device pyannote-derived models (CC-BY-4.0), ~13 MB downloaded on first use |
 | Copilot & reports (optional, BYO key) | Claude API (Haiku) with structured outputs |
+| Instant document answers (optional, BYO key, Claude mode) | TypeSafe AI `jev-latest`, one probability per matching knowledge-base chunk |
 | Knowledge base | Apple NaturalLanguage embeddings — documents chunked & embedded on-device, never uploaded |
 | System Audio | Core Audio process taps on macOS 15+ · ScreenCaptureKit on macOS 14 (no virtual audio drivers needed) |
 | Microphone | AVAudioEngine |
@@ -75,7 +76,7 @@ The post-call report — summary, coaching, and commitments as section cards:
 Fair question — this is a microphone-and-system-audio app, and you shouldn't have to take my word for anything. The properties you can check yourself:
 
 - **Local by default.** Out of the box there is exactly one network call in the whole app: a once-a-day GitHub check for new releases. Transcription, diarization, embeddings, reports — all on-device.
-- **Cloud features are opt-in, with your own keys.** Groq/Deepgram transcription and the Claude copilot only exist after you paste your key, and they're labelled with exactly what they send (transcript text — audio never leaves the Mac). Keys live in your Keychain, not in files.
+- **Cloud features are opt-in, with your own keys.** Groq/Deepgram transcription, the Claude copilot and the TypeSafe document shortcut only exist after you paste your key, and they're labelled with exactly what they send (transcript text and, for TypeSafe, matching document snippets — audio never leaves the Mac). Keys live in your Keychain, not in files.
 - **No accounts, no telemetry, no analytics.** There's no server for Parrot to phone home to.
 - **Small and auditable.** ~13k lines of Swift, two real dependencies (WhisperKit, plus a vendored SpeexDSP echo canceller). [FILEMAP.md](FILEMAP.md) maps every source file so an afternoon of reading covers the whole thing.
 - **Signed and notarized.** Releases are Developer ID-signed and Apple-notarized — what you download is what was built.
@@ -144,6 +145,8 @@ In **Settings → Transcription** you can trade "audio never leaves the Mac" for
 | Groq | ~$0.08 | Large-model accuracy, same latency as local |
 | Deepgram | ~$0.58 | True streaming — words appear as they're spoken |
 
+With a TypeSafe key (Settings → API Keys) and the Copilot on Claude, the moment the other side asks something your documents cover, the matching excerpt shows as a "From your docs" card within about a second, while Claude is still writing. It costs well under $0.02 per call hour and shows on the meeting's cost row as "TypeSafe", together with the duplicate-card checks the same model does after each Claude pass.
+
 There's also a **"Polish transcript after each call"** toggle (needs a Groq key): re-transcribes the saved audio with the large model after you hit Stop and regenerates the reports from the cleaner text (~$0.04 per call hour). Whatever you use, the meeting header shows the estimated cost afterwards.
 
 ### Enable the Live Call Copilot (optional)
@@ -160,10 +163,10 @@ The Copilot watches the live transcript during a recording and pushes suggested 
 
 In **Settings → Knowledge** you can brief the copilot like you'd brief a new teammate:
 
-- **Drop in documents** — pricing sheets, FAQs, playbooks (PDF/text/markdown). They're chunked and embedded **on this Mac** (Apple's NaturalLanguage framework — documents are never uploaded). When a question comes up on a call, the copilot grounds its suggested answer in the best-matching passages and cites the source on the card. Each document takes an optional note like *"use for pricing questions"*.
+- **Drop in documents** — pricing sheets, FAQs, playbooks (PDF/text/markdown). They're chunked and indexed **on this Mac** (Apple's NaturalLanguage framework plus an exact-word index; the index never leaves your Mac, and only the few passages matching a question ever travel to the copilot provider you chose). When a question comes up on a call, the copilot grounds its suggested answer in the best-matching passages and cites the source on the card. Add a TypeSafe AI key in **Settings → API Keys** and the matching section also shows as a "From your docs" card within about half a second, before Claude's answer arrives. Each document takes an optional note like *"use for pricing questions"*.
 - **Coaching instructions** — standing guidance for every call: tone, style, behavior ("keep answers short and casual, always offer Good/Better/Best on price").
 - **General-knowledge fallback** — choose whether the copilot may answer beyond your documents. Cards always show where an answer came from: your document's name or *"general knowledge"*.
-- **Pre-call brief** — an optional one-liner on the dashboard before you hit record ("Call with Westfield PM about AC replacement") so the copilot has context from second one.
+- **Pre-call brief** — a brief box on the dashboard before you hit record ("Renewal call with Northwind, legal wants to know where the data is stored") so the copilot has context from second one. The same card shows the profile and the documents in play, and once the call starts the copilot panel repeats all three as a "Briefed" card you can edit mid-call.
 
 ## Project Structure
 

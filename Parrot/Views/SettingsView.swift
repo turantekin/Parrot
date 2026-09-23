@@ -72,6 +72,7 @@ struct SettingsView: View {
     @AppStorage("rememberVoices") private var rememberVoices = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
+    @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
     @State private var showFileImporter = false
     /// There's no Save button — @AppStorage persists on every change. This
     /// drives a small transient "Saved" chip so that's visible, debounced so
@@ -88,6 +89,24 @@ struct SettingsView: View {
     static func openHelp(anchor: String) {
         let book = Bundle.main.object(forInfoDictionaryKey: "CFBundleHelpBookName") as? String
         NSHelpManager.shared.openHelpAnchor(anchor, inBook: book)
+    }
+
+    /// Deep-links into one section from anywhere (dashboard, live panel): the
+    /// request is parked in defaults, the Settings window is opened or brought
+    /// forward, and whichever SettingsView is showing picks it up in onAppear
+    /// (fresh window) or via the notification (already open).
+    static let requestedSectionKey = "settingsRequestedSection"
+    static func open(_ target: SettingsSection, with openSettings: OpenSettingsAction) {
+        UserDefaults.standard.set(target.rawValue, forKey: requestedSectionKey)
+        openSettings()
+        NotificationCenter.default.post(name: .parrotOpenSettingsSection, object: nil)
+    }
+
+    private func consumeRequestedSection() {
+        guard let raw = UserDefaults.standard.string(forKey: Self.requestedSectionKey),
+              let target = SettingsSection(rawValue: raw) else { return }
+        UserDefaults.standard.removeObject(forKey: Self.requestedSectionKey)
+        section = target
     }
 
     /// One Equatable snapshot of every auto-saved setting on this screen —
@@ -152,6 +171,10 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .formStyle(.grouped)
+        .onAppear { consumeRequestedSection() }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotOpenSettingsSection)) { _ in
+            consumeRequestedSection()
+        }
         .onChange(of: settingsFingerprint) { flashSavedToast() }
         .overlay(alignment: .bottom) {
             if showSavedToast {
@@ -167,7 +190,7 @@ struct SettingsView: View {
                     .allowsHitTesting(false)
             }
         }
-        .frame(width: isEmbedded ? nil : 780, height: isEmbedded ? nil : 540)
+        .frame(width: isEmbedded ? nil : 780, height: isEmbedded ? nil : 620)
         .frame(maxWidth: isEmbedded ? .infinity : nil,
                maxHeight: isEmbedded ? .infinity : nil)
     }
@@ -175,57 +198,63 @@ struct SettingsView: View {
     // MARK: - General
 
     private var generalPage: some View {
-        Form {
-            Section("Appearance") {
-                Picker("Appearance", selection: $appearance) {
-                    Text("Follow System").tag(Appearance.system)
-                    Text("Light").tag(Appearance.light)
-                    Text("Dark").tag(Appearance.dark)
+        let path = AudioCaptureManager.storageDirectory().path
+        return SettingsPage {
+            SettingsCard(title: "Appearance") {
+                SettingsLabeledRow(title: "Appearance", first: true) {
+                    Picker("", selection: $appearance) {
+                        Text("System").tag(Appearance.system)
+                        Text("Light").tag(Appearance.light)
+                        Text("Dark").tag(Appearance.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 220)
                 }
-                .pickerStyle(.radioGroup)
             }
 
-            Section("Storage") {
-                let path = AudioCaptureManager.storageDirectory().path
-                LabeledContent("Audio files") {
-                    Text(path)
+            SettingsCard(title: "Storage") {
+                SettingsRow(first: true) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Audio files")
+                                .font(Theme.Typography.body)
+                            Text(path)
+                                .font(Theme.Typography.secondary)
+                                .foregroundStyle(Theme.Colors.ink2)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 12)
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                        }
+                    }
+                }
+            }
+
+            SettingsCard(title: "About") {
+                SettingsLabeledRow(title: "Version", first: true) {
+                    Text("Parrot \(AppUpdater.currentVersion)")
                         .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.ink2)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
-
-                Button("Show in Finder") {
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                SettingsToggleRow(
+                    title: "Keep Parrot up to date",
+                    detail: "Downloads new versions in the background and installs them when you quit. Never during a recording.",
+                    isOn: $automaticUpdates
+                )
+                .onChange(of: automaticUpdates) {
+                    AppUpdater.shared.automaticallyUpdates = automaticUpdates
                 }
-            }
-
-            Section("About") {
-                LabeledContent("Version", value: "Parrot \(AppUpdater.currentVersion)")
-                Toggle("Keep Parrot up to date", isOn: $automaticUpdates)
-                    .onChange(of: automaticUpdates) {
-                        AppUpdater.shared.automaticallyUpdates = automaticUpdates
-                    }
-                Hint("Downloads new versions in the background and installs them when you quit. Never during a recording.")
-                HStack(spacing: 6) {
-                    Hint("Or look right now.")
+                SettingsLabeledRow(title: "Check for updates", detail: "Or look right now.") {
                     Button("Check Now") { AppUpdater.shared.checkForUpdates() }
-                        .buttonStyle(.link)
-                        .font(Theme.Typography.secondary)
                 }
-                HStack(spacing: 6) {
-                    Hint("Every screen explained, with setup and troubleshooting.")
-                    Button("Open User Guide") {
-                        NSApp.showHelp(nil)
-                    }
-                    .buttonStyle(.link)
-                    .font(Theme.Typography.secondary)
+                SettingsLabeledRow(title: "User guide", detail: "Every screen explained, with setup and troubleshooting.") {
+                    Button("Open User Guide") { NSApp.showHelp(nil) }
                 }
-                HStack(spacing: 6) {
-                    Hint("The first-run tour: permissions and model choice.")
+                SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions and model choice.") {
                     Button("Show Welcome Tour") { MeetingActions.showWelcomeTour() }
-                        .buttonStyle(.link)
-                        .font(Theme.Typography.secondary)
                 }
             }
         }
@@ -234,14 +263,20 @@ struct SettingsView: View {
     // MARK: - Recording
 
     private var recordingPage: some View {
-        Form {
-            Section("Echo Cancellation") {
-                Toggle("Cancel speaker echo from the mic", isOn: $echoCancellation)
-                Hint("On speakers, this keeps the other person's voice out of your \"Me\" track. Turn off with headphones.")
+        SettingsPage {
+            SettingsCard(title: "Echo Cancellation") {
+                SettingsToggleRow(
+                    title: "Cancel speaker echo from the mic",
+                    detail: "On speakers, this keeps the other person's voice out of your \"Me\" track. Turn off with headphones.",
+                    first: true,
+                    isOn: $echoCancellation
+                )
             }
 
-            Section("Input") {
-                Hint("System audio is captured via ScreenCaptureKit; the microphone uses your default input device.")
+            SettingsCard(title: "Input") {
+                SettingsRow(first: true) {
+                    Hint("System audio comes straight from macOS (audio only, never the screen); the microphone uses your default input device.")
+                }
             }
         }
     }
@@ -249,127 +284,146 @@ struct SettingsView: View {
     // MARK: - Transcription
 
     private var transcriptionPage: some View {
-        Form {
-            Section("Engine") {
-                Picker("Engine", selection: $transcriptionBackend) {
-                    Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
-                    Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
-                    Text("Deepgram cloud — word-by-word streaming, ~$1/hr").tag(TranscriptionBackend.deepgram.rawValue)
-                }
-                .pickerStyle(.radioGroup)
-
-                if transcriptionBackend == TranscriptionBackend.local.rawValue {
-                    Hint("Every second of audio stays on this Mac.")
-                } else {
-                    HStack(spacing: 6) {
-                        Hint("Cloud engines need a key, and fall back to on-device if it's missing.")
-                        Button("Open API Keys") { section = .apiKeys }
-                            .buttonStyle(.link)
-                            .font(Theme.Typography.secondary)
+        SettingsPage {
+            SettingsCard(title: "Engine") {
+                SettingsBlockRow(title: "Engine", first: true) {
+                    Picker("", selection: $transcriptionBackend) {
+                        Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
+                        Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
+                        Text("Deepgram cloud — word-by-word streaming, ~$1/hr").tag(TranscriptionBackend.deepgram.rawValue)
                     }
-                }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
 
-                Divider()
-
-                Toggle("Polish transcript after each call", isOn: $polishAfterCall)
-                Hint("Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.")
-
-                Divider()
-
-                Toggle("Show words as they're spoken", isOn: $livePreview)
-                Hint("Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.")
-            }
-
-            Section("On-Device Model") {
-                Picker("Model", selection: $selectedModel) {
-                    Text("Tiny — 40 MB, fastest").tag("tiny")
-                    Text("Base — 140 MB, good balance").tag("base")
-                    Text("Small — 460 MB, better accuracy").tag("small")
-                    Text("Large V3 Turbo Compressed — 626 MB, fast, low memory").tag("large-v3-v20240930_626MB")
-                    Text("Large V3 Turbo — 1.6 GB, best accuracy").tag("large-v3-turbo")
-                }
-                .pickerStyle(.radioGroup)
-
-                modelStatusView
-
-                Button("Download / Reload Model") {
-                    Task {
-                        await recordingManager.transcriptionEngine.loadModel(selectedModel)
-                    }
-                }
-            }
-
-            Section("Speaker Detection") {
-                if DiarizationEngine.modelsInstalled {
-                    LabeledContent("Models", value: "Downloaded (~13 MB)")
-                    Button("Remove Models") { DiarizationEngine.removeModels() }
-                } else {
-                    LabeledContent("Models", value: "Not downloaded")
-                    Button(diarizerDownloading ? "Downloading…" : "Download (~13 MB)") {
-                        diarizerDownloading = true
-                        Task {
-                            try? await recordingManager.diarizationEngine.ensureModels()
-                            diarizerDownloading = false
+                    if transcriptionBackend == TranscriptionBackend.local.rawValue {
+                        Hint("Every second of audio stays on this Mac.")
+                    } else {
+                        HStack(spacing: 10) {
+                            Hint("Cloud engines need a key, and fall back to on-device if it's missing.")
+                            Button("Open API Keys") { section = .apiKeys }
                         }
                     }
-                    .disabled(diarizerDownloading)
                 }
-                Text("Tells apart the different people on a call, on this Mac. Downloads automatically after a call if missing. Uses pyannote models via FluidAudio (CC-BY-4.0).")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink2)
+                SettingsToggleRow(
+                    title: "Polish transcript after each call",
+                    detail: "Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.",
+                    isOn: $polishAfterCall
+                )
+                SettingsToggleRow(
+                    title: "Show words as they're spoken",
+                    detail: "Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.",
+                    isOn: $livePreview
+                )
+            }
 
-                Toggle("Remember voices", isOn: $rememberVoices)
-                Text("When on, naming a speaker saves their voiceprint on this Mac so future calls can suggest who's talking. Never leaves your Mac; delete anytime.")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink2)
+            SettingsCard(title: "On-Device Model") {
+                SettingsBlockRow(title: "Model", first: true) {
+                    Picker("", selection: $selectedModel) {
+                        Text("Tiny — 40 MB, fastest").tag("tiny")
+                        Text("Base — 140 MB, good balance").tag("base")
+                        Text("Small — 460 MB, better accuracy").tag("small")
+                        Text("Large V3 Turbo Compressed — 626 MB, fast, low memory").tag("large-v3-v20240930_626MB")
+                        Text("Large V3 Turbo — 1.6 GB, best accuracy").tag("large-v3-turbo")
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                }
+                SettingsRow {
+                    HStack(spacing: 12) {
+                        modelStatusView
+                        Spacer(minLength: 12)
+                        Button("Download / Reload Model") {
+                            Task {
+                                await recordingManager.transcriptionEngine.loadModel(selectedModel)
+                            }
+                        }
+                    }
+                }
+            }
+
+            SettingsCard(
+                title: "Speaker Detection",
+                blurb: "Tells apart the different people on a call, on this Mac. Downloads automatically after a call if missing. Uses pyannote models via FluidAudio (CC-BY-4.0)."
+            ) {
+                if DiarizationEngine.modelsInstalled {
+                    SettingsLabeledRow(title: "Models", detail: "Downloaded (~13 MB)", first: true) {
+                        Button("Remove Models") { DiarizationEngine.removeModels() }
+                    }
+                } else {
+                    SettingsLabeledRow(title: "Models", detail: "Not downloaded", first: true) {
+                        Button(diarizerDownloading ? "Downloading…" : "Download (~13 MB)") {
+                            diarizerDownloading = true
+                            Task {
+                                try? await recordingManager.diarizationEngine.ensureModels()
+                                diarizerDownloading = false
+                            }
+                        }
+                        .disabled(diarizerDownloading)
+                    }
+                }
+                SettingsToggleRow(
+                    title: "Remember voices",
+                    detail: "When on, naming a speaker saves their voiceprint on this Mac so future calls can suggest who's talking. Never leaves your Mac; delete anytime.",
+                    isOn: $rememberVoices
+                )
                 if rememberVoices {
                     ForEach(voiceProfiles) { profile in
-                        HStack {
-                            Text(profile.name)
-                            Text("heard \(profile.sampleCount)×")
-                                .foregroundStyle(Theme.Colors.ink2)
-                            Spacer()
+                        SettingsLabeledRow(title: profile.name, detail: "heard \(profile.sampleCount)×") {
                             Button("Forget") {
                                 SpeakerProfileStore.delete(profile, in: modelContext)
                             }
                         }
-                        .font(Theme.Typography.caption)
                     }
                     if !voiceProfiles.isEmpty {
-                        Button("Forget All Voices") {
-                            SpeakerProfileStore.deleteAll(in: modelContext)
+                        SettingsRow {
+                            Button("Forget All Voices") {
+                                SpeakerProfileStore.deleteAll(in: modelContext)
+                            }
                         }
                     }
                 }
             }
 
-            Section("Language") {
-                Picker("Language", selection: $transcriptionLanguage) {
-                    Text("Auto-detect").tag("auto")
-                    Text("English").tag("en")
-                    Text("Turkish").tag("tr")
-                    Text("Spanish").tag("es")
-                    Text("German").tag("de")
-                    Text("French").tag("fr")
-                    Text("Italian").tag("it")
-                    Text("Portuguese").tag("pt")
-                    Text("Dutch").tag("nl")
-                    Text("Russian").tag("ru")
-                    Text("Arabic").tag("ar")
-                    Text("Chinese").tag("zh")
-                    Text("Japanese").tag("ja")
-                    Text("Korean").tag("ko")
-                    Text("Hindi").tag("hi")
+            SettingsCard(title: "Language") {
+                SettingsLabeledRow(
+                    title: "Language",
+                    detail: "Applies to the next recording. Pick a language only if auto-detect keeps guessing wrong.",
+                    first: true
+                ) {
+                    Picker("", selection: $transcriptionLanguage) {
+                        Text("Auto-detect").tag("auto")
+                        Text("English").tag("en")
+                        Text("Turkish").tag("tr")
+                        Text("Spanish").tag("es")
+                        Text("German").tag("de")
+                        Text("French").tag("fr")
+                        Text("Italian").tag("it")
+                        Text("Portuguese").tag("pt")
+                        Text("Dutch").tag("nl")
+                        Text("Russian").tag("ru")
+                        Text("Arabic").tag("ar")
+                        Text("Chinese").tag("zh")
+                        Text("Japanese").tag("ja")
+                        Text("Korean").tag("ko")
+                        Text("Hindi").tag("hi")
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
-                Hint("Applies to the next recording. Pick a language only if auto-detect keeps guessing wrong.")
             }
 
-            Section("Custom Vocabulary") {
-                TextEditor(text: $customVocabulary)
-                    .frame(height: 64)
-                    .font(Theme.Typography.secondary)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
-                Hint("Names and jargon Whisper mis-hears — comma or line separated (e.g. LaunchEase, Uygar).")
+            SettingsCard(title: "Custom Vocabulary") {
+                SettingsBlockRow(
+                    title: "Names and jargon Whisper mis-hears",
+                    detail: "Comma or line separated (e.g. LaunchEase, Uygar).",
+                    first: true
+                ) {
+                    TextEditor(text: $customVocabulary)
+                        .frame(height: 64)
+                        .font(Theme.Typography.secondary)
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+                }
             }
         }
     }
@@ -407,65 +461,85 @@ struct SettingsView: View {
     // MARK: - Copilot
 
     private var copilotPage: some View {
-        Form {
-            Section("Live Call Copilot") {
-                Toggle("Enable Copilot during recordings", isOn: $copilotEnabled)
-                Hint("Suggests answers, flags blockers, and captures action items live — no button needed.")
-
-                HStack(spacing: 6) {
-                    Hint("What it says and watches for is set per call profile.")
+        let liveKind = CopilotProviderKind(rawValue: copilotProvider) ?? .claude
+        return SettingsPage {
+            SettingsCard(title: "Live Call Copilot") {
+                SettingsToggleRow(
+                    title: "Enable Copilot during recordings",
+                    detail: "Suggests answers, flags blockers, and captures action items live. No button needed.",
+                    first: true,
+                    isOn: $copilotEnabled
+                )
+                SettingsLabeledRow(title: "Call profiles", detail: "What it says and watches for is set per call profile.") {
                     Button("Open Profiles") { section = .profiles }
-                        .buttonStyle(.link)
-                        .font(Theme.Typography.secondary)
                 }
             }
 
             // What each call costs, in the user's hands: how often the model is
             // asked, and how much conversation each request carries. Both apply
             // live, mid-call. Fast + Standard = the original behavior.
-            Section("Pace") {
-                Picker("How often Copilot asks the model", selection: $copilotPace) {
-                    ForEach(CopilotPace.allCases) { pace in
-                        Text(pace.label).tag(pace.rawValue)
+            SettingsCard(title: "Pace") {
+                SettingsBlockRow(
+                    title: "How often Copilot asks the model",
+                    detail: (CopilotPace(rawValue: copilotPace) ?? .fast).caption,
+                    first: true
+                ) {
+                    Picker("", selection: $copilotPace) {
+                        ForEach(CopilotPace.allCases) { pace in
+                            Text(pace.label).tag(pace.rawValue)
+                        }
                     }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
                 }
-                .pickerStyle(.radioGroup)
-                Hint((CopilotPace(rawValue: copilotPace) ?? .fast).caption)
-
-                Picker("Conversation sent per request", selection: $copilotWindow) {
-                    ForEach(CopilotWindow.allCases) { window in
-                        Text(window.label).tag(window.rawValue)
+                SettingsLabeledRow(
+                    title: "Conversation sent per request",
+                    detail: "Only recent talk is sent. Insight cards always go along, so Copilot still remembers the whole call. Smaller is cheaper and faster, especially on free or local models."
+                ) {
+                    Picker("", selection: $copilotWindow) {
+                        ForEach(CopilotWindow.allCases) { window in
+                            Text(window.label).tag(window.rawValue)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
-                .pickerStyle(.menu)
-                Hint("Only recent talk is sent — insight cards always go along, so Copilot still remembers the whole call. Smaller is cheaper and faster, especially on free or local models.")
             }
 
-            Section("Model") {
+            SettingsCard(title: "Model") {
                 // Two jobs, two backends: live cards need speed and sharpness;
                 // reports run after the call where a slow local model costs nothing.
-                Picker("Live cards", selection: $copilotProvider) {
-                    ForEach(CopilotProviderKind.allCases) { kind in
-                        Text(kind.label).tag(kind.rawValue)
+                SettingsBlockRow(title: "Live cards", first: true) {
+                    Picker("", selection: $copilotProvider) {
+                        ForEach(CopilotProviderKind.allCases) { kind in
+                            Text(kind.label).tag(kind.rawValue)
+                        }
                     }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
                 }
-                .pickerStyle(.radioGroup)
 
-                providerConfig(for: CopilotProviderKind(rawValue: copilotProvider) ?? .claude)
+                providerConfig(for: liveKind)
 
-                Picker("Post-call reports", selection: $reportsProvider) {
-                    Text("Same as live cards").tag("")
-                    ForEach(CopilotProviderKind.allCases) { kind in
-                        Text(kind.label).tag(kind.rawValue)
+                SettingsLabeledRow(
+                    title: "Post-call reports",
+                    detail: "Reports generate after the call, so a local model keeps them free and private without slowing live cards. If the reports backend isn't set up, reports fall back to the live one."
+                ) {
+                    Picker("", selection: $reportsProvider) {
+                        Text("Same as live cards").tag("")
+                        ForEach(CopilotProviderKind.allCases) { kind in
+                            Text(kind.label).tag(kind.rawValue)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
                 }
-                .pickerStyle(.menu)
 
-                if let reportsKind = CopilotProviderKind(rawValue: reportsProvider),
-                   reportsKind != (CopilotProviderKind(rawValue: copilotProvider) ?? .claude) {
+                if let reportsKind = CopilotProviderKind(rawValue: reportsProvider), reportsKind != liveKind {
                     providerConfig(for: reportsKind)
                 }
-                Hint("Reports generate after the call, so a local model keeps them free and private without slowing live cards. If the reports backend isn't set up, reports fall back to the live one.")
             }
         }
     }
@@ -473,59 +547,66 @@ struct SettingsView: View {
     /// Per-backend configuration rows, shared by the live and reports pickers.
     @ViewBuilder
     private func providerConfig(for kind: CopilotProviderKind) -> some View {
-                switch kind {
-                case .claude:
-                    HStack(spacing: 6) {
-                        Hint("Best quality. Needs a key — transcript text is sent, audio never.")
-                        Button("Open API Keys") { section = .apiKeys }
-                            .buttonStyle(.link)
-                            .font(Theme.Typography.secondary)
+        switch kind {
+        case .claude:
+            SettingsLabeledRow(title: "Claude", detail: "Best quality. Needs a key. Transcript text is sent, audio never.") {
+                Button("Open API Keys") { section = .apiKeys }
+            }
+            SettingsRow {
+                Hint("Optional: add a TypeSafe key to show matching excerpts from your documents within a second of a question.")
+            }
+        case .ollama:
+            SettingsLabeledRow(
+                title: "Ollama model",
+                detail: "Runs entirely on this Mac: free, private, no key, works offline. Live cards arrive slower and read rougher than Claude's; reports are unaffected."
+            ) {
+                Picker("", selection: ollamaModelSelection) {
+                    ForEach(OllamaCatalog.models, id: \.id) { entry in
+                        Text(entry.label).tag(entry.id)
                     }
-                case .ollama:
-                    Picker("Model", selection: ollamaModelSelection) {
-                        ForEach(OllamaCatalog.models, id: \.id) { entry in
-                            Text(entry.label).tag(entry.id)
-                        }
-                        Divider()
-                        Text("Custom…").tag("custom")
-                    }
-                    .pickerStyle(.menu)
-
-                    if showsOllamaCustomField {
-                        LabeledContent("Model name") {
-                            // Empty title + prompt: a titled TextField in a Form
-                            // renders its title as a second trailing label.
-                            TextField("", text: $copilotOllamaModel, prompt: Text("model:tag"))
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 220)
-                        }
-                        Hint("Any model from ollama.com/library — prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards.")
-                    }
-
-                    OllamaModelStatusView(model: copilotOllamaModel)
-
-                    Hint("Runs entirely on this Mac — free, private, no key, works offline. Expect live cards to arrive slower and read rougher than Claude's — reports are unaffected.")
-                case .custom:
-                    LabeledContent("Server URL") {
-                        TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 280)
-                    }
-                    LabeledContent("Model") {
-                        TextField("", text: $copilotCustomModel, prompt: Text("gpt-5-mini"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 220)
-                    }
-                    ProviderKeyField(
-                        label: "API key",
-                        account: "custom-llm-api-key",
-                        placeholder: "optional — not needed for local servers",
-                        hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
-                    )
+                    Divider()
+                    Text("Custom…").tag("custom")
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            if showsOllamaCustomField {
+                SettingsLabeledRow(
+                    title: "Model name",
+                    detail: "Any model from ollama.com/library. Prefer small instruct models; \"thinking\" models (qwen3, deepseek-r1) are too slow for live cards."
+                ) {
+                    TextField("", text: $copilotOllamaModel, prompt: Text("model:tag"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                }
+            }
+            SettingsRow {
+                OllamaModelStatusView(model: copilotOllamaModel)
+            }
+        case .custom:
+            SettingsLabeledRow(title: "Server URL") {
+                TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 280)
+            }
+            SettingsLabeledRow(title: "Model") {
+                TextField("", text: $copilotCustomModel, prompt: Text("gpt-5-mini"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+            }
+            SettingsRow {
+                ProviderKeyField(
+                    label: "API key",
+                    account: "custom-llm-api-key",
+                    placeholder: "optional — not needed for local servers",
+                    hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
+                )
+            }
+        }
     }
 
     /// Dropdown selection for the Ollama model: catalog id, or "custom" when the
@@ -554,75 +635,94 @@ struct SettingsView: View {
     // MARK: - API Keys
 
     private var apiKeysPage: some View {
-        Form {
-            Section("Claude — powers the copilot") {
-                ProviderKeyField(
-                    label: "Claude API key",
-                    account: nil,
-                    placeholder: "sk-ant-…",
-                    hint: "Only transcript text is sent — audio never leaves your Mac. Keys: console.anthropic.com"
-                )
+        SettingsPage {
+            SettingsCard(title: "Claude", blurb: "Powers the copilot. Only transcript text is sent; audio never leaves your Mac.") {
+                SettingsRow(first: true) {
+                    ProviderKeyField(
+                        label: "Claude API key",
+                        account: nil,
+                        placeholder: "sk-ant-…",
+                        hint: "Keys: console.anthropic.com"
+                    )
+                }
             }
 
-            Section("Groq — cloud transcription & polish") {
-                ProviderKeyField(
-                    label: "Groq API key",
-                    account: TranscriptionBackend.groq.keychainAccount!,
-                    placeholder: "gsk_…",
-                    hint: "Used when the Groq engine or polish is on. Keys: console.groq.com"
-                )
+            SettingsCard(title: "Groq", blurb: "Cloud transcription and the post-call polish pass.") {
+                SettingsRow(first: true) {
+                    ProviderKeyField(
+                        label: "Groq API key",
+                        account: TranscriptionBackend.groq.keychainAccount!,
+                        placeholder: "gsk_…",
+                        hint: "Used when the Groq engine or polish is on. Keys: console.groq.com"
+                    )
+                }
             }
 
-            Section("Deepgram — streaming transcription") {
-                ProviderKeyField(
-                    label: "Deepgram API key",
-                    account: TranscriptionBackend.deepgram.keychainAccount!,
-                    placeholder: "40-character hex key",
-                    hint: "Billed per audio track. New accounts include $200 credit. Keys: console.deepgram.com"
-                )
+            SettingsCard(title: "Deepgram", blurb: "Streaming transcription, billed per audio track. New accounts include $200 credit.") {
+                SettingsRow(first: true) {
+                    ProviderKeyField(
+                        label: "Deepgram API key",
+                        account: TranscriptionBackend.deepgram.keychainAccount!,
+                        placeholder: "40-character hex key",
+                        hint: "Keys: console.deepgram.com"
+                    )
+                }
             }
 
-            Section {
-                Hint("All keys are stored in your macOS keychain, never in the app's files.")
+            SettingsCard(title: "TypeSafe", blurb: "Instant answers from your documents while Claude is still writing.") {
+                SettingsRow(first: true) {
+                    ProviderKeyField(
+                        label: "TypeSafe API key",
+                        account: JevDocMatcher.keychainAccount,
+                        placeholder: "apikey_…",
+                        hint: "When the other side asks something your documents cover, the matching excerpt shows within about a second. Sends the question, a couple of lines of context and the matching document snippets to TypeSafe AI (hosted in the US). Audio never. Claude mode only. Keys: typesafe.ai"
+                    )
+                }
             }
+
+            Hint("All keys are stored in your macOS keychain, never in the app's files.")
         }
     }
 
     // MARK: - Knowledge
 
     private var knowledgePage: some View {
-        Form {
-            Section("Documents") {
-                Hint("The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded.")
-
-                if recordingManager.knowledgeBase.documents.isEmpty {
-                    Text("No documents yet")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.ink3)
-                } else {
-                    ForEach(recordingManager.knowledgeBase.documents) { document in
-                        KBDocumentRow(document: document, knowledgeBase: recordingManager.knowledgeBase)
-                    }
-                }
-
-                HStack {
-                    Button("Add Documents…") {
-                        showFileImporter = true
-                    }
-
-                    if recordingManager.knowledgeBase.isIndexing {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Indexing…")
+        let kb = recordingManager.knowledgeBase
+        return SettingsPage {
+            SettingsCard(
+                title: "Documents",
+                blurb: "The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded."
+            ) {
+                if kb.documents.isEmpty {
+                    SettingsRow(first: true) {
+                        Text("No documents yet. Add a pricing sheet or an FAQ and the copilot can quote it.")
                             .font(Theme.Typography.secondary)
-                            .foregroundStyle(Theme.Colors.ink2)
+                            .foregroundStyle(Theme.Colors.ink3)
                     }
                 }
-
-                if let error = recordingManager.knowledgeBase.lastError {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.warn)
+                ForEach(Array(kb.documents.enumerated()), id: \.element.id) { index, document in
+                    SettingsRow(first: index == 0) {
+                        KBDocumentRow(document: document, knowledgeBase: kb, profiles: allProfiles)
+                    }
+                }
+                SettingsRow {
+                    HStack(spacing: 10) {
+                        Button("Add Documents…") {
+                            showFileImporter = true
+                        }
+                        if kb.isIndexing {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Embedding on this Mac…")
+                                .font(Theme.Typography.secondary)
+                                .foregroundStyle(Theme.Colors.ink2)
+                        }
+                        if let error = kb.lastError {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(Theme.Typography.secondary)
+                                .foregroundStyle(Theme.Colors.warn)
+                        }
+                    }
                 }
             }
         }
@@ -721,52 +821,93 @@ struct Hint: View {
 struct KBDocumentRow: View {
     let document: KBDocument
     let knowledgeBase: KnowledgeBaseService
+    /// Every call profile, so the row can show and toggle which ones use this document.
+    let profiles: [CallProfile]
 
     @State private var note: String
+    /// Removal asks first: a document is work the user prepared, and the
+    /// trash icon sits next to a text field they click into all the time.
+    @State private var confirmingRemove = false
 
-    init(document: KBDocument, knowledgeBase: KnowledgeBaseService) {
+    init(document: KBDocument, knowledgeBase: KnowledgeBaseService, profiles: [CallProfile]) {
         self.document = document
         self.knowledgeBase = knowledgeBase
+        self.profiles = profiles
         _note = State(initialValue: document.note)
     }
 
+    private var isPDF: Bool { document.name.lowercased().hasSuffix(".pdf") }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: document.name.lowercased().hasSuffix(".pdf") ? "doc.richtext" : "doc.text")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: isPDF ? "doc.richtext" : "doc.text")
+                    .foregroundStyle(Theme.Colors.accent)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(document.name)
+                        .font(Theme.Typography.sans(13, .medium))
+                        .lineLimit(1)
+                    TextField(
+                        "When should the copilot use this? e.g. \"use for pricing questions\"",
+                        text: $note
+                    )
+                    .textFieldStyle(.plain)
+                    .font(Theme.Typography.secondary)
                     .foregroundStyle(Theme.Colors.ink2)
+                    .onSubmit {
+                        knowledgeBase.updateNote(note, for: document)
+                    }
+                }
 
-                Text(document.name)
-                    .font(Theme.Typography.sans(13, .medium))
-                    .lineLimit(1)
+                Spacer(minLength: 8)
 
-                Text("\(document.chunkCount) chunks")
+                Text("\(document.chunkCount) chunks · on-device")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink3)
-
-                Spacer()
+                    .monospacedDigit()
+                    .lineLimit(1)
 
                 Button {
-                    knowledgeBase.removeDocument(document)
+                    confirmingRemove = true
                 } label: {
                     Image(systemName: "trash")
                         .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink3)
                 }
                 .buttonStyle(.plain)
                 .help("Remove from knowledge base")
+                .confirmationDialog("Remove \(document.name)?", isPresented: $confirmingRemove) {
+                    Button("Remove", role: .destructive) { knowledgeBase.removeDocument(document) }
+                } message: {
+                    Text("The copilot stops using it right away. You can add the file again any time.")
+                }
             }
 
-            TextField(
-                "When should the copilot use this? e.g. \"use for pricing questions\"",
-                text: $note
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(Theme.Typography.secondary)
-            .onSubmit {
-                knowledgeBase.updateNote(note, for: document)
+            // Which profiles may quote it. Same data Profiles → documents edits.
+            FlowLayout(spacing: 6) {
+                Text("Use for")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink3)
+                    .padding(.vertical, 4)
+                ForEach(profiles) { profile in
+                    Button {
+                        toggle(profile)
+                    } label: {
+                        TagChip(label: profile.name, on: document.profileIDs.contains(profile.id))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.leading, 24)
         }
-        .padding(.vertical, 2)
+    }
+
+    private func toggle(_ profile: CallProfile) {
+        var ids = document.profileIDs
+        if ids.contains(profile.id) { ids.remove(profile.id) } else { ids.insert(profile.id) }
+        knowledgeBase.setProfiles(ids, for: document)
     }
 }
 

@@ -166,6 +166,12 @@ struct CopilotPanelView: View {
                 .padding(.horizontal, Theme.Metrics.pad)
                 .padding(.top, 12)
 
+            // What the copilot is working with: open before the first insight,
+            // then a one-line row so the feed keeps the stage.
+            LiveBriefCard()
+                .padding(.horizontal, Theme.Metrics.pad)
+                .padding(.top, 8)
+
             if engine.insights.isEmpty && errorMessage == nil {
                 emptyState
             } else {
@@ -453,6 +459,10 @@ struct HeroInsightCard: View {
     let onDismiss: () -> Void
 
     @State private var copied = false
+    /// Excerpt cards carry a whole document chunk; clamp it until tapped.
+    @State private var showsWholeExcerpt = false
+
+    private var isExcerpt: Bool { insight.kindKey == Insight.docExcerptKind }
 
     /// Kinds whose detail is a line the user can literally say — they get the
     /// prominent Copy pill.
@@ -497,7 +507,17 @@ struct HeroInsightCard: View {
                 .font(Theme.Typography.heroDetail)
                 .foregroundStyle(Theme.Colors.ink)
                 .textSelection(.enabled)
+                .lineLimit(isExcerpt && !showsWholeExcerpt ? 6 : nil)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if isExcerpt, insight.detail.count > 240 {
+                Button(showsWholeExcerpt ? "Show less" : "Show more") {
+                    withAnimation(.easeOut(duration: 0.15)) { showsWholeExcerpt.toggle() }
+                }
+                .buttonStyle(.plain)
+                .font(Theme.Typography.sans(11, .medium))
+                .foregroundStyle(Theme.Colors.accent)
+            }
 
             if let reply = insight.reply {
                 SuggestedReplyBox(reply: reply)

@@ -17,6 +17,8 @@ extension Notification.Name {
     static let parrotFocusSearch = Notification.Name("parrotFocusSearch")
     /// Help → Report a Bug… opens the report sheet (same as the corner button).
     static let parrotReportBug = Notification.Name("parrotReportBug")
+    /// A view asks the Settings window to show one section (see SettingsView.open).
+    static let parrotOpenSettingsSection = Notification.Name("parrotOpenSettingsSection")
 }
 
 // MARK: - Shared meeting actions
