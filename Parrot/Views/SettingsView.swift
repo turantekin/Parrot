@@ -72,6 +72,7 @@ struct SettingsView: View {
     @AppStorage("rememberVoices") private var rememberVoices = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
+    @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
     @State private var showFileImporter = false
     /// There's no Save button — @AppStorage persists on every change. This
     /// drives a small transient "Saved" chip so that's visible, debounced so
@@ -623,38 +624,42 @@ struct SettingsView: View {
     // MARK: - Knowledge
 
     private var knowledgePage: some View {
-        Form {
-            Section("Documents") {
-                Hint("The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded.")
-
-                if recordingManager.knowledgeBase.documents.isEmpty {
-                    Text("No documents yet")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.ink3)
-                } else {
-                    ForEach(recordingManager.knowledgeBase.documents) { document in
-                        KBDocumentRow(document: document, knowledgeBase: recordingManager.knowledgeBase)
-                    }
-                }
-
-                HStack {
-                    Button("Add Documents…") {
-                        showFileImporter = true
-                    }
-
-                    if recordingManager.knowledgeBase.isIndexing {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Indexing…")
+        let kb = recordingManager.knowledgeBase
+        return SettingsPage {
+            SettingsCard(
+                title: "Documents",
+                blurb: "The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded."
+            ) {
+                if kb.documents.isEmpty {
+                    SettingsRow(first: true) {
+                        Text("No documents yet. Add a pricing sheet or an FAQ and the copilot can quote it.")
                             .font(Theme.Typography.secondary)
-                            .foregroundStyle(Theme.Colors.ink2)
+                            .foregroundStyle(Theme.Colors.ink3)
                     }
                 }
-
-                if let error = recordingManager.knowledgeBase.lastError {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.warn)
+                ForEach(Array(kb.documents.enumerated()), id: \.element.id) { index, document in
+                    SettingsRow(first: index == 0) {
+                        KBDocumentRow(document: document, knowledgeBase: kb, profiles: allProfiles)
+                    }
+                }
+                SettingsRow {
+                    HStack(spacing: 10) {
+                        Button("Add Documents…") {
+                            showFileImporter = true
+                        }
+                        if kb.isIndexing {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Embedding on this Mac…")
+                                .font(Theme.Typography.secondary)
+                                .foregroundStyle(Theme.Colors.ink2)
+                        }
+                        if let error = kb.lastError {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(Theme.Typography.secondary)
+                                .foregroundStyle(Theme.Colors.warn)
+                        }
+                    }
                 }
             }
         }
@@ -753,39 +758,60 @@ struct Hint: View {
 struct KBDocumentRow: View {
     let document: KBDocument
     let knowledgeBase: KnowledgeBaseService
+    /// Every call profile, so the row can show and toggle which ones use this document.
+    let profiles: [CallProfile]
 
     @State private var note: String
     /// Removal asks first: a document is work the user prepared, and the
     /// trash icon sits next to a text field they click into all the time.
     @State private var confirmingRemove = false
 
-    init(document: KBDocument, knowledgeBase: KnowledgeBaseService) {
+    init(document: KBDocument, knowledgeBase: KnowledgeBaseService, profiles: [CallProfile]) {
         self.document = document
         self.knowledgeBase = knowledgeBase
+        self.profiles = profiles
         _note = State(initialValue: document.note)
     }
 
+    private var isPDF: Bool { document.name.lowercased().hasSuffix(".pdf") }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: document.name.lowercased().hasSuffix(".pdf") ? "doc.richtext" : "doc.text")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: isPDF ? "doc.richtext" : "doc.text")
+                    .foregroundStyle(Theme.Colors.accent)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(document.name)
+                        .font(Theme.Typography.sans(13, .medium))
+                        .lineLimit(1)
+                    TextField(
+                        "When should the copilot use this? e.g. \"use for pricing questions\"",
+                        text: $note
+                    )
+                    .textFieldStyle(.plain)
+                    .font(Theme.Typography.secondary)
                     .foregroundStyle(Theme.Colors.ink2)
+                    .onSubmit {
+                        knowledgeBase.updateNote(note, for: document)
+                    }
+                }
 
-                Text(document.name)
-                    .font(Theme.Typography.sans(13, .medium))
-                    .lineLimit(1)
+                Spacer(minLength: 8)
 
-                Text("\(document.chunkCount) chunks")
+                Text("\(document.chunkCount) chunks · on-device")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink3)
-
-                Spacer()
+                    .monospacedDigit()
+                    .lineLimit(1)
 
                 Button {
                     confirmingRemove = true
                 } label: {
                     Image(systemName: "trash")
                         .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink3)
                 }
                 .buttonStyle(.plain)
                 .help("Remove from knowledge base")
@@ -796,17 +822,29 @@ struct KBDocumentRow: View {
                 }
             }
 
-            TextField(
-                "When should the copilot use this? e.g. \"use for pricing questions\"",
-                text: $note
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(Theme.Typography.secondary)
-            .onSubmit {
-                knowledgeBase.updateNote(note, for: document)
+            // Which profiles may quote it. Same data Profiles → documents edits.
+            FlowLayout(spacing: 6) {
+                Text("Use for")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink3)
+                    .padding(.vertical, 4)
+                ForEach(profiles) { profile in
+                    Button {
+                        toggle(profile)
+                    } label: {
+                        TagChip(label: profile.name, on: document.profileIDs.contains(profile.id))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.leading, 24)
         }
-        .padding(.vertical, 2)
+    }
+
+    private func toggle(_ profile: CallProfile) {
+        var ids = document.profileIDs
+        if ids.contains(profile.id) { ids.remove(profile.id) } else { ids.insert(profile.id) }
+        knowledgeBase.setProfiles(ids, for: document)
     }
 }
 

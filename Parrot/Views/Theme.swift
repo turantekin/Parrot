@@ -105,6 +105,9 @@ enum Theme {
         /// The one corner radius. Capsule is allowed only for true pills.
         static let radius: CGFloat = 6
         static let chipRadius: CGFloat = 6
+        /// Settings cards (SettingsCards.swift): the white rounded boxes the
+        /// landing page's rebuilt windows use. Rows inside keep `radius`.
+        static let cardRadius: CGFloat = 10
         /// Report/insights column cap — wide enough to use the screen while
         /// keeping prose lines readable.
         static let contentMaxWidth: CGFloat = 1100

@@ -89,6 +89,13 @@ final class KnowledgeBaseService {
         save()
     }
 
+    // MARK: - Snapshot Harness Support
+
+    /// Fake documents for the offscreen renders. Never persisted.
+    func seedForSnapshot(documents docs: [KBDocument]) {
+        documents = docs
+    }
+
     // MARK: - Profile Scoping
 
     /// Tags every document in the KB into the given profile ID.

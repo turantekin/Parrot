@@ -9,7 +9,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 178 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
 | `Parrot/ProfileTest.swift` | 1154 | `--profile-test`: headless logic harness, ~290 checks |
-| `Parrot/SnapshotTool.swift` | 933 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
+| `Parrot/SnapshotTool.swift` | 941 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
 | `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
 
 ## Models (SwiftData `@Model` + Codable values)
@@ -40,7 +40,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |
 | `Services/CallAnalysisEngine.swift` | 815 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt) |
 | `Services/JevDocMatcher.swift` | 175 | TypeSafe "Jev" client: one probability per KB chunk that it answers the question; same-issue verdicts for card dedup |
-| `Services/KnowledgeBaseService.swift` | 396 | Ingests/chunks KB docs (heading-aware), hybrid BM25 + embedding retrieval |
+| `Services/KnowledgeBaseService.swift` | 403 | Ingests/chunks KB docs (heading-aware), hybrid BM25 + embedding retrieval |
 | `Services/ProfileStore.swift` | 111 | Persists and mutates `CallProfile`s |
 | `Services/ProfilePresets.swift` | 170 | Built-in starter profiles (seven, incl. the buyer-side "Vendor call") |
 | `Services/ExportService.swift` | 127 | Transcript/report export (Markdown, text) |
@@ -58,19 +58,19 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
 | `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
-| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
+| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |\n| `Views/SettingsCards.swift` | 117 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
 | `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
-| `Views/SettingsView.swift` | 869 | All settings sections, provider keys, KB docs |
+| `Views/SettingsView.swift` | 907 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 689 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 253 | `AppSession`, menu commands, context menus, notifications |
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
-| `Views/Theme.swift` | 151 | Single source of colors, fonts, metrics |
+| `Views/Theme.swift` | 158 | Single source of colors, fonts, metrics |
 
 ## Build & non-source
 
