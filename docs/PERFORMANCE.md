@@ -222,3 +222,37 @@ profile. What the store and the copilot log showed, and what changed:
   "Продолжение следует"), and the coaching report scolded the user for it.
   Headphones. The on-device phrase filter cannot catch real words either.
 - The copilot log is now notice level so it survives more than an hour.
+
+### The user's first real call on the branch (2026-09-23 10:59, 22 min, Groq)
+
+A real call with a bank's business-account team, Sales discovery profile,
+Groq transcription, language auto.
+
+- **Transcription was wrecked by a change made the same morning.** Sending
+  the Settings vocabulary to Groq as Whisper's `prompt` made Groq echo it
+  into every quiet chunk: "Glossary, Uygar", "Guglossary", mangled speaker
+  tags like "Gluzko Leffi, M.D.:", and language drift (Icelandic, Polish,
+  Russian lines). The on-device engine has an echo guard and a bare retry
+  for exactly this; the Groq path had neither. Reverted on both the live
+  chunks and the polish pass. 11 of 164 lines came from the on-device
+  fallback after Groq chunk failures, which now log publicly.
+- **53 cards in 22 minutes, 83 Haiku calls, about $0.44.** By hand the
+  cards fall into about six themes; the PSC-rejection worry alone produced
+  eight cards across three kinds. The token near-duplicate check only
+  compares cards of the same kind and the model's own "supersedes" verdict
+  did not catch cross-kind rewordings. 26 of the 53 were "Ask this next"
+  gaps. This is the dedup problem measured on a real call.
+- **Wrong profile for the role.** The user was the customer and the bank
+  the vendor, but Sales discovery casts the other side as "the prospect", so
+  cards read "Prospect committed to PSC review" and the summary said the
+  prospect would move forward. A buyer-side profile does not exist yet.
+- **Fast path.** 9 questions detected (including "Really?" and "How are
+  you?"), one excerpt at 0.76 from the payment-partner briefing for a
+  rhetorical "the marketplace question, right?", no false excerpts on the
+  bank's questions about volumes and markets, which no document answers.
+  10 calls, $0.0015.
+- **Reports** ran on the local 4B model: the coaching report blamed the
+  user for "jargon (Glossary, Guglossary)" and the summary contradicted
+  itself on pain points.
+- **Diarization** split the same bank representative into Speaker 1 and a
+  Speaker 2 made of "Mm-hmm" and "Yes".
