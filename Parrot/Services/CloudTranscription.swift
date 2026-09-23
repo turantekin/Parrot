@@ -337,10 +337,10 @@ enum TranscriptPolisher {
             while offset < samples.count {
                 let part = Array(samples[offset ..< min(offset + partLength, samples.count)])
                 let shift = Double(offset) / 16000.0
+                // No glossary prompt here either (see the live Groq decode).
                 let segments = try await GroqTranscriber.transcribeFile(
                     WAVEncoder.encode(samples: part, sampleRate: 16000),
-                    fileName: "part.wav", language: language, apiKey: apiKey,
-                    prompt: TranscriptionEngine.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? ""))
+                    fileName: "part.wav", language: language, apiKey: apiKey)
                 for s in segments {
                     let text = TranscriptionEngine.cleaned(s.text)
                     guard !text.isEmpty else { continue }
