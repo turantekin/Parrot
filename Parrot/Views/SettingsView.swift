@@ -733,6 +733,9 @@ struct KBDocumentRow: View {
     let knowledgeBase: KnowledgeBaseService
 
     @State private var note: String
+    /// Removal asks first: a document is work the user prepared, and the
+    /// trash icon sits next to a text field they click into all the time.
+    @State private var confirmingRemove = false
 
     init(document: KBDocument, knowledgeBase: KnowledgeBaseService) {
         self.document = document
@@ -757,13 +760,18 @@ struct KBDocumentRow: View {
                 Spacer()
 
                 Button {
-                    knowledgeBase.removeDocument(document)
+                    confirmingRemove = true
                 } label: {
                     Image(systemName: "trash")
                         .font(Theme.Typography.caption)
                 }
                 .buttonStyle(.plain)
                 .help("Remove from knowledge base")
+                .confirmationDialog("Remove \(document.name)?", isPresented: $confirmingRemove) {
+                    Button("Remove", role: .destructive) { knowledgeBase.removeDocument(document) }
+                } message: {
+                    Text("The copilot stops using it right away. You can add the file again any time.")
+                }
             }
 
             TextField(
