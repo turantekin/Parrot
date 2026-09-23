@@ -2,6 +2,8 @@
 
 **A live AI copilot for your calls that runs on your Mac — and never sends your calls anywhere.**
 
+**Website:** [openparrot.app](https://openparrot.app) · **Download:** [latest release](https://github.com/turantekin/Parrot/releases) · **Guide:** [Parrot Help](https://turantekin.github.io/Parrot/help/)
+
 While you're on a Google Meet, Zoom, or any call, Parrot listens along and helps in real time: when the other side asks something, a suggested answer appears — grounded in *your* documents, your pricing, your FAQ. Objections get pinned on screen until you've handled them. Action items are captured the moment you promise them. A live score and a one-line coach tell you how the call is going while it's still going. And when you hang up, the report is already being written.
 
 Underneath it is a fully private recorder: on-device transcription (WhisperKit), both sides of the call, no cloud, no account, no data leaving your machine. The copilot's brain is your choice — **Claude** with your own key, or a **local model through Ollama, which makes the entire thing free and offline**. Either way you get a pause button, pace controls, and a per-call cost breakdown down to the cent.

@@ -256,6 +256,9 @@ struct SettingsView: View {
                 SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions and model choice.") {
                     Button("Show Welcome Tour") { MeetingActions.showWelcomeTour() }
                 }
+                SettingsLabeledRow(title: "Website", detail: "The landing page, with a demo you can scroll and the honest privacy list.") {
+                    Button("Open openparrot.app") { MeetingActions.open(MeetingActions.websiteURL) }
+                }
             }
         }
     }

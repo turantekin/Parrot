@@ -28,6 +28,8 @@ extension Notification.Name {
 @MainActor
 enum MeetingActions {
     nonisolated static let repoURL = "https://github.com/turantekin/Parrot"
+    /// The landing page: a scrolling demo, the honest privacy list, and the download.
+    nonisolated static let websiteURL = "https://openparrot.app"
 
     static func exportTXT(_ meeting: Meeting) {
         write(ExportService.exportToTXT(meeting: meeting), for: meeting, ext: "txt")
@@ -165,6 +167,9 @@ struct ParrotCommands: Commands {
             }
             Button("Parrot Help on the Web") {
                 MeetingActions.open("https://turantekin.github.io/Parrot/help/")
+            }
+            Button("Parrot Website") {
+                MeetingActions.open(MeetingActions.websiteURL)
             }
             Button("Show Welcome Tour") {
                 MeetingActions.showWelcomeTour()
