@@ -706,11 +706,15 @@ final class TranscriptionEngine {
                         let pieces: [(text: String, confidence: Float?)]
                         if backend == .groq, let groqKey {
                             do {
+                                // No glossary prompt for Groq: it echoes the prompt into
+                                // quiet chunks ("Glossary, Uygar", mangled name tags) and
+                                // there is no echo guard or bare retry on this path, unlike
+                                // the on-device decode above. A real 20-minute call on
+                                // 2026-09-23 was ruined that way. Re-add only with both.
                                 pieces = [(try await GroqTranscriber.transcribe(
-                                    samples: decodeSamples, language: language, apiKey: groqKey,
-                                    prompt: Self.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? "")), nil)]
+                                    samples: decodeSamples, language: language, apiKey: groqKey), nil)]
                             } catch {
-                                NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
+                                AudioCaptureManager.oslog.error("Groq transcription failed: \(error.localizedDescription, privacy: .public)")
                                 await MainActor.run {
                                     self.cloudNotice = "Groq error — on-device fallback for failed chunks"
                                 }
@@ -972,9 +976,9 @@ final class TranscriptionEngine {
     /// verbatim on near-silent chunks (YouTube-outro residue in its training
     /// data). Matched against normalized text, only for low-energy chunks.
     /// "Glossary: a, b." from the Settings vocabulary, or nil when empty. The
-    /// on-device engine primes Whisper with it; Groq gets it as `prompt` (it
-    /// was never sent there, and Groq heard "Launchese" as "long cheese" on
-    /// the 2026-09-23 test call).
+    /// on-device engine primes Whisper with it, behind its echo guard. Groq
+    /// does NOT get it: sent as `prompt`, Whisper echoed it into every quiet
+    /// chunk of a real call ("Glossary, Uygar"), and that path has no guard.
     nonisolated static func glossaryPrompt(from vocabulary: String) -> String? {
         let terms = vocabulary
             .components(separatedBy: CharacterSet(charactersIn: ",\n"))
