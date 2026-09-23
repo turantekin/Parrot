@@ -57,7 +57,7 @@ function CardView({ card }: { card: Card }) {
       <div className="flex items-center justify-between text-ink-2">
         <span className="flex items-center gap-1.5">
           <span className="grid size-5 place-items-center rounded bg-green/15 text-green"><CircleCheck className="size-3" /></span>
-          Action item
+          Next step
         </span>
         <span className="font-mono text-[11px] underline">{card.at}</span>
       </div>
@@ -109,7 +109,7 @@ function BriefPane({ state }: { state: CallState }) {
         <div className="flex items-center justify-between text-ink-2">
           <span className="flex items-center gap-1.5">
             <span className="grid size-5 place-items-center rounded bg-teal/15 text-teal"><Sparkles className="size-3" /></span>
-            Pre-call brief
+            Brief for this call
           </span>
           <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px]">{b.profile}</span>
         </div>
