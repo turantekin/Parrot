@@ -1,0 +1,9 @@
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - x64
+    - arm64

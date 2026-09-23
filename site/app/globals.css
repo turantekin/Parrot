@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Every colour on the page lives here. Components use the token names only. */
+:root {
+  --paper: #ffffff;
+  --ink: #0a0a0a;
+  --ink-2: #6b6f76;
+  --ink-3: #9aa0a6;
+  --line: #e8e8e8;
+  --card: #ffffff;
+  --band: #f5f5f7;
+  --brand-teal: #1a8db5;
+  --brand-green: #34a353;
+  --brand-orange: #f08a24;
+  --brand-coral: #e3503c;
+  --tone: var(--brand-teal);
+  --on-frame: #ffffff;
+  --frame-ink: #0a0a0a;
+  --radius: 0.75rem;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card-foreground: var(--ink);
+  --popover: var(--card);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: #f2f2f4;
+  --secondary-foreground: var(--ink);
+  --muted: #f2f2f4;
+  --muted-foreground: var(--ink-2);
+  --accent: #f2f2f4;
+  --accent-foreground: var(--ink);
+  --destructive: var(--brand-coral);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--tone);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0c0c0d;
+    --ink: #f5f5f5;
+    --ink-2: #a3a7ad;
+    --ink-3: #6d7177;
+    --line: #26272b;
+    --card: #141416;
+    --band: #111113;
+    --brand-teal: #3fb0d6;
+    --brand-green: #52c073;
+    --brand-orange: #f6a04a;
+    --brand-coral: #f0705e;
+    --secondary: #1f2126;
+    --muted: #1f2126;
+    --accent: #1f2126;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-card: var(--card);
+  --color-band: var(--band);
+  --color-on-frame: var(--on-frame);
+  --color-frame-ink: var(--frame-ink);
+  --color-tone: var(--tone);
+  --color-teal: var(--brand-teal);
+  --color-green: var(--brand-green);
+  --color-orange: var(--brand-orange);
+  --color-coral: var(--brand-coral);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-display: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
+}
+
+/* One accent per chapter. A section sets its tone; children use `tone` utilities. */
+.tone-teal { --tone: var(--brand-teal); }
+.tone-green { --tone: var(--brand-green); }
+.tone-orange { --tone: var(--brand-orange); }
+.tone-coral { --tone: var(--brand-coral); }
+
+/* A section that flips to black: children keep using the same token names. */
+.band-dark {
+  --paper: #0b0b0c;
+  --ink: #ffffff;
+  --ink-2: #a8adb4;
+  --ink-3: #6f747b;
+  --line: rgba(255, 255, 255, 0.12);
+  --card: #151517;
+  --band: #151517;
+  --secondary: #1c1c1f;
+  --muted: #1c1c1f;
+  --accent: #1c1c1f;
+  --border: var(--line);
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --primary: #ffffff;
+  --primary-foreground: #0b0b0c;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* The gradient frame around product windows: the parrot's own colours. */
+.frame {
+  padding: 10px;
+  border-radius: 26px;
+  background: linear-gradient(118deg, var(--brand-teal) 0%, var(--brand-green) 38%, var(--brand-orange) 72%, var(--brand-coral) 100%);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
+}
+.frame > * { border-radius: 18px; }
+.frame-sm { padding: 6px; border-radius: 18px; }
+.frame-sm > * { border-radius: 13px; }
+
+/* Progress ring on the active demo tab. */
+@keyframes ring { from { stroke-dashoffset: 44; } to { stroke-dashoffset: 0; } }
+.ring-run { animation: ring var(--ring-ms, 10000ms) linear forwards; }
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { scroll-behavior: smooth; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  ::selection { background: color-mix(in oklab, var(--tone) 25%, transparent); }
+}
+
+/* Scroll reveals. The Reveal component adds `reveal-pending` only below the fold, once JS runs. */
+.reveal { transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal-pending { opacity: 0; transform: translateY(14px); }
+
+@keyframes pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.card-in, .bubble-in { animation: pop 0.45s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { transition: none; }
+  .reveal-pending { opacity: 1; transform: none; }
+  .card-in, .bubble-in { animation: none; }
+  .ring-run { animation: none; stroke-dashoffset: 0; }
+  html { scroll-behavior: auto; }
+}
+
+/* The recording dot breathes, like the real one. */
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.rec-dot { animation: breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+
+/* The embedding progress bar in the Knowledge clip. */
+@keyframes grow { from { width: 4%; } to { width: 100%; } }
+.grow-bar { animation: grow 2.2s ease-in-out forwards; }
+@media (prefers-reduced-motion: reduce) { .grow-bar { animation: none; width: 100%; } }
