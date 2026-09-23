@@ -423,3 +423,10 @@ said:
   now logged publicly, and our own teardown is no longer reported as a
   failure. With Deepgram streaming the transcript lands before the prospect
   finishes and the excerpt was on screen 0.2 s before the audio ended.
+- **After the user's own test call (2026-09-23).** Replacement of an excerpt
+  by a Claude card now requires a topic match (one big document made "same
+  document" meaningless); a short follow-up question borrows the previous
+  line for the document search; the Settings vocabulary is sent to Groq
+  (live and polish), which had been mishearing the company name; the copilot
+  log is notice level. Pricing answers still depend on the document saying
+  "package" somewhere near the plan prices.

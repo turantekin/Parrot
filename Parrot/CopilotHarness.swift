@@ -90,7 +90,9 @@ enum DocAnswerEval {
 
             var rows: [Row] = []
             for label in labels {
-                let refs = await kb.search(query: label.asked, profileID: nil, topK: JevDocMatcher.maxCandidates)
+                // Same query the engine builds: a short follow-up borrows the previous line.
+                let query = CallAnalysisEngine.fastPathQuery(question: label.asked, before: label.before ?? "")
+                let refs = await kb.search(query: query, profileID: nil, topK: JevDocMatcher.maxCandidates)
                 let start = Date()
                 var scores: [Double] = []
                 do {

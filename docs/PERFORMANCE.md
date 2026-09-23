@@ -194,3 +194,31 @@ of mic-bleed small talk and buried the pricing chunk, so Haiku improvised
 first (two references) and fills from the window; with the reserved
 embedding slots the pricing FAQ chunk reaches both Jev and Haiku for that
 question (0.98).
+
+### The user's own test call (2026-09-23 10:16, Groq transcription)
+
+Eight prospect questions role-played through the speakers, Sales discovery
+profile. What the store and the copilot log showed, and what changed:
+
+- The excerpt for "As a Turkish founder, can I use your services?" came in
+  0.4 s and stood for 43 s until Claude's grounded card on the same question
+  replaced it, right after the question was repeated; two pricing cards then
+  pushed that card out of the hero slot within 6 s. The replacement rule
+  now requires a topic match as well as grounding, because with one big
+  knowledge-base file every grounded card "cites the same document".
+- Groq heard "Launchese" as "long cheese" and "Lone Cheese". The Settings
+  vocabulary was never sent to Groq (only the on-device engine used it); the
+  live chunks and the post-call polish now send it as Groq's `prompt`.
+- "Cheapest package" retrieved the "Legacy names and old prices, never
+  quote" section and Claude quoted £199 and "Starter". The document says
+  "plans" where prospects say "packages"; a synonym hack helped one phrasing
+  and hurt the other, so the fix is a line in the document ("cheapest
+  package: LaunchPad at $11.99 plus the £100 fee").
+- The repeated question arrived split ("as a Turkish founder," / "Can I use
+  your services?"), and the second half alone scored 0.32. A short question
+  now borrows the previous line from the other side for the document search
+  (0.92 with it).
+- The mic side was speaker bleed hallucinated by Groq ("Gracias", "Shh",
+  "Продолжение следует"), and the coaching report scolded the user for it.
+  Headphones. The on-device phrase filter cannot catch real words either.
+- The copilot log is now notice level so it survives more than an hour.

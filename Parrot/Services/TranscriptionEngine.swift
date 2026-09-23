@@ -707,7 +707,8 @@ final class TranscriptionEngine {
                         if backend == .groq, let groqKey {
                             do {
                                 pieces = [(try await GroqTranscriber.transcribe(
-                                    samples: decodeSamples, language: language, apiKey: groqKey), nil)]
+                                    samples: decodeSamples, language: language, apiKey: groqKey,
+                                    prompt: Self.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? "")), nil)]
                             } catch {
                                 NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
                                 await MainActor.run {
@@ -844,15 +845,8 @@ final class TranscriptionEngine {
     /// prompt, the standard Whisper mechanism for biasing spelling.
     private func primeGlossary(into options: inout DecodingOptions) {
         glossaryActive = false
-        let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer else { return }
-        let terms = vocab
-            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        guard !terms.isEmpty else { return }
-        let promptText = "Glossary: " + terms.joined(separator: ", ") + "."
+        guard let promptText = Self.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? ""),
+              let tokenizer = whisperKit?.tokenizer else { return }
         let tokens = tokenizer.encode(text: " " + promptText)
             .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
         options.promptTokens = tokens
@@ -977,6 +971,18 @@ final class TranscriptionEngine {
     /// The classic Whisper silence hallucinations — phrases the model invents
     /// verbatim on near-silent chunks (YouTube-outro residue in its training
     /// data). Matched against normalized text, only for low-energy chunks.
+    /// "Glossary: a, b." from the Settings vocabulary, or nil when empty. The
+    /// on-device engine primes Whisper with it; Groq gets it as `prompt` (it
+    /// was never sent there, and Groq heard "Launchese" as "long cheese" on
+    /// the 2026-09-23 test call).
+    nonisolated static func glossaryPrompt(from vocabulary: String) -> String? {
+        let terms = vocabulary
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return terms.isEmpty ? nil : "Glossary: " + terms.joined(separator: ", ") + "."
+    }
+
     static let hallucinationPhrases: Set<String> = [
         "you", "okay", "ok", "thank you", "thanks", "bye", "bye-bye",
         "thank you for watching", "thanks for watching", "hmm", "mm-hmm",

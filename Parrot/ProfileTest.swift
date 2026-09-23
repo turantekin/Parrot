@@ -42,6 +42,7 @@ enum ProfileTest {
         testReplayParser()
         testHybridRetrieval()
         testChunker()
+        testGlossaryPrompt()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -973,11 +974,15 @@ enum ProfileTest {
         check("excerpt title quotes and capitalizes", E.excerptTitle(for: "  how much is express verification ") == "\u{201C}How much is express verification\u{201D}")
         let long = String(repeating: "word ", count: 40)
         check("excerpt title truncates at a word", E.excerptTitle(for: long).count <= 96 && E.excerptTitle(for: long).hasSuffix("\u{2026}\u{201D}"))
-        let cite = InsightDraft(kindKey: "suggestion", title: "Answer the pricing question", detail: "x", source: "pricing.md", reply: "It is £99.")
+        let cite = InsightDraft(kindKey: "suggestion", title: "Express verification pricing answered", detail: "x", source: "pricing.md", reply: nil)
+        // Same document, different topic: with one big knowledge-base file every
+        // grounded card cites the same document, so the source alone must not retire an excerpt.
+        let unrelatedCite = InsightDraft(kindKey: "buying_signal", title: "Wants a Wise account", detail: "Banking interest", source: "pricing.md", reply: nil)
         let stem = InsightDraft(kindKey: "suggestion", title: "Express verification costs £99", detail: "Say the price.", source: nil, reply: "Express is £99, same working day.")
         let unrelated = InsightDraft(kindKey: "buying_signal", title: "Wants to start next week", detail: "Timeline signal", source: nil, reply: nil)
         let stemNoReply = InsightDraft(kindKey: "question", title: "Express verification timing unclear", detail: "y", source: nil, reply: nil)
-        check("superseded by a card citing the same document", E.excerptSuperseded(question: "how much is express verification", document: "Pricing.MD", by: [cite]))
+        check("superseded by a card citing the same document on the same topic", E.excerptSuperseded(question: "how much is express verification", document: "Pricing.MD", by: [cite]))
+        check("not superseded by a same-document card on another topic", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelatedCite]))
         check("superseded by an answer sharing a topic stem", E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stem]))
         check("not superseded by an unrelated card", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelated]))
         check("not superseded by a stem match without a reply", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stemNoReply]))
@@ -994,6 +999,24 @@ enum ProfileTest {
         check("latest question is the newest Them question", E.latestQuestion(in: window) == "Do you take cards?")
         check("latest question ignores the user's own questions", E.latestQuestion(in: [("Ready?", .me), ("Sure.", .them)]) == nil)
         check("latest question nil without one", E.latestQuestion(in: [("Hello there.", .them)]) == nil)
+        // A short follow-up ("Can I use your services?") carries no topic of its own;
+        // the previous line from the other side is joined for the document search.
+        check("fast query joins the previous line to a short question",
+              E.fastPathQuery(question: "Can I use your services?", before: "Me: sure\nThem: as a Turkish founder,")
+                == "as a Turkish founder, Can I use your services?")
+        check("fast query leaves a full question alone",
+              E.fastPathQuery(question: "How much is the express identity verification?", before: "Them: hi")
+                == "How much is the express identity verification?")
+        check("fast query with no context is the question", E.fastPathQuery(question: "Is it extra?", before: "") == "Is it extra?")
+    }
+
+    static func testGlossaryPrompt() {
+        check("glossary prompt joins vocabulary terms", TranscriptionEngine.glossaryPrompt(from: "Launchese, Uygar\n") == "Glossary: Launchese, Uygar.")
+        check("glossary prompt nil when empty", TranscriptionEngine.glossaryPrompt(from: " \n") == nil)
+        let with = GroqTranscriber.fields(language: "en", responseFormat: "json", prompt: "Glossary: Launchese.")
+        check("groq fields carry the vocabulary prompt", with.contains { $0.0 == "prompt" && $0.1 == "Glossary: Launchese." })
+        let without = GroqTranscriber.fields(language: nil, responseFormat: "json", prompt: nil)
+        check("groq fields omit an absent prompt", !without.contains { $0.0 == "prompt" })
     }
 
     @MainActor

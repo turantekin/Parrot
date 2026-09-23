@@ -56,11 +56,12 @@ enum GroqTranscriber {
 
     /// Transcribe one PCM chunk (16 kHz mono floats). Same cadence as the local
     /// loop — only the decode moves to Groq.
-    static func transcribe(samples: [Float], language: String?, apiKey: String) async throws -> String {
+    static func transcribe(samples: [Float], language: String?, apiKey: String,
+                           prompt: String? = nil) async throws -> String {
         struct Response: Decodable { let text: String }
         let data = try await post(fileData: WAVEncoder.encode(samples: samples, sampleRate: 16000),
                                   fileName: "chunk.wav",
-                                  fields: fields(language: language, responseFormat: "json"),
+                                  fields: fields(language: language, responseFormat: "json", prompt: prompt),
                                   apiKey: apiKey)
         return try JSONDecoder().decode(Response.self, from: data).text
     }
@@ -68,19 +69,21 @@ enum GroqTranscriber {
     /// Transcribe a whole audio file (the post-call polish pass) with segment
     /// timestamps. Returns (text, start, end) tuples in file-relative seconds.
     static func transcribeFile(_ fileData: Data, fileName: String, language: String?,
-                               apiKey: String) async throws -> [(text: String, start: Double, end: Double)] {
+                               apiKey: String, prompt: String? = nil) async throws -> [(text: String, start: Double, end: Double)] {
         struct Segment: Decodable { let text: String; let start: Double; let end: Double }
         struct Response: Decodable { let segments: [Segment]? }
         let data = try await post(fileData: fileData, fileName: fileName,
-                                  fields: fields(language: language, responseFormat: "verbose_json"),
+                                  fields: fields(language: language, responseFormat: "verbose_json", prompt: prompt),
                                   apiKey: apiKey)
         let segments = try JSONDecoder().decode(Response.self, from: data).segments ?? []
         return segments.map { ($0.text, $0.start, $0.end) }
     }
 
-    private static func fields(language: String?, responseFormat: String) -> [(String, String)] {
+    static func fields(language: String?, responseFormat: String, prompt: String?) -> [(String, String)] {
         var fields = [("model", model), ("response_format", responseFormat)]
         if let language, language != "auto" { fields.append(("language", language)) }
+        // The same glossary the on-device engine primes Whisper with.
+        if let prompt, !prompt.isEmpty { fields.append(("prompt", prompt)) }
         return fields
     }
 
@@ -336,7 +339,8 @@ enum TranscriptPolisher {
                 let shift = Double(offset) / 16000.0
                 let segments = try await GroqTranscriber.transcribeFile(
                     WAVEncoder.encode(samples: part, sampleRate: 16000),
-                    fileName: "part.wav", language: language, apiKey: apiKey)
+                    fileName: "part.wav", language: language, apiKey: apiKey,
+                    prompt: TranscriptionEngine.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? ""))
                 for s in segments {
                     let text = TranscriptionEngine.cleaned(s.text)
                     guard !text.isEmpty else { continue }

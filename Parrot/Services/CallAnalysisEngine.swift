@@ -248,7 +248,7 @@ final class CallAnalysisEngine {
         let isUrgent = source == .them && Self.looksLikeQuestion(text)
         if isUrgent {
             pendingUrgent = true
-            Self.log.info("question at \(time, format: .fixed(precision: 1), privacy: .public)s: \(text.prefix(80), privacy: .public)")
+            Self.log.notice("question at \(time, format: .fixed(precision: 1), privacy: .public)s: \(text.prefix(80), privacy: .public)")
         }
 
         if isUrgent, fastPathAvailable {
@@ -453,7 +453,7 @@ final class CallAnalysisEngine {
                 .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
             for inserted in unique {
-                Self.log.info("card [\(inserted.kindKey, privacy: .public)] \(inserted.title.prefix(80), privacy: .public)")
+                Self.log.notice("card [\(inserted.kindKey, privacy: .public)] \(inserted.title.prefix(80), privacy: .public)")
                 onInsightInserted?(inserted)
             }
             status = .listening
@@ -521,7 +521,8 @@ final class CallAnalysisEngine {
     // MARK: - Fast document answers (Jev)
 
     /// Timing trail for live tests: `log show --predicate 'subsystem == "com.uygar.parrot" AND category == "copilot"'`.
-    /// Public fields on purpose (NSLog from the sandboxed app is redacted); never key material.
+    /// Notice level so it persists (info-level lines were gone within the hour);
+    /// public fields on purpose (NSLog from the sandboxed app is redacted); never key material.
     private static let log = Logger(subsystem: "com.uygar.parrot", category: "copilot")
 
     /// Set by RecordingManager. nil means the path does not exist for this call.
@@ -554,8 +555,8 @@ final class CallAnalysisEngine {
     private func fastDocAnswer(question: String, before: String, at time: TimeInterval) async {
         guard let matcher = docMatcher, let kb = knowledgeBase else { return }
         fastPathStats.attempts += 1
-        let refs = await kb.search(query: question, profileID: activeProfile?.id,
-                                   topK: JevDocMatcher.maxCandidates)
+        let refs = await kb.search(query: Self.fastPathQuery(question: question, before: before),
+                                   profileID: activeProfile?.id, topK: JevDocMatcher.maxCandidates)
         guard !refs.isEmpty, isActive, !Task.isCancelled else { return }
         do {
             let scores = try await matcher.score(asked: question, before: before,
@@ -570,7 +571,7 @@ final class CallAnalysisEngine {
             insights.insert(card, at: 0)
             pendingExcerpts.append((card.id, chunk, question))
             fastPathStats.hits += 1
-            Self.log.info("excerpt p=\(best.probability, format: .fixed(precision: 2), privacy: .public) from \(chunk.documentName, privacy: .public) for: \(question.prefix(80), privacy: .public)")
+            Self.log.notice("excerpt p=\(best.probability, format: .fixed(precision: 2), privacy: .public) from \(chunk.documentName, privacy: .public) for: \(question.prefix(80), privacy: .public)")
             onInsightInserted?(card)
         } catch {
             // Silent by design: Haiku is still coming. The panel never shows a
@@ -620,13 +621,29 @@ final class CallAnalysisEngine {
         }.joined(separator: "\n")
     }
 
-    /// A Haiku card supersedes an excerpt when it cites the same document, or
-    /// when it is an answer (carries a reply) on the same topic as the question.
+    /// A Haiku card supersedes an excerpt only when it is on the same topic
+    /// (shares a stem with the question) AND is grounded: it cites the same
+    /// document or carries a reply. Topic first, because with one big
+    /// knowledge-base file every grounded card "cites the same document", and
+    /// an unrelated pricing card would otherwise retire an eligibility excerpt.
     nonisolated static func excerptSuperseded(question: String, document: String, by drafts: [InsightDraft]) -> Bool {
         drafts.contains { draft in
-            if let source = draft.source, source.lowercased() == document.lowercased() { return true }
-            return draft.reply?.nilIfEmpty != nil && sharesTopicStem(question, "\(draft.title) \(draft.detail)")
+            guard sharesTopicStem(question, "\(draft.title) \(draft.detail)") else { return false }
+            let citesDocument = draft.source?.lowercased() == document.lowercased()
+            return citesDocument || draft.reply?.nilIfEmpty != nil
         }
+    }
+
+    /// The document-search query for a question. A short follow-up ("Can I
+    /// use your services?") carries no topic of its own, so the previous line
+    /// from the other side is joined, minus its "Them: " label. Jev still gets
+    /// the question and the context separately.
+    nonisolated static func fastPathQuery(question: String, before: String) -> String {
+        guard significantTokens(question).count < 4,
+              let previous = before.split(separator: "\n").last.map(String.init) else { return question }
+        let parts = previous.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let text = (parts.count == 2 ? String(parts[1]) : previous).trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? question : text + " " + question
     }
 
     // MARK: - Heuristics
