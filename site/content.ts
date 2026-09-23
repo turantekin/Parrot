@@ -90,7 +90,7 @@ const pinnedOpen: Card = {
   resolved: false,
 };
 const pinnedDone: Card = { ...pinnedOpen, resolved: true };
-const actionCard: Card = { kind: "action", at: "01:36", title: "Send the security summary and DPA after the call", who: "Me" };
+const actionCard: Card = { kind: "action", at: "01:36", title: "Send the security summary and DPA after the call", who: "Promised by you" };
 
 const live0: CallState = {
   elapsed: "00:41", score: 64, coach: "Warming up. Let them talk, then ask what changed since last time.",
@@ -109,8 +109,8 @@ const prep0: CallState = {
   phase: "prep", elapsed: "00:00", score: 0, coach: "", mood: "", temp: 0, talking: 0, open: 0, transcript: [], cards: [],
   brief: { title: "Northwind, 10:00", profile: "Sales discovery", lines: [], docs: [] },
 };
-const prep1: CallState = { ...prep0, brief: { ...prep0.brief!, lines: ["Last time, EU data residency came up and stayed open."] } };
-const prep2: CallState = { ...prep1, brief: { ...prep1.brief!, lines: [...prep1.brief!.lines, "They want SSO confirmed before renewal."], docs: ["northwind-faq.md"] } };
+const prep1: CallState = { ...prep0, brief: { ...prep0.brief!, lines: ["Renewal call. Legal wants to know where the data is stored."] } };
+const prep2: CallState = { ...prep1, brief: { ...prep1.brief!, lines: [...prep1.brief!.lines, "Alex will push on pricing for ten seats."], docs: ["northwind-faq.md"] } };
 const prep3: CallState = { ...prep2, brief: { ...prep2.brief!, docs: ["northwind-faq.md", "pricing-2026.pdf"] } };
 
 const done0: CallState = {
@@ -136,9 +136,9 @@ export const demo = {
     after: [done0, done1, done2, done3],
   } as Record<string, CallState[]>,
   captions: {
-    prep: "One line before you hit record, and the copilot knows who you're talking to. Your documents are already in play.",
+    prep: "Type a line or two before you hit record, and the copilot knows who you're talking to. Your documents are already in play.",
     answer: "The other side asks. Two seconds later the answer is on screen, quoted from your own FAQ, with the file named on the card.",
-    objection: "Unanswered questions get pinned until you handle them. Promises are captured the moment you make them.",
+    objection: "Unanswered questions stay pinned until you handle them. A promise becomes a next step the moment you make it.",
     after: "The report is written before you've hung up: summary, commitments, and coaching on the call itself.",
   } as Record<string, string>,
 };
