@@ -104,6 +104,16 @@ final class KnowledgeBaseService {
         save()
     }
 
+    /// Tags every document that is tagged into `source` into `target` as well.
+    func copyProfileTags(from source: UUID, to target: UUID) {
+        var changed = false
+        for i in documents.indices where documents[i].profileIDs.contains(source) {
+            documents[i].profileIDs.insert(target)
+            changed = true
+        }
+        if changed { save() }
+    }
+
     /// Returns the names of documents tagged into the given profile ID.
     func documentNames(for profileID: UUID) -> [String] {
         documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)
@@ -137,22 +147,113 @@ final class KnowledgeBaseService {
                 queryVectors[raw] = Self.embed(query, language: NLLanguage(rawValue: raw))
             }
 
-            let scored: [(KBChunk, Double)] = snapshot.compactMap { chunk in
-                guard let queryVector = queryVectors[chunk.languageRaw] else { return nil }
-                return (chunk, Self.cosineSimilarity(queryVector, chunk.embedding))
+            let cosine: [Double] = snapshot.map { chunk in
+                queryVectors[chunk.languageRaw].map { Self.cosineSimilarity($0, chunk.embedding) } ?? 0
             }
+            let cosineOrder = cosine.indices
+                .filter { cosine[$0] > 0.3 }
+                .sorted { cosine[$0] > cosine[$1] }
 
-            return scored
-                .filter { $0.1 > 0.3 }
-                .sorted { $0.1 > $1.1 }
-                .prefix(topK)
-                .map(\.0)
+            // Exact words first. Sentence embeddings alone miss most factual
+            // questions on a long document (2026-09-19 eval: the answering chunk
+            // sat in the cosine top 8 for 14 of 71 questions, in the BM25 top 8
+            // for 55), and fusing the two with equal weight was worse than BM25
+            // alone. So BM25 ranks, and embeddings only fill the slots exact
+            // words did not reach. Chunks with neither signal stay out.
+            let lexicalOrder = Self.bm25Order(
+                query: Self.lexicalTokens(query),
+                documents: snapshot.map { Self.lexicalTokens($0.text) })
+
+            return Self.hybridOrder(lexical: lexicalOrder, cosine: cosineOrder, topK: topK)
+                .map { snapshot[$0] }
         }.value
 
         return best.map { chunk in
             let note = notesByDocument[chunk.documentName]?.nilIfEmpty
             return KBReference(documentName: chunk.documentName, note: note, text: chunk.text)
         }
+    }
+
+    // MARK: - Lexical retrieval (BM25 + rank fusion)
+
+    /// English function words: spoken questions are full of them ("what is
+    /// the … for this"), and each one matches every chunk a little, which
+    /// buried the one chunk with the actual answer (2026-09-19 eval).
+    private nonisolated static let lexicalStopWords: Set<String> = [
+        "the", "a", "an", "and", "or", "is", "are", "was", "were", "be", "been", "this", "that",
+        "these", "those", "what", "which", "how", "much", "many", "do", "does", "did", "i", "you",
+        "we", "they", "it", "he", "she", "me", "us", "them", "my", "your", "our", "their", "its",
+        "for", "of", "to", "in", "on", "at", "by", "from", "with", "as", "so", "if", "but", "not",
+        "no", "any", "some", "can", "could", "will", "would", "should", "shall", "may", "might",
+        "about", "into", "over", "under", "than", "then", "there", "here", "when", "where", "who",
+        "whom", "whose", "why", "okay", "ok", "yes", "just", "also", "very", "really", "one",
+        "thing", "things",
+    ]
+
+    /// Lowercased alphanumeric tokens of two or more characters, minus
+    /// function words; alphabetic tokens longer than five keep their first
+    /// five letters, a cheap stem so "verification" and "verified" meet.
+    /// Numbers stay whole ("99", "2026").
+    nonisolated static func lexicalTokens(_ text: String) -> [String] {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 2 && !lexicalStopWords.contains($0) }
+            .map { token in
+                token.count > 5 && token.allSatisfy(\.isLetter) ? String(token.prefix(5)) : token
+            }
+    }
+
+    /// Exact-word matches first, in BM25 order, with a third of the slots
+    /// (at least one, none below three) reserved for the top embedding
+    /// matches, then whatever is left fills. Equal-weight fusion was measured
+    /// worse than BM25 alone (answer in the top 4 for 32 vs 47 of 71
+    /// questions): the sentence embeddings rank near noise on factual
+    /// questions yet outvoted a lone exact-word hit. The reserve exists for
+    /// questions that share no words with their answer ("how much does it
+    /// cost" against "Launchese fee $11.99"), where words cannot help at all.
+    nonisolated static func hybridOrder(lexical: [Int], cosine: [Int], topK: Int) -> [Int] {
+        let reserve = topK >= 3 ? max(1, topK / 3) : 0
+        var seen = Set<Int>()
+        var order: [Int] = []
+        func take(_ candidates: [Int], upTo limit: Int) {
+            for index in candidates where !seen.contains(index) && order.count < limit {
+                seen.insert(index)
+                order.append(index)
+            }
+        }
+        take(lexical, upTo: topK - reserve)
+        take(cosine, upTo: order.count + reserve)
+        take(lexical, upTo: topK)
+        take(cosine, upTo: topK)
+        return order
+    }
+
+    /// Document indices ordered by BM25 score for the query tokens (k1 = 1.2,
+    /// b = 0.75); documents sharing no term with the query are left out.
+    nonisolated static func bm25Order(query: [String], documents: [[String]]) -> [Int] {
+        guard !query.isEmpty, !documents.isEmpty else { return [] }
+        let n = Double(documents.count)
+        let averageLength = documents.reduce(0) { $0 + Double($1.count) } / n
+        var documentFrequency: [String: Int] = [:]
+        for document in documents {
+            for term in Set(document) { documentFrequency[term, default: 0] += 1 }
+        }
+        let k1 = 1.2, b = 0.75
+        var scored: [(index: Int, score: Double)] = []
+        for (index, document) in documents.enumerated() {
+            var counts: [String: Int] = [:]
+            for term in document { counts[term, default: 0] += 1 }
+            var score = 0.0
+            for term in query {
+                guard let count = counts[term] else { continue }
+                let df = Double(documentFrequency[term] ?? 0)
+                let idf = log(1 + (n - df + 0.5) / (df + 0.5))
+                let tf = Double(count)
+                score += idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * Double(document.count) / averageLength))
+            }
+            if score > 0 { scored.append((index, score)) }
+        }
+        return scored.sorted { $0.score > $1.score }.map(\.index)
     }
 
     // MARK: - Text Extraction & Chunking
@@ -168,24 +269,55 @@ final class KnowledgeBaseService {
     }
 
     /// Splits text into ~900-character chunks along paragraph boundaries.
-    private nonisolated static func chunkText(_ text: String) -> [String] {
+    /// Markdown headings are glued onto the paragraph that follows them and
+    /// "---" separators are dropped, so a chunk is never a bare heading (the
+    /// 2026-09-19 eval found Jev rating "## 17. How Launchese works" at 0.66
+    /// for a price question). A paragraph over the cap, typically a table or
+    /// a long list, is split on its lines and every piece carries the section
+    /// heading, so "### Close a company (£75)" stays with its rows.
+    nonisolated static func chunkText(_ text: String, cap: Int = 900) -> [String] {
         let paragraphs = text
             .components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && $0 != "---" }
 
         var result: [String] = []
         var current = ""
+        var heading: String?   // waiting to be glued onto the next paragraph
+        var section: String?   // last heading seen; prefixed onto split pieces
+        func flush() {
+            if !current.isEmpty { result.append(current) }
+            current = ""
+        }
         for paragraph in paragraphs {
-            if current.count + paragraph.count > 900, !current.isEmpty {
-                result.append(current)
-                current = ""
+            if paragraph.hasPrefix("#") {
+                heading = paragraph
+                section = paragraph
+                continue
             }
-            current += current.isEmpty ? paragraph : "\n\n" + paragraph
+            var piece = paragraph
+            if let pending = heading {
+                piece = pending + "\n" + piece
+                heading = nil
+            }
+            if piece.count > cap {
+                flush()
+                let prefix = section.map { $0 + "\n" } ?? ""
+                var part = prefix
+                for line in piece.split(separator: "\n").map(String.init) where line != section {
+                    if part.count + line.count > cap, part != prefix {
+                        result.append(part.trimmingCharacters(in: .whitespacesAndNewlines))
+                        part = prefix
+                    }
+                    part += line + "\n"
+                }
+                if part != prefix { result.append(part.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                continue
+            }
+            if current.count + piece.count > cap, !current.isEmpty { flush() }
+            current += current.isEmpty ? piece : "\n\n" + piece
         }
-        if !current.isEmpty {
-            result.append(current)
-        }
+        flush()
         return result.filter { $0.count >= 40 }
     }
 
@@ -217,6 +349,12 @@ final class KnowledgeBaseService {
     }
 
     private static var storeURL: URL {
+        // Dev harnesses point this at the sandboxed app's real index
+        // (~/Library/Containers/com.uygar.parrot/…/KnowledgeBase/index.json)
+        // so --kb-add / --doc-answer-eval work on what the app actually uses.
+        if let override = ProcessInfo.processInfo.environment["PARROT_KB_INDEX"], !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
         let dir = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Parrot/KnowledgeBase", isDirectory: true)

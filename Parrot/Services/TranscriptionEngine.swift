@@ -706,10 +706,15 @@ final class TranscriptionEngine {
                         let pieces: [(text: String, confidence: Float?)]
                         if backend == .groq, let groqKey {
                             do {
+                                // No glossary prompt for Groq: it echoes the prompt into
+                                // quiet chunks ("Glossary, Uygar", mangled name tags) and
+                                // there is no echo guard or bare retry on this path, unlike
+                                // the on-device decode above. A real 20-minute call on
+                                // 2026-09-23 was ruined that way. Re-add only with both.
                                 pieces = [(try await GroqTranscriber.transcribe(
                                     samples: decodeSamples, language: language, apiKey: groqKey), nil)]
                             } catch {
-                                NSLog("Parrot: Groq transcription failed — \(error.localizedDescription)")
+                                AudioCaptureManager.oslog.error("Groq transcription failed: \(error.localizedDescription, privacy: .public)")
                                 await MainActor.run {
                                     self.cloudNotice = "Groq error — on-device fallback for failed chunks"
                                 }
@@ -808,7 +813,9 @@ final class TranscriptionEngine {
             }
             streamer.onError = { [weak self] message in
                 guard let self else { return }
-                NSLog("Parrot: Deepgram stream failed (\(source.label)) — \(message)")
+                // Public on purpose: NSLog is redacted in `log show`, and this
+                // is the only place the real Deepgram failure reason exists.
+                AudioCaptureManager.oslog.error("Deepgram stream failed (\(source.label, privacy: .public)): \(message, privacy: .public)")
                 // Only this stream falls back to local; the other socket keeps
                 // streaming. Re-anchor before the first fallback sample lands.
                 self.bufferLock.withLock { _ = self.deepgramFailedSources.insert(source) }
@@ -842,15 +849,8 @@ final class TranscriptionEngine {
     /// prompt, the standard Whisper mechanism for biasing spelling.
     private func primeGlossary(into options: inout DecodingOptions) {
         glossaryActive = false
-        let vocab = (UserDefaults.standard.string(forKey: "customVocabulary") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !vocab.isEmpty, let tokenizer = whisperKit?.tokenizer else { return }
-        let terms = vocab
-            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        guard !terms.isEmpty else { return }
-        let promptText = "Glossary: " + terms.joined(separator: ", ") + "."
+        guard let promptText = Self.glossaryPrompt(from: UserDefaults.standard.string(forKey: "customVocabulary") ?? ""),
+              let tokenizer = whisperKit?.tokenizer else { return }
         let tokens = tokenizer.encode(text: " " + promptText)
             .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
         options.promptTokens = tokens
@@ -975,6 +975,18 @@ final class TranscriptionEngine {
     /// The classic Whisper silence hallucinations — phrases the model invents
     /// verbatim on near-silent chunks (YouTube-outro residue in its training
     /// data). Matched against normalized text, only for low-energy chunks.
+    /// "Glossary: a, b." from the Settings vocabulary, or nil when empty. The
+    /// on-device engine primes Whisper with it, behind its echo guard. Groq
+    /// does NOT get it: sent as `prompt`, Whisper echoed it into every quiet
+    /// chunk of a real call ("Glossary, Uygar"), and that path has no guard.
+    nonisolated static func glossaryPrompt(from vocabulary: String) -> String? {
+        let terms = vocabulary
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return terms.isEmpty ? nil : "Glossary: " + terms.joined(separator: ", ") + "."
+    }
+
     static let hallucinationPhrases: Set<String> = [
         "you", "okay", "ok", "thank you", "thanks", "bye", "bye-bye",
         "thank you for watching", "thanks for watching", "hmm", "mm-hmm",

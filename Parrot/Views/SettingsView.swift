@@ -481,6 +481,7 @@ struct SettingsView: View {
                             .buttonStyle(.link)
                             .font(Theme.Typography.secondary)
                     }
+                    Hint("Optional: add a TypeSafe key to show matching excerpts from your documents within a second of a question.")
                 case .ollama:
                     Picker("Model", selection: ollamaModelSelection) {
                         ForEach(OllamaCatalog.models, id: \.id) { entry in
@@ -579,6 +580,15 @@ struct SettingsView: View {
                     account: TranscriptionBackend.deepgram.keychainAccount!,
                     placeholder: "40-character hex key",
                     hint: "Billed per audio track. New accounts include $200 credit. Keys: console.deepgram.com"
+                )
+            }
+
+            Section("TypeSafe — instant answers from your documents") {
+                ProviderKeyField(
+                    label: "TypeSafe API key",
+                    account: JevDocMatcher.keychainAccount,
+                    placeholder: "apikey_…",
+                    hint: "When the other side asks something your documents cover, the matching excerpt shows within about a second, while Claude is still writing. Sends the question, a couple of lines of context and the matching document snippets to TypeSafe AI (hosted in the US). Audio never. Claude mode only. Keys: typesafe.ai"
                 )
             }
 
@@ -723,6 +733,9 @@ struct KBDocumentRow: View {
     let knowledgeBase: KnowledgeBaseService
 
     @State private var note: String
+    /// Removal asks first: a document is work the user prepared, and the
+    /// trash icon sits next to a text field they click into all the time.
+    @State private var confirmingRemove = false
 
     init(document: KBDocument, knowledgeBase: KnowledgeBaseService) {
         self.document = document
@@ -747,13 +760,18 @@ struct KBDocumentRow: View {
                 Spacer()
 
                 Button {
-                    knowledgeBase.removeDocument(document)
+                    confirmingRemove = true
                 } label: {
                     Image(systemName: "trash")
                         .font(Theme.Typography.caption)
                 }
                 .buttonStyle(.plain)
                 .help("Remove from knowledge base")
+                .confirmationDialog("Remove \(document.name)?", isPresented: $confirmingRemove) {
+                    Button("Remove", role: .destructive) { knowledgeBase.removeDocument(document) }
+                } message: {
+                    Text("The copilot stops using it right away. You can add the file again any time.")
+                }
             }
 
             TextField(

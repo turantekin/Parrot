@@ -37,6 +37,12 @@ enum ProfileTest {
         testSegmenter()
         testQuietMic()
         testCopilotBudget()
+        testJevMatcher()
+        testDocExcerpt()
+        testReplayParser()
+        testHybridRetrieval()
+        testChunker()
+        testGlossaryPrompt()
         testDiarizedLabel()
         testSpeakerNames()
         testVoiceProfiles()
@@ -78,7 +84,12 @@ enum ProfileTest {
 
     static func testPresets() {
         let all = ProfilePresets.all()
-        check("six presets", all.count == 6)
+        check("seven presets", all.count == 7)
+        let vendor = all.first { $0.name == "Vendor call" }
+        check("vendor call preset exists with the vendor as counterpart", vendor?.counterpart == "the vendor")
+        check("vendor call pins open questions and red flags",
+              vendor?.kinds.first { $0.key == "my_open_question" }?.isPinned == true && vendor?.kinds.first { $0.key == "red_flag" }?.isPinned == true)
+        check("vendor call never treats the other side as a prospect", vendor?.persona.lowercased().contains("prospect") == true && vendor?.persona.lowercased().contains("never") == true)
         check("default first by sortOrder", all.sorted { $0.sortOrder < $1.sortOrder }.first?.id == ProfilePresets.defaultProfileID)
         let coaching = all.first { $0.name == "1:1 coaching" }
         check("coaching has reflection kind", coaching?.kinds.contains { $0.key == "reflection" } == true)
@@ -128,12 +139,12 @@ enum ProfileTest {
         }
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
         let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
-        check("seeded six profiles", profiles.count == 6)
+        check("seeded every preset", profiles.count == ProfilePresets.all().count)
         let def = profiles.first { $0.id == ProfilePresets.defaultProfileID }
         check("default absorbed instructions as tone", def?.tone == "be concise")
         // Idempotent: second run doesn't duplicate.
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
-        check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == 6)
+        check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == ProfilePresets.all().count)
     }
 
     @MainActor
@@ -168,6 +179,17 @@ enum ProfileTest {
         check("refresh bumps tuned profile's version", sales.presetVersion == ProfilePresets.presetVersion)
         let presetSupport = ProfilePresets.all().first { $0.id == support.id }
         check("refresh restores untouched built-in", support.persona == presetSupport?.persona)
+
+        // A built-in added after this install first seeded (v4: Vendor call) is
+        // inserted on the next launch even when nothing else is stale.
+        if let vendor = profiles.first(where: { $0.name == "Vendor call" }) {
+            ctx.delete(vendor)
+            try? ctx.save()
+        }
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+        let again = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        check("refresh re-adds a missing built-in preset", again.contains { $0.name == "Vendor call" && $0.isBuiltIn })
+        check("refresh does not duplicate presets", again.count == ProfilePresets.all().count)
     }
 
     static func testLenientKBDecode() {
@@ -384,6 +406,21 @@ enum ProfileTest {
         check("split round-trips", splitDecoded?.reports == split.reports && splitDecoded?.reportsProvider == "ollama")
 
 
+        var withDocs = AIUsage()
+        withDocs.copilotModel = "claude-haiku-4-5"
+        withDocs.copilot = AITokenTotals(inputTokens: 1000, outputTokens: 100, calls: 1)
+        withDocs.docAnswerModel = JevDocMatcher.model
+        withDocs.docAnswers = AITokenTotals(inputTokens: 1_000_000, outputTokens: 0, calls: 300)
+        let docLine = withDocs.costBreakdown().first { $0.label.hasPrefix("TypeSafe") }
+        check("typesafe line exists when calls > 0", docLine != nil)
+        check("doc answers priced at $0.042 per MTok input", docLine.map { abs($0.usd - 0.042) < 0.0001 } == true)
+        check("doc answers line names the model and calls", docLine?.label.contains("jev-latest") == true && docLine?.detail.contains("300 calls") == true)
+        check("no typesafe line without calls", usage.costBreakdown().contains { $0.label.hasPrefix("TypeSafe") } == false)
+        let encodedDocs = try? JSONEncoder().encode(withDocs)
+        let decodedDocs = encodedDocs.flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
+        check("doc answers round-trip", decodedDocs?.docAnswers?.calls == 300)
+        let legacyUsage = try? JSONDecoder().decode(AIUsage.self, from: Data(#"{"copilotModel":"m","copilot":{"inputTokens":1,"outputTokens":1,"calls":1},"transcriptionBackend":"local","transcriptionSeconds":1,"transcriptionTracks":2,"polishSeconds":0}"#.utf8))
+        check("legacy usage decodes without doc answers", legacyUsage != nil && legacyUsage?.docAnswers == nil)
     }
 
     // The issue-#12 mic watchdog: sustained exact-zero input means the OS cut
@@ -773,8 +810,18 @@ enum ProfileTest {
     static func testCopilotBudget() {
         // Fast must be the original constants exactly — the default changes nothing.
         let fast = CopilotPace.fast.timing
-        check("pace fast is the original timing",
-              fast.question == 1 && fast.idle == 8 && fast.floor == 5 && fast.staleness == 15)
+        check("pace fast keeps the original idle/floor/staleness",
+              fast.question == 0.3 && fast.idle == 8 && fast.floor == 5 && fast.staleness == 15)
+        // Question floor: a "Them" question waits a short per-pace floor, never
+        // the full one, and never longer on a quicker pace.
+        check("fast question floor is 2s", CopilotPace.fast.timing.questionFloor == 2)
+        check("balanced question floor is 5s", CopilotPace.balanced.timing.questionFloor == 5)
+        check("relaxed question floor is 15s", CopilotPace.relaxed.timing.questionFloor == 15)
+        for pace in CopilotPace.allCases {
+            check("pace \(pace.rawValue) question floor never exceeds the floor",
+                  pace.timing.questionFloor <= pace.timing.floor)
+        }
+        check("fast question debounce is 0.3s", CopilotPace.fast.timing.question == 0.3)
         // Every slower pace waits at least as long on every timer.
         for (quicker, slower) in [(CopilotPace.fast, CopilotPace.balanced), (.balanced, .relaxed)] {
             let a = quicker.timing, b = slower.timing
@@ -903,5 +950,190 @@ enum ProfileTest {
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: false) == .openSettings)
         check("sysaudio: after prompt + Settings it stops gatekeeping",
               PermissionFlow.nextSystemAudioStep(proven: false, screenGranted: false, askedBefore: true, settingsShownBefore: true) == .granted)
+    }
+
+    static func testJevMatcher() {
+        typealias J = JevDocMatcher
+        let body = J.buildBody(asked: "how much is express", before: "Them: hi",
+                               candidates: ["Express £99", "Support hours"])
+        check("jev body model", body["model"] as? String == "jev-latest")
+        let state = body["state"] as? [String: String]
+        check("jev state carries asked/before", state?["asked"] == "how much is express" && state?["before"] == "Them: hi")
+        check("jev state names chunks c0..", state?["c0"] == "Express £99" && state?["c1"] == "Support hours")
+        let questions = body["questions"] as? [String: [String: Any]]
+        check("jev one noul per chunk", questions?.count == 2 && questions?["c1"]?["type"] as? String == "noul")
+        check("jev instructions name the chunk", (questions?["c1"]?["instructions"] as? String)?.contains("`c1`") == true)
+        // Serialized bytes must be stable across runs (sortedKeys) so requests are diffable.
+        let a = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        let b = try? JSONSerialization.data(withJSONObject: J.buildBody(asked: "how much is express", before: "Them: hi", candidates: ["Express £99", "Support hours"]), options: [.sortedKeys])
+        check("jev body serializes deterministically", a != nil && a == b)
+
+        let json = #"{"model":"jev-1.13.0","answers":{"c0":{"type":"noul","noul":0.98},"c1":{"type":"noul","noul":0.02}},"usage":{"input_tokens":598,"output_tokens":38}}"#
+        let scores = try? J.parse(Data(json.utf8), count: 2)
+        check("jev parse returns one score per chunk in order", scores == [0.98, 0.02])
+        let short = try? J.parse(Data(#"{"answers":{"c0":{"type":"noul","noul":0.5}}}"#.utf8), count: 3)
+        check("jev parse fills missing answers with 0", short == [0.5, 0, 0])
+        check("jev parse rejects garbage", (try? J.parse(Data("nope".utf8), count: 1)) == nil)
+        check("jev empty candidates builds no questions", (J.buildBody(asked: "x", before: "", candidates: [])["questions"] as? [String: Any])?.isEmpty == true)
+        check("jev unconfigured without a key", !J(apiKey: "").isConfigured)
+        let pairs = J.buildSameIssueBody(pairs: [("PSC review risk. What if they say no", "Exit plan if PSC rejects. Same worry"), ("Third currency?", "Stablecoin payouts?")])
+        let pstate = pairs["state"] as? [String: [String: String]]
+        check("same-issue state carries both cards per pair", pstate?["p1"]?["card_a"] == "Third currency?" && pstate?["p1"]?["card_b"] == "Stablecoin payouts?")
+        let pq = pairs["questions"] as? [String: [String: Any]]
+        check("same-issue one noul per pair naming the pair", pq?.count == 2 && (pq?["p1"]?["instructions"] as? String)?.contains("`p1`") == true)
+        check("parse honours a key prefix", (try? J.parse(Data(#"{"answers":{"p0":{"type":"noul","noul":0.8},"p1":{"type":"noul","noul":0.1}}}"#.utf8), count: 2, prefix: "p")) == [0.8, 0.1])
+    }
+
+    static func testDocExcerpt() {
+        typealias E = CallAnalysisEngine
+        check("excerpt kind is reserved", Insight.docExcerptKind == "doc_excerpt")
+        let style = KindResolver.fallbackStyle(forKey: Insight.docExcerptKind)
+        check("excerpt style label", style.label == "From your docs")
+        check("excerpt style not pinned", !style.isPinned)
+        check("best candidate picks the max over threshold", E.bestCandidate(scores: [0.1, 0.9, 0.4], threshold: 0.75)?.index == 1)
+        check("best candidate nil under threshold", E.bestCandidate(scores: [0.1, 0.6], threshold: 0.75) == nil)
+        check("best candidate nil on empty", E.bestCandidate(scores: [], threshold: 0.5) == nil)
+        check("excerpt title quotes and capitalizes", E.excerptTitle(for: "  how much is express verification ") == "\u{201C}How much is express verification\u{201D}")
+        let long = String(repeating: "word ", count: 40)
+        check("excerpt title truncates at a word", E.excerptTitle(for: long).count <= 96 && E.excerptTitle(for: long).hasSuffix("\u{2026}\u{201D}"))
+        let cite = InsightDraft(kindKey: "suggestion", title: "Express verification pricing answered", detail: "x", source: "pricing.md", reply: nil)
+        // Same document, different topic: with one big knowledge-base file every
+        // grounded card cites the same document, so the source alone must not retire an excerpt.
+        let unrelatedCite = InsightDraft(kindKey: "buying_signal", title: "Wants a Wise account", detail: "Banking interest", source: "pricing.md", reply: nil)
+        let stem = InsightDraft(kindKey: "suggestion", title: "Express verification costs £99", detail: "Say the price.", source: nil, reply: "Express is £99, same working day.")
+        let unrelated = InsightDraft(kindKey: "buying_signal", title: "Wants to start next week", detail: "Timeline signal", source: nil, reply: nil)
+        let stemNoReply = InsightDraft(kindKey: "question", title: "Express verification timing unclear", detail: "y", source: nil, reply: nil)
+        check("superseded by a card citing the same document on the same topic", E.excerptSuperseded(question: "how much is express verification", document: "Pricing.MD", by: [cite]))
+        check("not superseded by a same-document card on another topic", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelatedCite]))
+        check("superseded by an answer sharing a topic stem", E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stem]))
+        check("not superseded by an unrelated card", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [unrelated]))
+        check("not superseded by a stem match without a reply", !E.excerptSuperseded(question: "how much is express verification", document: "pricing.md", by: [stemNoReply]))
+        check("not superseded by nothing", !E.excerptSuperseded(question: "q", document: "d", by: []))
+        // Chunks are Markdown; the card shows prose, not markup.
+        check("excerpt display strips heading marks and bold",
+              E.excerptDisplayText("### 12.3 The paid route\n- **Standard** £50\n| a | b |\n|---|---|")
+                == "12.3 The paid route\n- Standard £50\na · b")
+        check("excerpt display leaves plain text alone", E.excerptDisplayText("Plain line.\nSecond.") == "Plain line.\nSecond.")
+        // Haiku's reference search leads with the latest question from the other side.
+        let window: [(text: String, source: AudioSource)] = [
+            ("How much is express?", .them), ("Ninety-nine pounds.", .me), ("Do you take cards?", .them), ("Yes.", .me),
+        ]
+        check("latest question is the newest Them question", E.latestQuestion(in: window) == "Do you take cards?")
+        check("latest question ignores the user's own questions", E.latestQuestion(in: [("Ready?", .me), ("Sure.", .them)]) == nil)
+        check("latest question nil without one", E.latestQuestion(in: [("Hello there.", .them)]) == nil)
+        // Item 5 (2026-09-23 call): "Really?" and "How are you?" triggered the fast
+        // lane. A question needs two content words to count.
+        check("substantive question needs two content words", E.isSubstantiveQuestion("Do you take cards?"))
+        check("greeting question is not substantive", !E.isSubstantiveQuestion("How are you?"))
+        check("one-word question is not substantive", !E.isSubstantiveQuestion("Really?"))
+        check("short follow-up with one content word is not substantive", !E.isSubstantiveQuestion("Is it extra?"))
+        check("real question is substantive", E.isSubstantiveQuestion("How much is the express verification?"))
+        check("statement is not a question at all", !E.isSubstantiveQuestion("We take cards and bank transfers."))
+        // Item 1: Jev same-issue verdicts laid out draft-major; a draft is dropped
+        // when any open card scores at or above the threshold.
+        check("dedup keep mask drops a draft matching an open card",
+              E.dedupKeepMask(scores: [0.1, 0.9, 0.2, 0.05, 0.1, 0.3], drafts: 2, open: 3, threshold: 0.5) == [false, true])
+        check("dedup keep mask keeps everything below threshold",
+              E.dedupKeepMask(scores: [0.4, 0.49], drafts: 1, open: 2, threshold: 0.5) == [true])
+        check("dedup keep mask keeps all on a short answer", E.dedupKeepMask(scores: [0.9], drafts: 2, open: 3, threshold: 0.5) == [true, true])
+        // A short follow-up ("Can I use your services?") carries no topic of its own;
+        // the previous line from the other side is joined for the document search.
+        check("fast query joins the previous line to a short question",
+              E.fastPathQuery(question: "Can I use your services?", before: "Me: sure\nThem: as a Turkish founder,")
+                == "as a Turkish founder, Can I use your services?")
+        check("fast query leaves a full question alone",
+              E.fastPathQuery(question: "How much is the express identity verification?", before: "Them: hi")
+                == "How much is the express identity verification?")
+        check("fast query with no context is the question", E.fastPathQuery(question: "Is it extra?", before: "") == "Is it extra?")
+    }
+
+    static func testGlossaryPrompt() {
+        check("glossary prompt joins vocabulary terms", TranscriptionEngine.glossaryPrompt(from: "Launchese, Uygar\n") == "Glossary: Launchese, Uygar.")
+        check("glossary prompt nil when empty", TranscriptionEngine.glossaryPrompt(from: " \n") == nil)
+        let with = GroqTranscriber.fields(language: "en", responseFormat: "json", prompt: "Glossary: Launchese.")
+        check("groq fields carry the vocabulary prompt", with.contains { $0.0 == "prompt" && $0.1 == "Glossary: Launchese." })
+        let without = GroqTranscriber.fields(language: nil, responseFormat: "json", prompt: nil)
+        check("groq fields omit an absent prompt", !without.contains { $0.0 == "prompt" })
+    }
+
+    @MainActor
+    static func testReplayParser() {
+        let text = """
+        === Transcript ===
+
+        [00:12] Them: So walk me through the migration?
+        [00:31] Me: Great question.
+        [01:02] Speaker 2: And the price feels steep.
+        junk line without a stamp
+        [01:40]  Alice : Is the data in the EU?
+        [02:05] Them:
+        """
+        let lines = CopilotReplay.parse(text)
+        check("replay parses four stamped lines", lines.count == 4)
+        check("replay first line time and speaker", lines.first?.time == 12 && lines.first?.source == .them)
+        check("replay Me maps to .me", lines[1].source == .me && lines[1].text == "Great question.")
+        check("replay diarized speaker maps to .them", lines[2].source == .them && lines[2].time == 62)
+        check("replay tolerates spaces around the label", lines[3].text == "Is the data in the EU?")
+    }
+
+    static func testHybridRetrieval() {
+        typealias K = KnowledgeBaseService
+        check("lexical tokens lowercase, stem long words to 5, keep numbers",
+              K.lexicalTokens("Express £99 verification, same-day!") == ["expre", "99", "verif", "same", "day"])
+        check("lexical tokens drop single characters", K.lexicalTokens("a £ b 7 fee") == ["fee"])
+        let docs = [["expre", "verif", "99"], ["suppo", "hours", "monda"], ["expre", "same", "day"]]
+        let order = K.bm25Order(query: K.lexicalTokens("express verification price"), documents: docs)
+        check("bm25 ranks the two-term match first", order.first == 0)
+        check("bm25 keeps the one-term match second", order.count == 2 && order[1] == 2)
+        check("bm25 drops zero-score documents", !order.contains(1))
+        check("bm25 empty query yields nothing", K.bm25Order(query: [], documents: docs).isEmpty)
+        check("lexical tokens drop stop words",
+              K.lexicalTokens("What is the express option for this, and how much does it cost?") == ["expre", "optio", "cost"])
+        // Exact words first, embeddings only fill what the words did not reach.
+        check("hybrid order is lexical first, cosine fills, no repeats",
+              K.hybridOrder(lexical: [2, 0], cosine: [1, 0, 3], topK: 3) == [2, 0, 1])
+        check("hybrid order with no lexical hits is the cosine order", K.hybridOrder(lexical: [], cosine: [3, 1], topK: 5) == [3, 1])
+        check("hybrid order respects topK", K.hybridOrder(lexical: [5, 4, 3], cosine: [], topK: 2) == [5, 4])
+        // A minority of slots is reserved for embedding matches so a question
+        // that shares no words with its answer ("how much does it cost" vs
+        // "Launchese fee $11.99") can still reach the candidates.
+        check("hybrid order reserves a slot for the top cosine hit",
+              K.hybridOrder(lexical: [5, 4, 3, 2], cosine: [9, 8], topK: 4) == [5, 4, 3, 9])
+        check("hybrid order reserves a third of a long list for cosine",
+              K.hybridOrder(lexical: Array(10..<30), cosine: Array(0..<5), topK: 12) == Array(10..<18) + Array(0..<4))
+        check("hybrid order never leaves a slot empty",
+              K.hybridOrder(lexical: [1, 2, 3, 4], cosine: [], topK: 4) == [1, 2, 3, 4])
+    }
+
+    static func testChunker() {
+        typealias K = KnowledgeBaseService
+        let items = (1...40).map { "- item \($0) costs £\($0) and is billed one-off with notes attached" }.joined(separator: "\n")
+        let doc = """
+        ## 13. Services
+
+        ---
+
+        ### 13.12 Close a company (£75)
+
+        Voluntary dissolution. The £75 includes the £13 fee. If the company is more than one year old, its tax return must be filed before it can be closed.
+
+        ### 13.13 Big list
+
+        \(items)
+
+        ### Trailing heading with nothing after it
+        """
+        let chunks = K.chunkText(doc)
+        check("chunker never emits a heading-only chunk",
+              chunks.allSatisfy { $0.split(separator: "\n").contains { !$0.hasPrefix("#") && $0 != "---" } })
+        check("chunker drops separators", !chunks.contains { $0.contains("---") })
+        check("chunker glues the heading to its paragraph",
+              chunks.contains { $0.hasPrefix("### 13.12 Close a company (£75)\n") && $0.contains("Voluntary dissolution") })
+        check("chunker splits an oversized paragraph", chunks.filter { $0.contains("item ") }.count >= 2)
+        check("chunker keeps every chunk under the cap", chunks.allSatisfy { $0.count <= 1000 })
+        check("chunker carries the section heading into split pieces",
+              chunks.filter { $0.contains("item ") }.allSatisfy { $0.hasPrefix("### 13.13 Big list\n") })
+        check("chunker keeps the whole content", chunks.joined(separator: "\n").contains("item 40 costs £40"))
+        check("chunker short plain text is one chunk", K.chunkText("Just one short paragraph that is long enough to keep.").count == 1)
     }
 }

@@ -56,11 +56,12 @@ enum GroqTranscriber {
 
     /// Transcribe one PCM chunk (16 kHz mono floats). Same cadence as the local
     /// loop — only the decode moves to Groq.
-    static func transcribe(samples: [Float], language: String?, apiKey: String) async throws -> String {
+    static func transcribe(samples: [Float], language: String?, apiKey: String,
+                           prompt: String? = nil) async throws -> String {
         struct Response: Decodable { let text: String }
         let data = try await post(fileData: WAVEncoder.encode(samples: samples, sampleRate: 16000),
                                   fileName: "chunk.wav",
-                                  fields: fields(language: language, responseFormat: "json"),
+                                  fields: fields(language: language, responseFormat: "json", prompt: prompt),
                                   apiKey: apiKey)
         return try JSONDecoder().decode(Response.self, from: data).text
     }
@@ -68,19 +69,21 @@ enum GroqTranscriber {
     /// Transcribe a whole audio file (the post-call polish pass) with segment
     /// timestamps. Returns (text, start, end) tuples in file-relative seconds.
     static func transcribeFile(_ fileData: Data, fileName: String, language: String?,
-                               apiKey: String) async throws -> [(text: String, start: Double, end: Double)] {
+                               apiKey: String, prompt: String? = nil) async throws -> [(text: String, start: Double, end: Double)] {
         struct Segment: Decodable { let text: String; let start: Double; let end: Double }
         struct Response: Decodable { let segments: [Segment]? }
         let data = try await post(fileData: fileData, fileName: fileName,
-                                  fields: fields(language: language, responseFormat: "verbose_json"),
+                                  fields: fields(language: language, responseFormat: "verbose_json", prompt: prompt),
                                   apiKey: apiKey)
         let segments = try JSONDecoder().decode(Response.self, from: data).segments ?? []
         return segments.map { ($0.text, $0.start, $0.end) }
     }
 
-    private static func fields(language: String?, responseFormat: String) -> [(String, String)] {
+    static func fields(language: String?, responseFormat: String, prompt: String?) -> [(String, String)] {
         var fields = [("model", model), ("response_format", responseFormat)]
         if let language, language != "auto" { fields.append(("language", language)) }
+        // The same glossary the on-device engine primes Whisper with.
+        if let prompt, !prompt.isEmpty { fields.append(("prompt", prompt)) }
         return fields
     }
 
@@ -200,6 +203,16 @@ final class DeepgramStreamer {
         task = URLSession.shared.webSocketTask(with: request)
         task?.resume()
         receiveLoop()
+        // Deepgram closes a stream that carries no audio for about 10 s
+        // (NET-0001). A quiet system-audio track hits that before the other
+        // side speaks; a KeepAlive every 5 s is Deepgram's documented remedy.
+        keepAlive = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                self?.task?.send(.string(#"{"type":"KeepAlive"}"#)) { _ in }
+            }
+        }
     }
 
     /// Push PCM floats (called from the audio callback thread; WebSocket send
@@ -219,19 +232,33 @@ final class DeepgramStreamer {
     /// Ask Deepgram to flush remaining finals; caller waits a short grace
     /// period before tearing down.
     func finish() {
+        // Deepgram answers CloseStream with a normal close, which the receive
+        // loop sees as a failure; that is our own teardown, not an error.
+        closing = true
         task?.send(.string(#"{"type":"CloseStream"}"#)) { _ in }
     }
 
     func close() {
+        closing = true
+        keepAlive?.cancel()
+        keepAlive = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
     }
 
+    private var closing = false
+
+    private var keepAlive: Task<Void, Never>?
     private var failed = false
     private func fail(_ message: String) {
-        guard !failed else { return }
+        guard !failed, !closing else { return }
         failed = true
-        onError?(message)
+        keepAlive?.cancel()
+        // The close code and reason are where Deepgram puts the real cause
+        // ("NET-0001" and friends); the URL error alone says nothing.
+        let code = task?.closeCode.rawValue ?? 0
+        let reason = task?.closeReason.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        onError?("\(message) [close \(code) \(reason)]")
     }
 
     private func receiveLoop() {
@@ -310,6 +337,7 @@ enum TranscriptPolisher {
             while offset < samples.count {
                 let part = Array(samples[offset ..< min(offset + partLength, samples.count)])
                 let shift = Double(offset) / 16000.0
+                // No glossary prompt here either (see the live Groq decode).
                 let segments = try await GroqTranscriber.transcribeFile(
                     WAVEncoder.encode(samples: part, sampleRate: 16000),
                     fileName: "part.wav", language: language, apiKey: apiKey)
