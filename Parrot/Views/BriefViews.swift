@@ -67,6 +67,7 @@ struct LiveBriefCard: View {
     @State private var expandedOverride: Bool?
     @State private var editing = false
     @State private var draft = ""
+    @FocusState private var draftFocused: Bool
 
     private var engine: CallAnalysisEngine { recordingManager.callAnalysisEngine }
     private var profile: CallProfile? { engine.activeProfile }
@@ -131,9 +132,12 @@ struct LiveBriefCard: View {
             Text("Brief for this call")
                 .font(Theme.Typography.cardTitle)
             TextField("Who's on the call and what it's about", text: $draft, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
                 .lineLimit(2...5)
                 .font(Theme.Typography.body)
                 .frame(width: 320)
+                .focused($draftFocused)
+                .onAppear { draftFocused = true }
             HStack {
                 Spacer()
                 Button("Cancel") { editing = false }

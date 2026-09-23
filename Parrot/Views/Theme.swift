@@ -31,8 +31,8 @@ enum Theme {
         static let selection = Color.accentColor.opacity(0.16)
         /// Draws the eye to one card that must not be missed (the brief box):
         /// a soft accent fill with an accent hairline.
-        static let spotlight = Color.accentColor.opacity(0.10)
-        static let spotlightLine = Color.accentColor.opacity(0.35)
+        static let spotlight = Color.accentColor.opacity(0.16)
+        static let spotlightLine = Color.accentColor.opacity(0.55)
 
         /// Primary text.
         static let ink = Color(nsColor: .labelColor)
