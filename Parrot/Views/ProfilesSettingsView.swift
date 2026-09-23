@@ -174,119 +174,131 @@ private struct ProfileDetailView: View {
     }
 
     var body: some View {
-        Form {
+        SettingsPage {
             // MARK: Profile section
-            // Labels sit ABOVE full-width fields (side labels squeezed the
-            // fields and wrapped badly); hints go under the field at 12pt.
-            Section("Profile") {
-                FieldRow(label: "Name") {
-                    TextField("", text: $profile.name, prompt: Text("Name"))
+            SettingsCard(title: "Profile") {
+                SettingsRow(first: true) {
+                    FieldRow(label: "Name") {
+                        TextField("", text: $profile.name, prompt: Text("Name"))
+                    }
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Icon")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.ink2)
-                    IconSwatchGrid(icon: $profile.iconSystemName, palette: IconSwatchGrid.profileIcons)
+                SettingsRow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Icon")
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
+                        IconSwatchGrid(icon: $profile.iconSystemName, palette: IconSwatchGrid.profileIcons)
+                    }
                 }
-                .padding(.vertical, 2)
-                FieldRow(label: "Summary") {
-                    TextField("", text: $profile.summary, prompt: Text("One-line description"))
+                SettingsRow {
+                    FieldRow(label: "Summary") {
+                        TextField("", text: $profile.summary, prompt: Text("One-line description"))
+                    }
                 }
-                FieldRow(label: "Call the other party",
-                         hint: "What the copilot calls them in cards & notes.") {
-                    TextField("", text: $profile.counterpart, prompt: Text("e.g. the prospect"))
+                SettingsRow {
+                    FieldRow(label: "Call the other party",
+                             hint: "What the copilot calls them in cards & notes.") {
+                        TextField("", text: $profile.counterpart, prompt: Text("e.g. the prospect"))
+                    }
                 }
             }
 
             // MARK: Persona & Tone section
-            Section("Persona & Tone") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Persona")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.ink2)
-                    TextEditor(text: $profile.persona)
-                        .font(Theme.Typography.body)
-                        .frame(minHeight: 90)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+            SettingsCard(title: "Persona & Tone") {
+                SettingsRow(first: true) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Persona")
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
+                        TextEditor(text: $profile.persona)
+                            .font(Theme.Typography.body)
+                            .frame(minHeight: 90)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+                    }
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Custom rules")
-                        .font(Theme.Typography.secondary)
-                        .foregroundStyle(Theme.Colors.ink2)
-                    TextEditor(text: $profile.tone)
-                        .font(Theme.Typography.body)
-                        .frame(height: 80)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
-                    Hint("House rules the copilot follows on every call — one per line, e.g. \"Always confirm budget before timeline.\"")
+                SettingsRow {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Custom rules")
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
+                        TextEditor(text: $profile.tone)
+                            .font(Theme.Typography.body)
+                            .frame(height: 80)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+                        Hint("House rules the copilot follows on every call, one per line, e.g. \"Always confirm budget before timeline.\"")
+                    }
                 }
-
-                Toggle("Answer from general knowledge when documents don't cover it",
-                       isOn: $profile.allowGeneralKnowledge)
+                SettingsToggleRow(
+                    title: "Answer from general knowledge when documents don't cover it",
+                    isOn: $profile.allowGeneralKnowledge
+                )
             }
 
             // MARK: Knowledge Documents section
-            Section("Knowledge Documents") {
+            SettingsCard(title: "Knowledge Documents", blurb: "Documents this profile may quote. The Knowledge page shows the same tags.") {
                 if knowledgeBase.documents.isEmpty {
-                    Hint("No documents yet — add them on the Knowledge page, then tag them here.")
-                } else {
-                    ForEach(knowledgeBase.documents) { doc in
+                    SettingsRow(first: true) {
+                        Hint("No documents yet. Add them on the Knowledge page, then tag them here.")
+                    }
+                }
+                ForEach(Array(knowledgeBase.documents.enumerated()), id: \.element.id) { index, doc in
+                    SettingsRow(first: index == 0) {
                         DocTagToggle(doc: doc, profileID: profile.id, knowledgeBase: knowledgeBase)
                     }
                 }
             }
 
             // MARK: Edit Advanced
-            Section {
-                DisclosureGroup("Advanced — card kinds & gauges", isExpanded: $advancedOpen) {
-                    // Kinds subsection
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Call Kinds")
-                            .font(Theme.Typography.sectionLabel)
-                            .foregroundStyle(Theme.Colors.label)
+            SettingsCard(title: "Advanced") {
+                SettingsRow(first: true) {
+                    DisclosureGroup("Card kinds & gauges", isExpanded: $advancedOpen) {
+                        // Kinds subsection
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Call Kinds")
+                                .font(Theme.Typography.sectionLabel)
+                                .foregroundStyle(Theme.Colors.label)
 
-                        ForEach(profile.kinds) { kind in
-                            KindEditorRow(kind: kind) { updated in
-                                updateKind(updated, in: profile)
-                            } onDelete: {
-                                removeKind(kind, from: profile)
+                            ForEach(profile.kinds) { kind in
+                                KindEditorRow(kind: kind) { updated in
+                                    updateKind(updated, in: profile)
+                                } onDelete: {
+                                    removeKind(kind, from: profile)
+                                }
                             }
-                        }
 
-                        Button("+ Add Kind") {
-                            addKind(to: profile)
-                        }
-                        .font(Theme.Typography.secondary)
-                    }
-                    .padding(.top, 4)
-
-                    Divider()
-                        .padding(.vertical, 4)
-
-                    // Gauges subsection
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Sentiment Gauges")
-                            .font(Theme.Typography.sectionLabel)
-                            .foregroundStyle(Theme.Colors.label)
-
-                        ForEach(profile.gauges) { gauge in
-                            GaugeEditorRow(gauge: gauge) { updated in
-                                updateGauge(updated, in: profile)
-                            } onDelete: {
-                                removeGauge(gauge, from: profile)
+                            Button("+ Add Kind") {
+                                addKind(to: profile)
                             }
+                            .font(Theme.Typography.secondary)
                         }
+                        .padding(.top, 4)
 
-                        Button("+ Add Gauge") {
-                            addGauge(to: profile)
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        // Gauges subsection
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Sentiment Gauges")
+                                .font(Theme.Typography.sectionLabel)
+                                .foregroundStyle(Theme.Colors.label)
+
+                            ForEach(profile.gauges) { gauge in
+                                GaugeEditorRow(gauge: gauge) { updated in
+                                    updateGauge(updated, in: profile)
+                                } onDelete: {
+                                    removeGauge(gauge, from: profile)
+                                }
+                            }
+
+                            Button("+ Add Gauge") {
+                                addGauge(to: profile)
+                            }
+                            .font(Theme.Typography.secondary)
                         }
-                        .font(Theme.Typography.secondary)
                     }
                 }
             }
         }
-        .formStyle(.grouped)
-        .padding(.vertical, 4)
         // Editing AI-behavior fields marks the profile as user-tuned so the
         // built-in preset refresh never overwrites it (see ProfileStore).
         .onChange(of: profile.persona) { _, _ in profile.isUserModified = true }
@@ -370,22 +382,27 @@ private struct DocTagToggle: View {
     }
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { isTagged },
-            set: { newValue in
-                var ids = doc.profileIDs
-                if newValue { ids.insert(profileID) } else { ids.remove(profileID) }
-                knowledgeBase.setProfiles(ids, for: doc)
-            }
-        )) {
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(doc.name)
                     .font(Theme.Typography.body)
                     .lineLimit(1)
-                Text("\(doc.chunkCount) chunks")
+                Text("\(doc.chunkCount) chunks · on-device")
                     .font(Theme.Typography.caption)
                     .foregroundStyle(Theme.Colors.ink3)
             }
+            Spacer(minLength: 12)
+            Toggle("", isOn: Binding(
+                get: { isTagged },
+                set: { newValue in
+                    var ids = doc.profileIDs
+                    if newValue { ids.insert(profileID) } else { ids.remove(profileID) }
+                    knowledgeBase.setProfiles(ids, for: doc)
+                }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
         }
     }
 }

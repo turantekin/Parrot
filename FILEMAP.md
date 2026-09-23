@@ -58,13 +58,13 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
 | `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
-| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |\n| `Views/SettingsCards.swift` | 117 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
+| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |\n| `Views/SettingsCards.swift` | 187 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
 | `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
-| `Views/SettingsView.swift` | 907 | All settings sections, provider keys, KB docs |
-| `Views/ProfilesSettingsView.swift` | 689 | Call-profile editor: kinds, gauges, icon picker |
+| `Views/SettingsView.swift` | 970 | All settings sections, provider keys, KB docs |
+| `Views/ProfilesSettingsView.swift` | 720 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |

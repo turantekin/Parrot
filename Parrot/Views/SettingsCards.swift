@@ -59,6 +59,76 @@ struct SettingsRow<Content: View>: View {
     }
 }
 
+/// Title and optional detail on the left, a control on the right.
+struct SettingsLabeledRow<Trailing: View>: View {
+    let title: String
+    var detail: String? = nil
+    var first = false
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        SettingsRow(first: first) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Colors.ink)
+                    if let detail {
+                        Text(detail)
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 12)
+                trailing
+            }
+        }
+    }
+}
+
+/// A switch row. Outside a Form macOS would draw a checkbox; this keeps the switch.
+struct SettingsToggleRow: View {
+    let title: String
+    var detail: String? = nil
+    var first = false
+    @Binding var isOn: Bool
+
+    var body: some View {
+        SettingsLabeledRow(title: title, detail: detail, first: first) {
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+    }
+}
+
+/// A title above full-width content (radio groups, editors), detail below.
+struct SettingsBlockRow<Content: View>: View {
+    let title: String
+    var detail: String? = nil
+    var first = false
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        SettingsRow(first: first) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                content
+                if let detail {
+                    Text(detail)
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
 /// Lays children out left to right and wraps to new lines, like text.
 /// Chips and tags use it so a long list never squeezes its members.
 struct FlowLayout: Layout {

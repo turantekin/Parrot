@@ -283,11 +283,11 @@ enum HelpShots {
             else { print("help-shots: FAILED \(name)") }
         }
 
-        shot("settings-general.png", size: .init(width: 780, height: 540), settings(.general))
-        shot("settings-recording.png", size: .init(width: 780, height: 540), settings(.recording))
+        shot("settings-general.png", size: .init(width: 780, height: 620), settings(.general))
+        shot("settings-recording.png", size: .init(width: 780, height: 620), settings(.recording))
         shot("settings-transcription.png", size: .init(width: 780, height: 620), settings(.transcription))
-        shot("settings-copilot.png", size: .init(width: 780, height: 700), settings(.copilot))
-        shot("settings-knowledge.png", size: .init(width: 780, height: 540), settings(.knowledge))
+        shot("settings-copilot.png", size: .init(width: 780, height: 620), settings(.copilot))
+        shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
 
         shot("settings-profiles.png", size: .init(width: 860, height: 640),
              ProfilesSettingsView()
