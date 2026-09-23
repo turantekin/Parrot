@@ -84,7 +84,12 @@ enum ProfileTest {
 
     static func testPresets() {
         let all = ProfilePresets.all()
-        check("six presets", all.count == 6)
+        check("seven presets", all.count == 7)
+        let vendor = all.first { $0.name == "Vendor call" }
+        check("vendor call preset exists with the vendor as counterpart", vendor?.counterpart == "the vendor")
+        check("vendor call pins open questions and red flags",
+              vendor?.kinds.first { $0.key == "my_open_question" }?.isPinned == true && vendor?.kinds.first { $0.key == "red_flag" }?.isPinned == true)
+        check("vendor call never treats the other side as a prospect", vendor?.persona.lowercased().contains("prospect") == true && vendor?.persona.lowercased().contains("never") == true)
         check("default first by sortOrder", all.sorted { $0.sortOrder < $1.sortOrder }.first?.id == ProfilePresets.defaultProfileID)
         let coaching = all.first { $0.name == "1:1 coaching" }
         check("coaching has reflection kind", coaching?.kinds.contains { $0.key == "reflection" } == true)
@@ -134,12 +139,12 @@ enum ProfileTest {
         }
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
         let profiles = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
-        check("seeded six profiles", profiles.count == 6)
+        check("seeded every preset", profiles.count == ProfilePresets.all().count)
         let def = profiles.first { $0.id == ProfilePresets.defaultProfileID }
         check("default absorbed instructions as tone", def?.tone == "be concise")
         // Idempotent: second run doesn't duplicate.
         store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
-        check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == 6)
+        check("seeding idempotent", ((try? ctx.fetch(FetchDescriptor<CallProfile>()))?.count ?? 0) == ProfilePresets.all().count)
     }
 
     @MainActor
@@ -174,6 +179,17 @@ enum ProfileTest {
         check("refresh bumps tuned profile's version", sales.presetVersion == ProfilePresets.presetVersion)
         let presetSupport = ProfilePresets.all().first { $0.id == support.id }
         check("refresh restores untouched built-in", support.persona == presetSupport?.persona)
+
+        // A built-in added after this install first seeded (v4: Vendor call) is
+        // inserted on the next launch even when nothing else is stale.
+        if let vendor = profiles.first(where: { $0.name == "Vendor call" }) {
+            ctx.delete(vendor)
+            try? ctx.save()
+        }
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: kb)
+        let again = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        check("refresh re-adds a missing built-in preset", again.contains { $0.name == "Vendor call" && $0.isBuiltIn })
+        check("refresh does not duplicate presets", again.count == ProfilePresets.all().count)
     }
 
     static func testLenientKBDecode() {
@@ -395,11 +411,11 @@ enum ProfileTest {
         withDocs.copilot = AITokenTotals(inputTokens: 1000, outputTokens: 100, calls: 1)
         withDocs.docAnswerModel = JevDocMatcher.model
         withDocs.docAnswers = AITokenTotals(inputTokens: 1_000_000, outputTokens: 0, calls: 300)
-        let docLine = withDocs.costBreakdown().first { $0.label.hasPrefix("Doc answers") }
-        check("doc answers line exists when calls > 0", docLine != nil)
+        let docLine = withDocs.costBreakdown().first { $0.label.hasPrefix("TypeSafe") }
+        check("typesafe line exists when calls > 0", docLine != nil)
         check("doc answers priced at $0.042 per MTok input", docLine.map { abs($0.usd - 0.042) < 0.0001 } == true)
         check("doc answers line names the model and calls", docLine?.label.contains("jev-latest") == true && docLine?.detail.contains("300 calls") == true)
-        check("no doc answers line without calls", usage.costBreakdown().contains { $0.label.hasPrefix("Doc answers") } == false)
+        check("no typesafe line without calls", usage.costBreakdown().contains { $0.label.hasPrefix("TypeSafe") } == false)
         let encodedDocs = try? JSONEncoder().encode(withDocs)
         let decodedDocs = encodedDocs.flatMap { try? JSONDecoder().decode(AIUsage.self, from: $0) }
         check("doc answers round-trip", decodedDocs?.docAnswers?.calls == 300)
@@ -960,6 +976,12 @@ enum ProfileTest {
         check("jev parse rejects garbage", (try? J.parse(Data("nope".utf8), count: 1)) == nil)
         check("jev empty candidates builds no questions", (J.buildBody(asked: "x", before: "", candidates: [])["questions"] as? [String: Any])?.isEmpty == true)
         check("jev unconfigured without a key", !J(apiKey: "").isConfigured)
+        let pairs = J.buildSameIssueBody(pairs: [("PSC review risk. What if they say no", "Exit plan if PSC rejects. Same worry"), ("Third currency?", "Stablecoin payouts?")])
+        let pstate = pairs["state"] as? [String: [String: String]]
+        check("same-issue state carries both cards per pair", pstate?["p1"]?["card_a"] == "Third currency?" && pstate?["p1"]?["card_b"] == "Stablecoin payouts?")
+        let pq = pairs["questions"] as? [String: [String: Any]]
+        check("same-issue one noul per pair naming the pair", pq?.count == 2 && (pq?["p1"]?["instructions"] as? String)?.contains("`p1`") == true)
+        check("parse honours a key prefix", (try? J.parse(Data(#"{"answers":{"p0":{"type":"noul","noul":0.8},"p1":{"type":"noul","noul":0.1}}}"#.utf8), count: 2, prefix: "p")) == [0.8, 0.1])
     }
 
     static func testDocExcerpt() {
@@ -999,6 +1021,21 @@ enum ProfileTest {
         check("latest question is the newest Them question", E.latestQuestion(in: window) == "Do you take cards?")
         check("latest question ignores the user's own questions", E.latestQuestion(in: [("Ready?", .me), ("Sure.", .them)]) == nil)
         check("latest question nil without one", E.latestQuestion(in: [("Hello there.", .them)]) == nil)
+        // Item 5 (2026-09-23 call): "Really?" and "How are you?" triggered the fast
+        // lane. A question needs two content words to count.
+        check("substantive question needs two content words", E.isSubstantiveQuestion("Do you take cards?"))
+        check("greeting question is not substantive", !E.isSubstantiveQuestion("How are you?"))
+        check("one-word question is not substantive", !E.isSubstantiveQuestion("Really?"))
+        check("short follow-up with one content word is not substantive", !E.isSubstantiveQuestion("Is it extra?"))
+        check("real question is substantive", E.isSubstantiveQuestion("How much is the express verification?"))
+        check("statement is not a question at all", !E.isSubstantiveQuestion("We take cards and bank transfers."))
+        // Item 1: Jev same-issue verdicts laid out draft-major; a draft is dropped
+        // when any open card scores at or above the threshold.
+        check("dedup keep mask drops a draft matching an open card",
+              E.dedupKeepMask(scores: [0.1, 0.9, 0.2, 0.05, 0.1, 0.3], drafts: 2, open: 3, threshold: 0.5) == [false, true])
+        check("dedup keep mask keeps everything below threshold",
+              E.dedupKeepMask(scores: [0.4, 0.49], drafts: 1, open: 2, threshold: 0.5) == [true])
+        check("dedup keep mask keeps all on a short answer", E.dedupKeepMask(scores: [0.9], drafts: 2, open: 3, threshold: 0.5) == [true, true])
         // A short follow-up ("Can I use your services?") carries no topic of its own;
         // the previous line from the other side is joined for the document search.
         check("fast query joins the previous line to a short question",

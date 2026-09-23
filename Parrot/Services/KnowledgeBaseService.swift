@@ -104,6 +104,16 @@ final class KnowledgeBaseService {
         save()
     }
 
+    /// Tags every document that is tagged into `source` into `target` as well.
+    func copyProfileTags(from source: UUID, to target: UUID) {
+        var changed = false
+        for i in documents.indices where documents[i].profileIDs.contains(source) {
+            documents[i].profileIDs.insert(target)
+            changed = true
+        }
+        if changed { save() }
+    }
+
     /// Returns the names of documents tagged into the given profile ID.
     func documentNames(for profileID: UUID) -> [String] {
         documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)

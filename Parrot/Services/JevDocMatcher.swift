@@ -14,12 +14,12 @@ enum JevError: LocalizedError {
     }
 }
 
-/// TypeSafe AI "Jev" client behind the copilot's fast document-answer path.
-/// Jev never writes text: given the other side's question and up to twelve
-/// knowledge-base chunks, it returns one probability per chunk that the chunk
-/// states what was asked. The engine shows the best chunk as a "From your
-/// docs" excerpt while Haiku is still writing. Claude mode only; the path
-/// exists only when a key is in the Keychain.
+/// TypeSafe AI "Jev" client behind the copilot's fast document-answer path
+/// and its duplicate-card judge. Jev never writes text: given the other
+/// side's question and up to twelve knowledge-base chunks, it returns one
+/// probability per chunk that the chunk states what was asked, and given
+/// pairs of cards, one probability per pair that they flag the same issue.
+/// Claude mode only; both uses exist only when a key is in the Keychain.
 ///
 /// Verified 2026-09-19 against docs.typesafe.ai: POST /v1/systemone, Bearer
 /// auth, `noul` answers carry no confidence field (the probability is the
@@ -101,13 +101,34 @@ final class JevDocMatcher {
         return ["model": model, "state": state, "questions": questions]
     }
 
-    /// Probabilities by chunk index; a missing answer counts as 0.
-    static func parse(_ data: Data, count: Int) throws -> [Double] {
+    /// Probabilities by index for keys `<prefix>0…<prefix>N`; a missing answer counts as 0.
+    static func parse(_ data: Data, count: Int, prefix: String = "c") throws -> [Double] {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let answers = obj["answers"] as? [String: Any] else { throw JevError.badResponse }
         return (0..<count).map { i in
-            ((answers["c\(i)"] as? [String: Any])?["noul"] as? Double) ?? 0
+            ((answers["\(prefix)\(i)"] as? [String: Any])?["noul"] as? Double) ?? 0
         }
+    }
+
+    /// One request, one noul per (draft, open card) pair: does the pair flag
+    /// the same underlying issue? Wording and card kind are explicitly not the
+    /// question, which is exactly what the token heuristic cannot judge.
+    static func buildSameIssueBody(pairs: [(a: String, b: String)]) -> [String: Any] {
+        var state: [String: [String: String]] = [:]
+        var questions: [String: [String: Any]] = [:]
+        for (i, pair) in pairs.enumerated() {
+            let key = "p\(i)"
+            state[key] = ["card_a": pair.a, "card_b": pair.b]
+            questions[key] = [
+                "type": "noul",
+                "instructions": "In `\(key)`, do card_a and card_b flag the SAME underlying issue in this call, so that showing both to the user would be a duplicate? Judge the issue, not the wording or the card type.",
+                "criteria": [
+                    "true": "Both cards are about the same specific open question, concern, or gap; one could replace the other.",
+                    "false": "They are about different questions or concerns, even if on a related topic.",
+                ],
+            ]
+        }
+        return ["model": model, "state": state, "questions": questions]
     }
 
     private static func inputTokens(from data: Data) -> Int {
@@ -118,8 +139,19 @@ final class JevDocMatcher {
     // MARK: - Network
 
     func score(asked: String, before: String, candidates: [String]) async throws -> [Double] {
+        let data = try await post(Self.buildBody(asked: asked, before: before, candidates: candidates))
+        return try Self.parse(data, count: min(candidates.count, Self.maxCandidates))
+    }
+
+    /// Same-issue probability per pair, in order. Empty in, empty out.
+    func sameIssue(pairs: [(a: String, b: String)]) async throws -> [Double] {
+        guard !pairs.isEmpty else { return [] }
+        let data = try await post(Self.buildSameIssueBody(pairs: pairs))
+        return try Self.parse(data, count: pairs.count, prefix: "p")
+    }
+
+    private func post(_ body: [String: Any]) async throws -> Data {
         guard let apiKey else { throw JevError.missingKey }
-        let body = Self.buildBody(asked: asked, before: before, candidates: candidates)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = Self.budget
@@ -130,7 +162,7 @@ final class JevDocMatcher {
         guard let http = response as? HTTPURLResponse else { throw JevError.badResponse }
         guard http.statusCode == 200 else { throw JevError.badStatus(http.statusCode) }
         recordUsage(inputTokens: Self.inputTokens(from: data))
-        return try Self.parse(data, count: min(candidates.count, Self.maxCandidates))
+        return data
     }
 
     /// Opens the TLS connection ahead of the first real question so the first

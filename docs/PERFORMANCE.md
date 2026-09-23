@@ -256,3 +256,25 @@ Groq transcription, language auto.
   itself on pain points.
 - **Diarization** split the same bank representative into Speaker 1 and a
   Speaker 2 made of "Mm-hmm" and "Yes".
+
+### Changes after the real call (all five, 2026-09-23)
+
+1. **Duplicate cards.** After each Claude pass, the surviving drafts are
+   judged against every open card by Jev in one request ("do these two flag
+   the same underlying issue?"), draft dropped at 0.5 or above. Calibrated
+   on this call's cards: 12 hand-labelled distinct pairs all scored 0.13 or
+   below (no false merges); of 33 pairs labelled duplicates, 15 scored 0.7
+   or more and about 20 scored 0.5 or more, the rest being pairs the label
+   had grouped too loosely. One request per pass, about 0.35 s, a few
+   thousand tokens. Fails open. Claude mode with a TypeSafe key only; the
+   token heuristic stays for everyone else.
+2. **Vendor call profile.** A seventh built-in for calls where the user is
+   the customer: the vendor is never "the prospect"; kinds are their
+   commitment, my open question (pinned), red flag (pinned), pricing detail,
+   ask this, next step. Existing installs receive it on the next launch and
+   it inherits the documents tagged into Default.
+3. **Reports on Claude** and **4. Language = English** are settings, not
+   code: Settings → Copilot → Post-call reports → "Same as live cards", and
+   Settings → Transcription → Language → English.
+5. **Trigger words.** A question needs two content words to open the fast
+   lane; "Really?", "How are you?" and "Is it extra?" no longer do.

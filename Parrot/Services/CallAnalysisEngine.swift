@@ -245,7 +245,7 @@ final class CallAnalysisEngine {
 
         // Only the other side's questions get the fast track — the user's own
         // questions don't need an instant suggested answer.
-        let isUrgent = source == .them && Self.looksLikeQuestion(text)
+        let isUrgent = source == .them && Self.isSubstantiveQuestion(text)
         if isUrgent {
             pendingUrgent = true
             Self.log.notice("question at \(time, format: .fixed(precision: 1), privacy: .public)s: \(text.prefix(80), privacy: .public)")
@@ -425,7 +425,7 @@ final class CallAnalysisEngine {
             // question ("…unknown", "…still unanswered", "…still live") —
             // prompt instructions alone don't stop it, so enforce it here.
             let openInsights = insights.filter { !$0.isHandled && $0.kindKey != Insight.docExcerptKind }
-            let unique = result.insights
+            let candidates = result.insights
                 // The model's own dedup verdict: a non-empty "supersedes" means
                 // it recognized the draft as an already-shown issue (any wording,
                 // any kind). The 2026-07-17 call showed re-flags routinely cross
@@ -450,7 +450,31 @@ final class CallAnalysisEngine {
                             "\(existing.title) \(existing.detail)")
                     }
                 }
-                .map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
+            // Cross-kind rewordings slip past everything above (the 2026-09-23
+            // real call: eight cards on one worry across three kinds). Jev
+            // judges each surviving draft against every open card in one
+            // request; a draft goes when any pair reads as the same issue.
+            // Fail-open: no key, no cards, or an error keeps every draft.
+            var admitted = candidates
+            if !candidates.isEmpty, !openInsights.isEmpty, fastPathAvailable, let matcher = docMatcher {
+                let open = Array(openInsights.prefix(20))
+                let pairs = candidates.flatMap { draft in
+                    open.map { (a: "\(draft.title). \(draft.detail)", b: "\($0.title). \($0.detail)") }
+                }
+                if let scores = try? await matcher.sameIssue(pairs: pairs) {
+                    guard isActive, !Task.isCancelled else {
+                        if !Task.isCancelled { analysisTask = nil }
+                        return
+                    }
+                    let keep = Self.dedupKeepMask(scores: scores, drafts: candidates.count,
+                                                  open: open.count, threshold: Self.sameIssueThreshold)
+                    for (index, draft) in candidates.enumerated() where !keep[index] {
+                        Self.log.notice("dedup dropped [\(draft.kindKey, privacy: .public)] \(draft.title.prefix(80), privacy: .public)")
+                    }
+                    admitted = zip(candidates, keep).filter { $0.1 }.map { $0.0 }
+                }
+            }
+            let unique = admitted.map { Insight(kindKey: $0.kindKey, title: $0.title, detail: $0.detail, callTime: anchorTime, source: $0.source, reply: $0.reply) }
             insights.insert(contentsOf: unique, at: 0)
             for inserted in unique {
                 Self.log.notice("card [\(inserted.kindKey, privacy: .public)] \(inserted.title.prefix(80), privacy: .public)")
@@ -733,6 +757,32 @@ final class CallAnalysisEngine {
         Set(s.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 2 && !stopWords.contains($0) })
+    }
+
+    /// A question worth the fast lane: it reads like a question AND carries at
+    /// least two content words. "Really?", "How are you?" and "Is it extra?"
+    /// do not; "Do you take cards?" does. (2026-09-23 real call: greetings and
+    /// one-word reactions were triggering document searches.)
+    nonisolated static func isSubstantiveQuestion(_ text: String) -> Bool {
+        looksLikeQuestion(text) && significantTokens(text).count >= 2
+    }
+
+    /// Same-issue gate for Jev's verdicts. On the 2026-09-23 real call every
+    /// hand-labelled distinct pair scored 0.13 or less and the duplicates
+    /// mostly 0.5 or more; the gap between is where this sits.
+    nonisolated static let sameIssueThreshold = 0.5
+
+    /// Which drafts survive Jev's same-issue verdicts, laid out draft-major
+    /// (index = draft × open + card). A draft goes when any open card scores at
+    /// or above the threshold. A short or missing answer keeps everything:
+    /// dropping a real insight is worse than letting one duplicate through.
+    nonisolated static func dedupKeepMask(scores: [Double], drafts: Int, open: Int, threshold: Double) -> [Bool] {
+        guard drafts > 0, open > 0, scores.count == drafts * open else {
+            return Array(repeating: true, count: max(0, drafts))
+        }
+        return (0..<drafts).map { draft in
+            !(0..<open).contains { scores[draft * open + $0] >= threshold }
+        }
     }
 
     /// The newest thing the other side asked in a window, if anything.

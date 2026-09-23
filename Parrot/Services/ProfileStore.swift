@@ -12,7 +12,7 @@ final class ProfileStore {
     func seedAndMigrateIfNeeded(context: ModelContext, knowledgeBase: KnowledgeBaseService) {
         let existing = (try? context.fetch(FetchDescriptor<CallProfile>())) ?? []
         guard existing.isEmpty else {
-            refreshBuiltInsIfStale(existing, context: context)
+            refreshBuiltInsIfStale(existing, context: context, knowledgeBase: knowledgeBase)
             setActiveFromLastUsed(existing)
             return
         }
@@ -37,9 +37,19 @@ final class ProfileStore {
     /// user-owned fields (custom rules `tone`, summary, name, icon, toggle, order).
     /// Profiles the user has tuned (isUserModified) are never overwritten — only
     /// their version is bumped so they aren't re-checked every launch.
-    private func refreshBuiltInsIfStale(_ existing: [CallProfile], context: ModelContext) {
+    private func refreshBuiltInsIfStale(_ existing: [CallProfile], context: ModelContext,
+                                        knowledgeBase: KnowledgeBaseService) {
         let presetsByID = Dictionary(uniqueKeysWithValues: ProfilePresets.all().map { ($0.id, $0) })
         var changed = false
+        // A built-in added after this install first seeded (v4: Vendor call) is
+        // inserted, and inherits the documents tagged into Default so today's
+        // knowledge works there from the first call.
+        let existingIDs = Set(existing.map(\.id))
+        for preset in ProfilePresets.all() where !existingIDs.contains(preset.id) {
+            context.insert(preset)
+            knowledgeBase.copyProfileTags(from: ProfilePresets.defaultProfileID, to: preset.id)
+            changed = true
+        }
         for p in existing where p.isBuiltIn && p.presetVersion < ProfilePresets.presetVersion {
             guard let preset = presetsByID[p.id] else { continue }
             if p.isUserModified {

@@ -145,7 +145,7 @@ In **Settings → Transcription** you can trade "audio never leaves the Mac" for
 | Groq | ~$0.08 | Large-model accuracy, same latency as local |
 | Deepgram | ~$0.58 | True streaming — words appear as they're spoken |
 
-With a TypeSafe key (Settings → API Keys) and the Copilot on Claude, the moment the other side asks something your documents cover, the matching excerpt shows as a "From your docs" card within about a second, while Claude is still writing. It costs well under $0.02 per call hour and shows on the meeting's cost row as "Doc answers".
+With a TypeSafe key (Settings → API Keys) and the Copilot on Claude, the moment the other side asks something your documents cover, the matching excerpt shows as a "From your docs" card within about a second, while Claude is still writing. It costs well under $0.02 per call hour and shows on the meeting's cost row as "TypeSafe", together with the duplicate-card checks the same model does after each Claude pass.
 
 There's also a **"Polish transcript after each call"** toggle (needs a Groq key): re-transcribes the saved audio with the large model after you hit Stop and regenerates the reports from the cleaner text (~$0.04 per call hour). Whatever you use, the meeting header shows the estimated cost afterwards.
 

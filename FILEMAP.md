@@ -8,7 +8,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 178 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
-| `Parrot/ProfileTest.swift` | 1053 | `--profile-test`: headless logic harness, ~290 checks |
+| `Parrot/ProfileTest.swift` | 1139 | `--profile-test`: headless logic harness, ~290 checks |
 | `Parrot/SnapshotTool.swift` | 922 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
 | `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
 
@@ -34,15 +34,15 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/SystemAudioTap.swift` | 250 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
 | `Services/TranscriptionEngine.swift` | 947 | On-device WhisperKit; `AudioSource` routing; live preview decode |
-| `Services/CloudTranscription.swift` | 355 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
+| `Services/CloudTranscription.swift` | 383 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
 | `Services/DiarizationEngine.swift` | 105 | FluidAudio offline pyannote diarization (CoreML): labels + per-speaker embeddings |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |
-| `Services/CallAnalysisEngine.swift` | 679 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt) |
-| `Services/JevDocMatcher.swift` | 143 | TypeSafe "Jev" client: one probability per KB chunk that it answers the question |
-| `Services/KnowledgeBaseService.swift` | 359 | Ingests/chunks KB docs (heading-aware), hybrid BM25 + embedding retrieval |
-| `Services/ProfileStore.swift` | 101 | Persists and mutates `CallProfile`s |
-| `Services/ProfilePresets.swift` | 141 | Built-in starter profiles |
+| `Services/CallAnalysisEngine.swift` | 808 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt) |
+| `Services/JevDocMatcher.swift` | 175 | TypeSafe "Jev" client: one probability per KB chunk that it answers the question; same-issue verdicts for card dedup |
+| `Services/KnowledgeBaseService.swift` | 389 | Ingests/chunks KB docs (heading-aware), hybrid BM25 + embedding retrieval |
+| `Services/ProfileStore.swift` | 111 | Persists and mutates `CallProfile`s |
+| `Services/ProfilePresets.swift` | 170 | Built-in starter profiles (seven, incl. the buyer-side "Vendor call") |
 | `Services/ExportService.swift` | 127 | Transcript/report export (Markdown, text) |
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/UpdateChecker.swift` | 103 | Daily GitHub release poll, feeds the update banner |
@@ -62,7 +62,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
-| `Views/SettingsView.swift` | 839 | All settings sections, provider keys, KB docs |
+| `Views/SettingsView.swift` | 847 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 689 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |

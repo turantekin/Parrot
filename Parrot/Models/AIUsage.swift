@@ -42,8 +42,8 @@ struct AIUsage: Codable {
     var reportsModel: String?
     var reportsProvider: String?
     var reports: AITokenTotals?
-    /// Jev fast document answers (Claude mode + TypeSafe key). nil on older
-    /// meetings and whenever the path never ran.
+    /// TypeSafe (Jev) calls: fast document excerpts and duplicate-card checks.
+    /// nil on older meetings and whenever neither ran.
     var docAnswerModel: String?
     var docAnswers: AITokenTotals?
     /// Live transcription engine (TranscriptionBackend rawValue).
@@ -80,7 +80,7 @@ struct AIUsage: Codable {
         }
         if let docAnswers, docAnswers.calls > 0 {
             items.append(LineItem(
-                label: "Doc answers \(docAnswerModel ?? "")",
+                label: "TypeSafe \(docAnswerModel ?? "")",
                 detail: "\(docAnswers.calls) calls · \(Self.compactTokens(docAnswers.inputTokens)) in",
                 usd: Double(docAnswers.inputTokens) / 1_000_000 * AIPricing.typesafeInputUSDPerMTok))
         }
