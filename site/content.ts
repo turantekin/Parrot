@@ -51,6 +51,7 @@ export type Card =
   | { kind: "pinned"; at: string; title: string; detail: string; quote: string; resolved: boolean }
   | { kind: "action"; at: string; title: string; who: string };
 export type CallState = {
+  phase?: "prep" | "live" | "done";
   elapsed: string;
   score: number;
   coach: string;
@@ -60,6 +61,8 @@ export type CallState = {
   open: number;
   transcript: Bubble[];
   cards: Card[];
+  brief?: { title: string; profile: string; lines: string[]; docs: string[] };
+  report?: { summary: string; commitments: string[]; coaching: string[] };
 };
 
 const q1: Bubble = { who: "them", at: "00:38", text: "Before we go further, our legal team asked: where is our customer data actually stored?" };
@@ -87,53 +90,64 @@ const pinnedOpen: Card = {
 const pinnedDone: Card = { ...pinnedOpen, resolved: true };
 const actionCard: Card = { kind: "action", at: "01:36", title: "Send the security summary and DPA after the call", who: "Me" };
 
-export const call = {
-  kicker: "The call",
-  title: "Watch one call.",
-  lede: "This is the Parrot window, rebuilt for the page with the demo call from the README. Scroll and it plays.",
-  states: [
-    {
-      elapsed: "00:41", score: 64, coach: "Warming up. Let them talk, then ask what changed since last time.",
-      mood: "Curious", temp: 40, talking: 55, open: 0, transcript: [q1], cards: [],
-    },
-    {
-      elapsed: "00:44", score: 64, coach: "Warming up. Answer the data question in one breath, then move on.",
-      mood: "Curious", temp: 45, talking: 52, open: 0, transcript: [q1], cards: [answerCard],
-    },
-    {
-      elapsed: "01:12", score: 66, coach: "Answer the pricing question, then ask who signs off.",
-      mood: "Warming", temp: 55, talking: 50, open: 1, transcript: [q1, a1, q2], cards: [answerCard, pinnedOpen],
-    },
-    {
-      elapsed: "01:38", score: 74, coach: "Good. Lock the next step before you wrap up.",
-      mood: "Engaged", temp: 70, talking: 49, open: 0, transcript: [q1, a1, q2, a2, r3, p3], cards: [answerCard, pinnedDone, actionCard],
-    },
-    {
-      elapsed: "01:41", score: 78, coach: "Going well. Ask who signs off on budget before you wrap up.",
-      mood: "Engaged", temp: 78, talking: 48, open: 0, transcript: [q1, a1, q2, a2, r3, p3], cards: [answerCard, pinnedDone, actionCard],
-    },
-  ] satisfies CallState[],
-  beats: [
-    {
-      at: "00:41",
-      title: "A question came in. The answer came with it.",
-      body: "The other side asked where the data lives. Two seconds later the answer is on screen, quoted from your own FAQ, with the file named on the card. Read it out or copy it.",
-    },
-    {
-      at: "01:10",
-      title: "Open questions get pinned.",
-      body: "They asked about pricing and you haven't answered yet. The card stays on screen until you do, then ticks itself off. Nothing slips.",
-    },
-    {
-      at: "01:36",
-      title: "You promised something. Parrot wrote it down.",
-      body: "The action item is captured the moment you say it, with the timestamp. After the call it's waiting in the report.",
-    },
-    {
-      at: "01:41",
-      title: "A score and a nudge, while it still matters.",
-      body: "The call score and the one-line coach update the whole way through. Not a report you read tomorrow. A hint you can act on now.",
-    },
+const live0: CallState = {
+  elapsed: "00:41", score: 64, coach: "Warming up. Let them talk, then ask what changed since last time.",
+  mood: "Curious", temp: 40, talking: 55, open: 0, transcript: [q1], cards: [],
+};
+const live1: CallState = { ...live0, elapsed: "00:44", coach: "Warming up. Answer the data question in one breath, then move on.", temp: 45, talking: 52, cards: [answerCard] };
+const live2: CallState = { ...live1, elapsed: "00:55", score: 66, coach: "Good answer. Now ask what else legal flagged.", mood: "Warming", temp: 55, talking: 50, transcript: [q1, a1] };
+const obj0: CallState = {
+  elapsed: "01:12", score: 66, coach: "Answer the pricing question, then ask who signs off.",
+  mood: "Warming", temp: 55, talking: 50, open: 1, transcript: [q1, a1, q2], cards: [answerCard, pinnedOpen],
+};
+const obj1: CallState = { ...obj0, elapsed: "01:24", score: 74, coach: "Good. Lock the next step before you wrap up.", temp: 66, talking: 49, open: 0, transcript: [q1, a1, q2, a2], cards: [answerCard, pinnedDone] };
+const obj2: CallState = { ...obj1, elapsed: "01:41", score: 78, coach: "Going well. Ask who signs off on budget before you wrap up.", mood: "Engaged", temp: 78, talking: 48, transcript: [q1, a1, q2, a2, r3, p3], cards: [answerCard, pinnedDone, actionCard] };
+
+const prep0: CallState = {
+  phase: "prep", elapsed: "00:00", score: 0, coach: "", mood: "", temp: 0, talking: 0, open: 0, transcript: [], cards: [],
+  brief: { title: "Northwind, 10:00", profile: "Sales discovery", lines: [], docs: [] },
+};
+const prep1: CallState = { ...prep0, brief: { ...prep0.brief!, lines: ["Last time, EU data residency came up and stayed open."] } };
+const prep2: CallState = { ...prep1, brief: { ...prep1.brief!, lines: [...prep1.brief!.lines, "They want SSO confirmed before renewal."], docs: ["northwind-faq.md"] } };
+const prep3: CallState = { ...prep2, brief: { ...prep2.brief!, docs: ["northwind-faq.md", "pricing-2026.pdf"] } };
+
+const done0: CallState = {
+  phase: "done", elapsed: "41:12", score: 78, coach: "", mood: "Engaged", temp: 78, talking: 48, open: 0,
+  transcript: [q1, a1, q2, a2, r3, p3], cards: [], report: { summary: "", commitments: [], coaching: [] },
+};
+const done1: CallState = { ...done0, report: { ...done0.report!, summary: "Northwind is ready to move. Data residency and SSO are settled and ten seats were quoted at $79 a seat on the annual plan." } };
+const done2: CallState = { ...done1, report: { ...done1.report!, commitments: ["Send the security summary and DPA", "Confirm who signs off on budget"] } };
+const done3: CallState = { ...done2, report: { ...done2.report!, coaching: ["Talk ratio 48%, right where it should be", "Objections handled: 2 of 2", "Missed: asking who signs off"] } };
+
+export const demo = {
+  seconds: 10,
+  tabs: [
+    { id: "prep", label: "Prep for a call" },
+    { id: "answer", label: "Answer a hard question" },
+    { id: "objection", label: "Handle an objection" },
+    { id: "after", label: "After the call" },
+  ],
+  scenarios: {
+    prep: [prep0, prep1, prep2, prep3],
+    answer: [live0, live1, live2],
+    objection: [obj0, obj1, obj2],
+    after: [done0, done1, done2, done3],
+  } as Record<string, CallState[]>,
+  captions: {
+    prep: "One line before you hit record, and the copilot knows who you're talking to. Your documents are already in play.",
+    answer: "The other side asks. Two seconds later the answer is on screen, quoted from your own FAQ, with the file named on the card.",
+    objection: "Unanswered questions get pinned until you handle them. Promises are captured the moment you make them.",
+    after: "The report is written before you've hung up: summary, commitments, and coaching on the call itself.",
+  } as Record<string, string>,
+};
+
+export const ready = {
+  title: "Ready to try Parrot?",
+  lede: "Three steps, no account, nothing to configure.",
+  steps: [
+    { n: "1", title: "Download and pick a model", body: "One signed DMG. Choose a Whisper model on first launch; it downloads once and runs on your Mac from then on.", img: "/img/onboarding-model.png", width: 500, height: 600 },
+    { n: "2", title: "Allow two permissions", body: "System audio for the other side, microphone for yours. The welcome tour deep-links to the exact settings panes.", img: "/img/onboarding-permissions.png", width: 500, height: 600 },
+    { n: "3", title: "Hit record on your next call", body: "Google Meet, Zoom, Teams, anything. The copilot panel opens next to the live transcript.", img: "/img/dashboard.png", width: 1000, height: 620 },
   ],
 };
 

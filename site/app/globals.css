@@ -4,17 +4,20 @@
 
 /* Every colour on the page lives here. Components use the token names only. */
 :root {
-  --paper: #fbfaf6;
-  --ink: #17181a;
-  --ink-2: #5d6067;
-  --ink-3: #9a9ea6;
-  --line: #e7e4dc;
+  --paper: #ffffff;
+  --ink: #0a0a0a;
+  --ink-2: #6b6f76;
+  --ink-3: #9aa0a6;
+  --line: #e8e8e8;
   --card: #ffffff;
+  --band: #f5f5f7;
   --brand-teal: #1a8db5;
   --brand-green: #34a353;
   --brand-orange: #f08a24;
   --brand-coral: #e3503c;
   --tone: var(--brand-teal);
+  --on-frame: #ffffff;
+  --frame-ink: #0a0a0a;
   --radius: 0.75rem;
 
   --background: var(--paper);
@@ -24,11 +27,11 @@
   --popover-foreground: var(--ink);
   --primary: var(--ink);
   --primary-foreground: var(--paper);
-  --secondary: #f1efe8;
+  --secondary: #f2f2f4;
   --secondary-foreground: var(--ink);
-  --muted: #f1efe8;
+  --muted: #f2f2f4;
   --muted-foreground: var(--ink-2);
-  --accent: #f1efe8;
+  --accent: #f2f2f4;
   --accent-foreground: var(--ink);
   --destructive: var(--brand-coral);
   --border: var(--line);
@@ -38,12 +41,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121315;
-    --ink: #f1efe9;
-    --ink-2: #a5a8ae;
-    --ink-3: #6d7077;
-    --line: #27292e;
-    --card: #1a1b1f;
+    --paper: #0c0c0d;
+    --ink: #f5f5f5;
+    --ink-2: #a3a7ad;
+    --ink-3: #6d7177;
+    --line: #26272b;
+    --card: #141416;
+    --band: #111113;
     --brand-teal: #3fb0d6;
     --brand-green: #52c073;
     --brand-orange: #f6a04a;
@@ -61,6 +65,9 @@
   --color-ink-3: var(--ink-3);
   --color-line: var(--line);
   --color-card: var(--card);
+  --color-band: var(--band);
+  --color-on-frame: var(--on-frame);
+  --color-frame-ink: var(--frame-ink);
   --color-tone: var(--tone);
   --color-teal: var(--brand-teal);
   --color-green: var(--brand-green);
@@ -85,9 +92,9 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --font-display: var(--font-display);
+  --font-display: var(--font-sans);
   --font-sans: var(--font-sans);
-  --font-serif: var(--font-serif);
+  --font-serif: var(--font-sans);
   --font-mono: var(--font-mono);
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 
@@ -103,6 +110,42 @@
 .tone-green { --tone: var(--brand-green); }
 .tone-orange { --tone: var(--brand-orange); }
 .tone-coral { --tone: var(--brand-coral); }
+
+/* A section that flips to black: children keep using the same token names. */
+.band-dark {
+  --paper: #0b0b0c;
+  --ink: #ffffff;
+  --ink-2: #a8adb4;
+  --ink-3: #6f747b;
+  --line: rgba(255, 255, 255, 0.12);
+  --card: #151517;
+  --band: #151517;
+  --secondary: #1c1c1f;
+  --muted: #1c1c1f;
+  --accent: #1c1c1f;
+  --border: var(--line);
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --primary: #ffffff;
+  --primary-foreground: #0b0b0c;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* The gradient frame around product windows: the parrot's own colours. */
+.frame {
+  padding: 10px;
+  border-radius: 26px;
+  background: linear-gradient(118deg, var(--brand-teal) 0%, var(--brand-green) 38%, var(--brand-orange) 72%, var(--brand-coral) 100%);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.35);
+}
+.frame > * { border-radius: 18px; }
+.frame-sm { padding: 6px; border-radius: 18px; }
+.frame-sm > * { border-radius: 13px; }
+
+/* Progress ring on the active demo tab. */
+@keyframes ring { from { stroke-dashoffset: 44; } to { stroke-dashoffset: 0; } }
+.ring-run { animation: ring var(--ring-ms, 10000ms) linear forwards; }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
@@ -125,6 +168,7 @@
   .reveal { transition: none; }
   .reveal-pending { opacity: 1; transform: none; }
   .card-in, .bubble-in { animation: none; }
+  .ring-run { animation: none; stroke-dashoffset: 0; }
   html { scroll-behavior: auto; }
 }
 

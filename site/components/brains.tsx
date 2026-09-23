@@ -4,29 +4,29 @@ import { Section } from "./section";
 
 export function Brains() {
   return (
-    <Section id="brain" tone="orange" kicker={b.kicker} title={b.title} lede={b.lede}>
+    <Section id="brain" tone="orange" title={b.title} lede={b.lede} align="center">
       <div className="grid gap-4 sm:grid-cols-3">
         {b.options.map((o, i) => (
           <Reveal key={o.name} delay={i * 80}>
-            <div className="h-full rounded-xl border border-line bg-card p-5">
+            <div className="h-full rounded-2xl border border-line bg-card p-6">
               <p className="font-mono text-xs uppercase tracking-wider text-tone">{o.note}</p>
-              <h3 className="mt-2 font-display text-2xl font-bold">{o.name}</h3>
+              <h3 className="mt-2 text-2xl font-semibold tracking-tight">{o.name}</h3>
               <p className="mt-2 text-ink-2">{o.body}</p>
             </div>
           </Reveal>
         ))}
       </div>
-      <div className="mt-12 grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
-        <div className="space-y-6">
-          {b.controls.map((c) => (
-            <Reveal key={c.title}>
+      <div className="mt-16 grid items-start gap-12 lg:grid-cols-[1fr_1.2fr] lg:gap-20">
+        <div className="space-y-7">
+          {b.controls.map((c, i) => (
+            <Reveal key={c.title} delay={i * 60}>
               <h3 className="font-semibold">{c.title}</h3>
               <p className="mt-1 text-ink-2">{c.body}</p>
             </Reveal>
           ))}
         </div>
         <Reveal>
-          <div className="overflow-hidden rounded-xl border border-line bg-card">
+          <div className="overflow-hidden rounded-2xl border border-line bg-card">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line bg-secondary text-left font-mono text-xs uppercase tracking-wider text-ink-2">

@@ -7,7 +7,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 bg-paper/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
-        <a href="#top" className="flex items-center gap-2.5 font-display text-lg font-bold">
+        <a href="#top" className="flex items-center gap-2.5 text-lg font-semibold">
           <Image src="/icon.png" alt="" width={28} height={28} className="rounded-[7px]" priority />
           {site.name}
         </a>

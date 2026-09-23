@@ -122,3 +122,26 @@ Calibrate against `docs/help/*.html` and the README.
 
 Blog, changelog, pricing page, custom domain, analytics, moving the help site
 off GitHub Pages, a recorded demo video.
+
+## Addendum, 2026-09-23 afternoon: restyle toward a reference
+
+Uygar pointed at the WorkOS Atlas page as the look he wants. What changed:
+
+- **Look:** pure white, black text, one family (Inter with optical sizing),
+  black pill buttons, big centred headline. Dark mode still follows the system.
+- **Hero:** the rebuilt Parrot window sits inside a gradient frame made from
+  the icon's colours (teal, green, orange, coral). A pill tab strip on the
+  frame switches four scenarios: Prep for a call, Answer a hard question,
+  Handle an objection, After the call. Each plays itself in steps and the
+  tabs auto-advance every ten seconds with a progress ring, until someone
+  clicks. Reduced motion shows the final state and stops the auto-advance.
+  The app icon floats above the frame. Three icon columns and the trust
+  strip sit under it. This replaces the scroll-driven beats.
+- **Window phases:** `CallState.phase` is `prep` (pre-call brief and
+  documents in play), `live` (as before) or `done` (summary, commitments,
+  coaching).
+- **Sections:** alternating text and framed picture; the privacy ledger is a
+  black band; the letter sits on a light grey band; a new "Ready to try
+  Parrot?" section shows three real onboarding screenshots in small frames
+  with the download button under them; the footer is links only.
+- **Motion:** unchanged reveals, plus the demo's own step animations.
