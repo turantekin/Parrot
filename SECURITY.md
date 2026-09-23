@@ -14,4 +14,6 @@ Especially interested in:
 
 ## Supported versions
 
-Only the [latest release](https://github.com/turantekin/Parrot/releases) is supported. Updates ship as notarized DMGs, and the app checks GitHub once a day and tells you when one is available.
+Only the [latest release](https://github.com/turantekin/Parrot/releases) is supported. Updates ship as notarized DMGs, signed with the project's EdDSA key. Once a day Parrot checks its update feed on GitHub Pages; Sparkle verifies the signature, downloads the update in the background and installs it when you quit, never during a recording.
+
+To update by hand instead, turn off **Keep Parrot up to date** in Settings → General. The daily check stays on and still tells you when a new version is out. The check sends only the app's version, nothing about you or your calls.
