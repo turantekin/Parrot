@@ -98,6 +98,13 @@ targets:
         # prompt (Core Audio process tap). This replaces the Screen Recording
         # ask on modern macOS; without the key the tap is silently denied.
         NSAudioCaptureUsageDescription: "Parrot records your meeting's audio (what you hear) to transcribe it on-device. It never sees your screen."
+        # The in-app Help Book (docs/help, assembled by scripts/assemble-help.sh).
+        # Both keys must live HERE, not only in Info.plist: xcodegen regenerates
+        # the plist and silently dropped them once (7be0c1d), which broke
+        # Help → Parrot Help from 0.16.0 to 0.18.0. assemble-help.sh now fails
+        # the build if they are missing.
+        CFBundleHelpBookFolder: Parrot.help
+        CFBundleHelpBookName: com.uygar.parrot.help
         # Points Finder/Dock at the asset-catalog icon (asset compiler doesn't
         # inject this when the Info.plist is static).
         CFBundleIconName: AppIcon
