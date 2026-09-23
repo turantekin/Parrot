@@ -28,8 +28,9 @@ export function Hero() {
         </div>
 
         <Reveal delay={240} className="mt-14 sm:mt-20">
-          <div className="relative z-10 mx-auto -mb-8 w-[84px] sm:-mb-10 sm:w-[104px]">
-            <Image src="/icon.png" alt="" width={104} height={104} priority className="drop-shadow-[0_18px_30px_rgba(0,0,0,0.25)]" />
+          {/* Overlaps only the gradient band above the tabs, never the tab labels. */}
+          <div className="relative z-10 mx-auto -mb-4 w-[92px] sm:-mb-5 sm:w-[116px]">
+            <Image src="/icon.png" alt="" width={116} height={116} priority className="drop-shadow-[0_18px_30px_rgba(0,0,0,0.25)]" />
           </div>
           <Demo />
         </Reveal>

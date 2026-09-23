@@ -51,7 +51,7 @@ export function Demo() {
   return (
     <div>
       <div className="frame">
-        <div ref={listRef} role="tablist" aria-label="Scenarios" className="!rounded-none flex gap-1 overflow-x-auto px-1 pb-2.5 pt-0.5 [scrollbar-width:none] sm:flex-wrap sm:justify-center sm:gap-2 sm:overflow-visible">
+        <div ref={listRef} role="tablist" aria-label="Scenarios" className="!rounded-none flex gap-1 overflow-x-auto px-1 pb-2.5 pt-3.5 [scrollbar-width:none] sm:flex-wrap sm:justify-center sm:gap-2 sm:overflow-visible">
           {demo.tabs.map((t, i) => {
             const active = i === tab;
             return (
