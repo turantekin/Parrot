@@ -38,6 +38,7 @@ enum ProfileTest {
         testQuietMic()
         testCopilotBudget()
         testJevMatcher()
+        testBriefCard()
         testDocExcerpt()
         testReplayParser()
         testHybridRetrieval()
@@ -114,6 +115,20 @@ enum ProfileTest {
         // set would be empty making snapshot empty. We assert via documentNames proxy — a freshly
         // created UUID has no documents tagged into it.
         check("documentNames for untagged profile is empty", kb.documentNames(for: UUID()).isEmpty)
+    }
+
+    @MainActor
+    static func testBriefCard() {
+        check("brief line with profile and docs",
+              BriefSummary.line(profile: "Sales discovery", documentCount: 2) == "Sales discovery · 2 documents in play")
+        check("brief line singular", BriefSummary.line(profile: "Interview", documentCount: 1) == "Interview · 1 document in play")
+        check("brief line without profile", BriefSummary.line(profile: nil, documentCount: 0) == "No documents in play")
+        let kb = KnowledgeBaseService(persistent: false)
+        check("documentsInPlay without a profile lists every document", kb.documentsInPlay(for: nil).count == kb.documents.count)
+        check("documentsInPlay for an unknown profile is empty", kb.documentsInPlay(for: UUID()).isEmpty)
+        let engine = CallAnalysisEngine()
+        engine.updateBrief("  Renewal call with Northwind  ")
+        check("updateBrief trims", engine.callBrief == "Renewal call with Northwind")
     }
 
     @MainActor

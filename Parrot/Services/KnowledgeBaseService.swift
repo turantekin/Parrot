@@ -89,6 +89,13 @@ final class KnowledgeBaseService {
         save()
     }
 
+    // MARK: - Snapshot Harness Support
+
+    /// Fake documents for the offscreen renders. Never persisted.
+    func seedForSnapshot(documents docs: [KBDocument]) {
+        documents = docs
+    }
+
     // MARK: - Profile Scoping
 
     /// Tags every document in the KB into the given profile ID.
@@ -117,6 +124,13 @@ final class KnowledgeBaseService {
     /// Returns the names of documents tagged into the given profile ID.
     func documentNames(for profileID: UUID) -> [String] {
         documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)
+    }
+
+    /// The documents the copilot can quote on a call: those tagged into the
+    /// profile, or every document when there is no profile. Mirrors `search`.
+    func documentsInPlay(for profileID: UUID?) -> [String] {
+        guard let profileID else { return documents.map(\.name) }
+        return documentNames(for: profileID)
     }
 
     // MARK: - Retrieval

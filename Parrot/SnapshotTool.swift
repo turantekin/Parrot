@@ -257,7 +257,16 @@ enum HelpShots {
             ],
             sentiment: ["score": 72, "buying_temperature": 65],
             read: "engaged", coach: "Going well — answer the pricing question, then ask who signs off.",
-            meCharacters: 620, themCharacters: 780)
+            meCharacters: 620, themCharacters: 780,
+            brief: "Renewal call with Acme. Legal wants to know where the data is stored.")
+
+        // Two documents so the Knowledge page shows rows, notes, and profile tags.
+        rm.knowledgeBase.seedForSnapshot(documents: [
+            KBDocument(name: "security-faq.pdf", note: "Use for security and data questions",
+                       chunkCount: 14, addedAt: .now, profileIDs: Set([salesProfile?.id].compactMap { $0 })),
+            KBDocument(name: "pricing-2026.md", note: "Use for pricing questions",
+                       chunkCount: 9, addedAt: .now, profileIDs: Set([salesProfile?.id].compactMap { $0 })),
+        ])
 
         func settings(_ section: SettingsSection) -> some View {
             SettingsView(isEmbedded: false, initialSection: section)
@@ -274,11 +283,11 @@ enum HelpShots {
             else { print("help-shots: FAILED \(name)") }
         }
 
-        shot("settings-general.png", size: .init(width: 780, height: 540), settings(.general))
-        shot("settings-recording.png", size: .init(width: 780, height: 540), settings(.recording))
+        shot("settings-general.png", size: .init(width: 780, height: 620), settings(.general))
+        shot("settings-recording.png", size: .init(width: 780, height: 620), settings(.recording))
         shot("settings-transcription.png", size: .init(width: 780, height: 620), settings(.transcription))
-        shot("settings-copilot.png", size: .init(width: 780, height: 700), settings(.copilot))
-        shot("settings-knowledge.png", size: .init(width: 780, height: 540), settings(.knowledge))
+        shot("settings-copilot.png", size: .init(width: 780, height: 620), settings(.copilot))
+        shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
 
         shot("settings-profiles.png", size: .init(width: 860, height: 640),
              ProfilesSettingsView()
@@ -480,7 +489,8 @@ enum CopilotSnapshot {
             sentiment: ["buying_temperature": 62, "my_dominance": 55, "score": 68],
             read: "warming",
             coach: "Going well — stop listing features and ask who signs off on budget.",
-            meCharacters: 1300, themCharacters: 900
+            meCharacters: 1300, themCharacters: 900,
+            brief: "Renewal call with Northwind. Legal wants to know where the data is stored."
         )
 
         let panel = CopilotPanelView(transcriptJumpTarget: .constant(nil))
@@ -543,7 +553,16 @@ enum CopilotSnapshot {
         let bubblesURL = render(bubbles, dark: false,
                                 to: (path as NSString).deletingPathExtension + "-bubbles.png")
 
-        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path) + \(bubblesURL.path)\n".utf8))
+        // The "Briefed" card open: what the panel shows before the first insight lands.
+        rm.callAnalysisEngine.seedForSnapshot(
+            profile: profile, insights: [], sentiment: [:], read: nil, coach: nil,
+            meCharacters: 0, themCharacters: 0,
+            brief: "Renewal call with Northwind. Legal wants to know where the data is stored.")
+        let briefed = render(
+            CopilotPanelView(transcriptJumpTarget: .constant(nil)).environment(rm).frame(width: 420, height: 460),
+            dark: false, to: (path as NSString).deletingPathExtension + "-briefed.png")
+
+        FileHandle.standardError.write(Data("copilot-snapshot: wrote \(light.path) + \(dark.path) + \(rows.path) + \(legendURL.path) + \(bubblesURL.path) + \(briefed.path)\n".utf8))
         exit(0)
     }
 

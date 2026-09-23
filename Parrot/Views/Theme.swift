@@ -29,6 +29,10 @@ enum Theme {
         static let line = Color(nsColor: .separatorColor)
         /// Selected row tint (accent at low opacity, like a source list).
         static let selection = Color.accentColor.opacity(0.16)
+        /// Draws the eye to one card that must not be missed (the brief box):
+        /// a soft accent fill with an accent hairline.
+        static let spotlight = Color.accentColor.opacity(0.16)
+        static let spotlightLine = Color.accentColor.opacity(0.55)
 
         /// Primary text.
         static let ink = Color(nsColor: .labelColor)
@@ -101,6 +105,9 @@ enum Theme {
         /// The one corner radius. Capsule is allowed only for true pills.
         static let radius: CGFloat = 6
         static let chipRadius: CGFloat = 6
+        /// Settings cards (SettingsCards.swift): the white rounded boxes the
+        /// landing page's rebuilt windows use. Rows inside keep `radius`.
+        static let cardRadius: CGFloat = 10
         /// Report/insights column cap — wide enough to use the screen while
         /// keeping prose lines readable.
         static let contentMaxWidth: CGFloat = 1100
