@@ -1,4 +1,5 @@
 import { ledger, site } from "@/content";
+import { ExtLink } from "./ext-link";
 import { Reveal } from "./reveal";
 import { Section } from "./section";
 
@@ -19,7 +20,7 @@ export function Ledger() {
         <Reveal>
           <div className="space-y-4 text-lg">
             {ledger.closers.map((c) => <p key={c}>{c}</p>)}
-            <a href={site.security} className="inline-block font-semibold text-tone underline-offset-4 hover:underline">{ledger.securityLink}</a>
+            <ExtLink href={site.security} utm="privacy-security-policy" className="inline-block font-semibold text-tone underline-offset-4 hover:underline">{ledger.securityLink}</ExtLink>
           </div>
         </Reveal>
         <Reveal delay={80}>

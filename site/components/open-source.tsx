@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { openSource as o } from "@/content";
+import { ExtLink } from "./ext-link";
 import { Reveal } from "./reveal";
 import { Section } from "./section";
 
@@ -15,8 +16,8 @@ export function OpenSource() {
             ))}
           </ul>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button render={<a href={o.cta.href} />} nativeButton={false} className="rounded-full">{o.cta.label}</Button>
-            <Button render={<a href={o.contributing.href} />} nativeButton={false} variant="outline" className="rounded-full">{o.contributing.label}</Button>
+            <Button render={<ExtLink href={o.cta.href} utm="open-source-github" />} nativeButton={false} className="rounded-full">{o.cta.label}</Button>
+            <Button render={<ExtLink href={o.contributing.href} utm="open-source-contributing" />} nativeButton={false} variant="outline" className="rounded-full">{o.contributing.label}</Button>
           </div>
         </Reveal>
         <Reveal delay={80}>

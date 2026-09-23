@@ -23,7 +23,7 @@ export function Ready() {
         ))}
       </ol>
       <Reveal delay={300} className="mt-16">
-        <DownloadButton center />
+        <DownloadButton center utm="ready-download" />
       </Reveal>
     </Section>
   );

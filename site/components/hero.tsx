@@ -23,7 +23,7 @@ export function Hero() {
             <p className="mx-auto mt-6 max-w-xl text-lg text-ink-2 sm:text-xl">{hero.sub}</p>
           </Reveal>
           <Reveal delay={160} className="mt-8">
-            <DownloadButton center />
+            <DownloadButton center utm="hero-download" />
           </Reveal>
         </div>
 

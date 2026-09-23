@@ -1,4 +1,5 @@
 import { letter } from "@/content";
+import { ExtLink } from "./ext-link";
 import { Reveal } from "./reveal";
 
 export function Letter() {
@@ -15,7 +16,7 @@ export function Letter() {
           <p className="mt-8 border-t border-line pt-6 text-base text-ink-2">{letter.ps}</p>
           <ul className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-base">
             {letter.links.map((l) => (
-              <li key={l.label}><a href={l.href} className="font-medium text-tone underline-offset-4 hover:underline">{l.label}</a></li>
+              <li key={l.label}><ExtLink href={l.href} utm={`letter-${l.label.toLowerCase().replace(/\s+/g, "-")}`} className="font-medium text-tone underline-offset-4 hover:underline">{l.label}</ExtLink></li>
             ))}
           </ul>
         </Reveal>

@@ -17,6 +17,8 @@ export const site = {
   email: "uygar@turantekin.co.uk",
   coffee: "https://buymeacoffee.com/turantekin",
   requirements: "macOS 14 or later on Apple Silicon",
+  // Added to every outbound http(s) link. utm_content names the link's spot on the page.
+  utm: { source: "parrot-landing", medium: "website", campaign: "landing-page" },
 };
 
 export const nav = {

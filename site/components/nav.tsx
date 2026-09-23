@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { nav, site } from "@/content";
 import { DownloadButton } from "./download-button";
+import { ExtLink } from "./ext-link";
 import { StarCount } from "./star-count";
 
 export function Nav() {
@@ -12,12 +13,12 @@ export function Nav() {
           {site.name}
         </a>
         <nav className="flex items-center gap-5 text-sm">
-          <a href={site.help} className="hidden hover:text-tone sm:inline">{nav.help}</a>
-          <a href={site.repo} className="flex items-center hover:text-tone">
+          <ExtLink href={site.help} utm="nav-help" className="hidden hover:text-tone sm:inline">{nav.help}</ExtLink>
+          <ExtLink href={site.repo} utm="nav-github" className="flex items-center hover:text-tone">
             {nav.github}
             <span className="hidden sm:inline"><StarCount /></span>
-          </a>
-          <DownloadButton size="sm" />
+          </ExtLink>
+          <DownloadButton size="sm" utm="nav-download" />
         </nav>
       </div>
     </header>
