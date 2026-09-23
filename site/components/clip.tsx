@@ -10,13 +10,14 @@ import { useReducedMotion } from "@/lib/use-reduced-motion";
  * final state on screen). Reduced motion shows the last frame, no play.
  */
 export function Clip({
-  steps, seconds, caption, forceEnd = false, children,
+  steps, seconds, caption, forceEnd = false, onReplay, children,
 }: {
-  steps: number; seconds: number; caption?: (step: number) => string; forceEnd?: boolean; children: (step: number) => ReactNode;
+  steps: number; seconds: number; caption?: (step: number) => string; forceEnd?: boolean; onReplay?: () => void;
+  children: (step: number) => ReactNode;
 }) {
   const [step, setStep] = useState(0);
   const [started, setStarted] = useState(false);
-  const [run, setRun] = useState(0);
+  const [run, setRun] = useState(0); // bumps to replay; the play effect keys on it
   const ref = useRef<HTMLDivElement>(null);
   const still = useReducedMotion();
 
@@ -62,7 +63,7 @@ export function Clip({
           {ended && !still && (
             <button
               type="button"
-              onClick={() => { setStep(0); setRun((r) => r + 1); }}
+              onClick={() => { onReplay?.(); setStep(0); setRun((r) => r + 1); }}
               className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-ink-2 hover:bg-secondary hover:text-ink focus-visible:outline-2 focus-visible:outline-tone"
             >
               <RotateCcw className="size-3" />

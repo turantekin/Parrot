@@ -14,7 +14,7 @@ export function Knowledge() {
     <Section id="knowledge" tone="green" kicker={k.kicker} title={k.title} lede={k.lede}>
       <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
         <Reveal>
-          <Clip steps={4} seconds={10} caption={(s) => k.clip.captions[s]} forceEnd={touched}>
+          <Clip steps={4} seconds={10} caption={(s) => k.clip.captions[s]} forceEnd={touched} onReplay={() => setTouched(false)}>
             {(step) => <KnowledgeWindow step={step} grounded={on} />}
           </Clip>
           <label className="mt-5 flex cursor-pointer items-center justify-between rounded-xl border border-line bg-card px-4 py-3 text-sm">
