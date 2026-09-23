@@ -167,7 +167,7 @@ struct DashboardView: View {
             }
 
             TextField(
-                "Who's on the call and what it's about, e.g. \"Renewal call with Northwind. Legal wants to know where the data is stored.\"",
+                "Who's on the call and what it's about, e.g. \"Discovery call with Launchese to start my new company in the UK\"",
                 text: $recordingManager.nextCallBrief,
                 axis: .vertical
             )
@@ -184,8 +184,8 @@ struct DashboardView: View {
         }
         .padding(14)
         .frame(maxWidth: 520)
-        .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+        .background(Theme.Colors.spotlight, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.spotlightLine))
         .padding(.top, 8)
     }
 
