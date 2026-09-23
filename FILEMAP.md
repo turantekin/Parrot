@@ -83,3 +83,4 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `docs/IMPROVEMENT-ROADMAP.md` | Roadmap + build notes (incl. the Xcode race) |
 | `docs/PERFORMANCE.md` | Performance findings |
 | `docs/superpowers/` | Design specs and plans |
+| `site/` | Marketing landing page: Next.js on Vercel; copy in `content.ts`, theme in `app/globals.css`, release data in `lib/github.ts` |

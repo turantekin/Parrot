@@ -88,7 +88,7 @@ const pinnedDone: Card = { ...pinnedOpen, resolved: true };
 const actionCard: Card = { kind: "action", at: "01:36", title: "Send the security summary and DPA after the call", who: "Me" };
 
 export const call = {
-  kicker: "01 · The call",
+  kicker: "The call",
   title: "Watch one call.",
   lede: "This is the Parrot window, rebuilt for the page with the demo call from the README. Scroll and it plays.",
   states: [
@@ -115,18 +115,22 @@ export const call = {
   ] satisfies CallState[],
   beats: [
     {
+      at: "00:41",
       title: "A question came in. The answer came with it.",
       body: "The other side asked where the data lives. Two seconds later the answer is on screen, quoted from your own FAQ, with the file named on the card. Read it out or copy it.",
     },
     {
+      at: "01:10",
       title: "Open questions get pinned.",
       body: "They asked about pricing and you haven't answered yet. The card stays on screen until you do, then ticks itself off. Nothing slips.",
     },
     {
+      at: "01:36",
       title: "You promised something. Parrot wrote it down.",
       body: "The action item is captured the moment you say it, with the timestamp. After the call it's waiting in the report.",
     },
     {
+      at: "01:41",
       title: "A score and a nudge, while it still matters.",
       body: "The call score and the one-line coach update the whole way through. Not a report you read tomorrow. A hint you can act on now.",
     },
@@ -134,7 +138,7 @@ export const call = {
 };
 
 export const knowledge = {
-  kicker: "02 · Knowledge base",
+  kicker: "Knowledge base",
   title: "Brief it like a new teammate.",
   lede: "Drop in your pricing sheet, your FAQ, your playbook. Parrot reads them on your Mac and answers from them on the call.",
   toggleLabel: "Answer from my documents",
@@ -172,7 +176,7 @@ export const knowledge = {
 };
 
 export const brains = {
-  kicker: "03 · The brain",
+  kicker: "The brain",
   title: "You pick the brain.",
   lede: "The copilot needs a language model. Parrot doesn't care which one, and it never sends audio to any of them.",
   options: [
@@ -214,7 +218,7 @@ export const brains = {
 };
 
 export const after = {
-  kicker: "04 · After the call",
+  kicker: "After the call",
   title: "The report is written before you've hung up.",
   lede: "Summary, pain points, commitments. Then a coaching report on the call itself.",
   points: [
@@ -244,7 +248,7 @@ export const after = {
 };
 
 export const ledger = {
-  kicker: "05 · Privacy",
+  kicker: "Privacy",
   title: "What leaves your Mac.",
   lede: "The honest list. It is short.",
   rows: [
@@ -266,7 +270,7 @@ export const ledger = {
 };
 
 export const letter = {
-  kicker: "06 · Why this exists",
+  kicker: "From Uygar",
   greeting: "Hi, I'm Uygar.",
   paragraphs: [
     "Parrot is a fun project of mine that got a little out of hand, in the best way.",
@@ -285,7 +289,7 @@ export const letter = {
 };
 
 export const openSource = {
-  kicker: "07 · Open source",
+  kicker: "Open source",
   title: "Read it. Fix it. Make it yours.",
   lede: "Native Swift, one repo, GPL-3.0. The whole app fits in an afternoon of reading, and FILEMAP.md tells you where everything is.",
   helpTitle: "Where I could use a hand",

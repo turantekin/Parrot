@@ -111,18 +111,24 @@
   ::selection { background: color-mix(in oklab, var(--tone) 25%, transparent); }
 }
 
-/* Scroll reveals only when JS is present; without it everything is visible. */
-.js .reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.6s ease, transform 0.6s ease; }
-.js .reveal.is-visible { opacity: 1; transform: none; }
+/* Scroll reveals. The Reveal component adds `reveal-pending` only below the fold, once JS runs. */
+.reveal { transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal-pending { opacity: 0; transform: translateY(14px); }
 
 @keyframes pop {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
-.js .card-in, .js .bubble-in { animation: pop 0.45s ease both; }
+.card-in, .bubble-in { animation: pop 0.45s ease both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .js .reveal { opacity: 1; transform: none; transition: none; }
-  .js .card-in, .js .bubble-in { animation: none; }
+  .reveal { transition: none; }
+  .reveal-pending { opacity: 1; transform: none; }
+  .card-in, .bubble-in { animation: none; }
   html { scroll-behavior: auto; }
 }
+
+/* The recording dot breathes, like the real one. */
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.rec-dot { animation: breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
