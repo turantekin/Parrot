@@ -176,3 +176,8 @@
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .rec-dot { animation: breathe 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+
+/* The embedding progress bar in the Knowledge clip. */
+@keyframes grow { from { width: 4%; } to { width: 100%; } }
+.grow-bar { animation: grow 2.2s ease-in-out forwards; }
+@media (prefers-reduced-motion: reduce) { .grow-bar { animation: none; width: 100%; } }

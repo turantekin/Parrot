@@ -158,6 +158,19 @@ export const knowledge = {
   title: "Brief it like a new teammate.",
   lede: "Drop in your pricing sheet, your FAQ, your playbook. Parrot reads them on your Mac and answers from them on the call.",
   toggleLabel: "Answer from my documents",
+  clip: {
+    blurb: "The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded.",
+    doc: { name: "security-faq.pdf", note: "Use for security and data questions", size: "312 KB", chunks: "14 chunks · on-device" },
+    embedding: "Embedding on this Mac",
+    tags: ["Sales discovery", "Customer support"],
+    strip: { kicker: "On the next call", empty: "The copilot will quote it here." },
+    captions: [
+      "Drop in a PDF, a text file, or markdown.",
+      "It's chunked and embedded on your Mac. Nothing is uploaded.",
+      "Tag it into the profiles that should use it.",
+      "On the call, the copilot quotes it and names the file.",
+    ],
+  },
   question: { at: "12:31", text: "Is single sign-on included, or is that an add-on?" },
   general: {
     title: "Answer the SSO question",

@@ -1,21 +1,15 @@
 "use client";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { demo } from "@/content";
+import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { CallWindow } from "./call-window";
-
-const REDUCED = "(prefers-reduced-motion: reduce)";
-const subscribeReduced = (cb: () => void) => {
-  const mq = window.matchMedia(REDUCED);
-  mq.addEventListener("change", cb);
-  return () => mq.removeEventListener("change", cb);
-};
 
 /** Four scenarios in one window. Each plays itself; the tabs auto-advance until someone clicks. */
 export function Demo() {
   const [tab, setTab] = useState(0);
   const [step, setStep] = useState(0);
   const [auto, setAuto] = useState(true);
-  const still = useSyncExternalStore(subscribeReduced, () => window.matchMedia(REDUCED).matches, () => false);
+  const still = useReducedMotion();
   const id = demo.tabs[tab].id;
   const steps = demo.scenarios[id];
   const ms = demo.seconds * 1000;
