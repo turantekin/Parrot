@@ -43,9 +43,11 @@ that is one you make yourself, and here is the complete list.</p>
   <li><strong>Cloud transcription (Groq or Deepgram):</strong> the call audio
   is sent to them for speech-to-text as it happens. This is the one opt-in
   that sends sound. On-device stays the default.</li>
-  <li><strong>Update check:</strong> once a day Parrot asks GitHub whether a
-  newer release exists. It sends nothing about you; it just reads the public
-  releases list.</li>
+  <li><strong>Update check:</strong> once a day Parrot reads its update feed
+  on GitHub Pages. The request carries the app's version and nothing about
+  you or your calls. Updates are signed, download in the background and
+  install when you quit, never during a recording. Turn off <strong>Keep
+  Parrot up to date</strong> in Settings &rarr; General to install by hand.</li>
 </ul>
 
 <h2>And Ollama?</h2>

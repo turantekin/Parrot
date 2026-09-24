@@ -43,11 +43,11 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/KnowledgeBaseService.swift` | 532 | Ingests/chunks KB docs (heading-aware), on-device multilingual embeddings (re-embeds stale vectors), hybrid BM25 + embedding retrieval |
 | `Services/ProfileStore.swift` | 111 | Persists and mutates `CallProfile`s |
 | `Services/ProfilePresets.swift` | 170 | Built-in starter profiles (seven, incl. the buyer-side "Vendor call") |
-| `Services/ExportService.swift` | 127 | Transcript/report export (Markdown, text) |
+| `Services/ExportService.swift` | 127 | Transcript export: TXT (with notes, report, insights) and SRT subtitles |
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
-| `Services/UpdateChecker.swift` | 103 | Daily GitHub release poll, feeds the update banner |
+| `Services/AppUpdater.swift` | 56 | Sparkle updater: daily signed appcast check, installs on quit |
 | `Services/BugReport.swift` | 120 | Pre-filled GitHub issue: diagnostics, own-window screenshot, URL builder |
-| `Services/SpeakerProfileStore.swift` | 66 | Voiceprint matching (cosine ≥ 0.7), remember/forget for named voices |
+| `Services/SpeakerProfileStore.swift` | 69 | Voiceprint matching (cosine ≥ 0.65), remember/forget for named voices |
 
 ## Views
 
@@ -58,7 +58,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
 | `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
-| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |\n| `Views/SettingsCards.swift` | 187 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
+| `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
+| `Views/SettingsCards.swift` | 187 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
 | `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
@@ -66,6 +67,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/SettingsView.swift` | 970 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 720 | Call-profile editor: kinds, gauges, icon picker |
 | `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
+| `Views/ModelDownloadProgressView.swift` | 34 | Whisper model download progress bar |
 | `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 253 | `AppSession`, menu commands, context menus, notifications |

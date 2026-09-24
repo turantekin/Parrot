@@ -16,9 +16,15 @@ WhisperKit's transitive deps; `swift build` is the reliable path.
 ```
 make          # build + assemble dist/Parrot.app
 make run      # build, assemble, launch
-make test     # headless logic harness (~60 checks) via --profile-test
+make test     # headless logic harness (300+ checks) via --profile-test
 make clean
 ```
+
+Dependency versions are pinned in the committed `Package.resolved` (and its
+copy under `Parrot.xcodeproj/.../swiftpm/`). Bump them on purpose only:
+`swift package update`, then `make test` and launch the app, then copy the
+root file over the Xcode one. Unpinned resolution once pulled a swift-collections
+that dyld rejects at launch (`_swift_initBorrow` missing on macOS 26).
 
 `Parrot.xcodeproj` is generated from `project.yml` — edit the yml and run
 `make xcode`, never hand-edit the pbxproj. Info.plist keys are substituted at

@@ -386,6 +386,12 @@ enum ProfileTest {
         invoice.transcriptionSeconds = 110
         invoice.transcriptionTracks = 2
         check("deepgram matches real bill ±10%", abs(invoice.totalUSD - 0.01788) < 0.0018)
+        // Auto-detect streams as "multi": same call at the $0.35/hr multilingual rate.
+        invoice.transcriptionMultilingual = true
+        check("deepgram auto-detect bills multilingual $0.35/hr", abs(invoice.totalUSD - 220.0 / 3600 * 0.35) < 0.0001)
+        // Snapshots saved before the flag existed decode as the one-language rate.
+        let legacy = try? JSONDecoder().decode(AIUsage.self, from: Data(#"{"copilotModel":"","copilot":{"inputTokens":0,"outputTokens":0,"calls":0},"transcriptionBackend":"deepgram","transcriptionSeconds":110,"transcriptionTracks":2,"polishSeconds":0}"#.utf8))
+        check("old deepgram snapshot keeps $0.29/hr", legacy.map { abs($0.totalUSD - 220.0 / 3600 * 0.29) < 0.0001 } ?? false)
         check("polish cost ~$0.0133", abs(items[2].usd - 1200.0 / 3600 * 0.04) < 0.0001)
         check("total sums line items", abs(usage.totalUSD - items.reduce(0) { $0 + $1.usd }) < 0.0001)
 

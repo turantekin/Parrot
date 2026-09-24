@@ -45,8 +45,10 @@ notarize() { # notarize <file>
   fi
 }
 
-echo "==> swift build -c release"
-swift build -c release
+echo "==> swift build -c release (pinned: Package.resolved)"
+# Fail instead of re-resolving if Package.resolved is stale: a floating
+# swift-collections 1.7 build dyld-crashes at launch on macOS 26.6.
+swift build -c release --force-resolved-versions
 
 echo "==> assembling $APP"
 rm -rf "$DIST"
