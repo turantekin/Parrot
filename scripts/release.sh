@@ -47,6 +47,11 @@ notarize() { # notarize <file>
 
 echo "==> swift build -c release"
 swift build -c release
+# Ship only the committed pins. If SwiftPM re-resolved (Package.swift changed
+# without a matching Package.resolved), stop: floating deps once produced a
+# binary that aborts at launch (swift-collections 1.7.0, _swift_initBorrow).
+git diff --quiet -- Package.resolved || {
+  echo "!! Package.resolved differs from the commit. Commit a tested bump first." >&2; exit 1; }
 
 echo "==> assembling $APP"
 rm -rf "$DIST"
