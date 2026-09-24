@@ -29,6 +29,10 @@ struct CalendarEventInfo: Equatable {
     /// The event carries a video link (Zoom/Meet/Teams URL) — a call, not a
     /// focus block or a lunch.
     var hasCallLink: Bool = false
+
+    /// One occurrence of an event: every occurrence of a recurring event
+    /// shares `id`, so a daily standup needs its start time too.
+    var reminderKey: String { "\(id)@\(Int(start.timeIntervalSince1970))" }
 }
 
 /// Reads the Mac's own calendars through EventKit — whatever the Calendar
@@ -146,7 +150,8 @@ final class CalendarService {
     nonisolated static func dueReminders(_ events: [CalendarEventInfo], now: Date, window: TimeInterval = 60,
                              alreadyReminded: Set<String>) -> [CalendarEventInfo] {
         events.filter {
-            !$0.isAllDay && !$0.declined && !alreadyReminded.contains($0.id)
+            !$0.isAllDay && !$0.declined
+                && !alreadyReminded.contains($0.reminderKey)
                 && $0.start > now && $0.start.timeIntervalSince(now) <= window
                 && ($0.hasCallLink || !$0.attendees.isEmpty)
         }
@@ -172,8 +177,16 @@ final class CalendarService {
     nonisolated static func cleanNotes(_ notes: String, limit: Int = 400) -> String {
         // Some calendars store notes as HTML.
         let plain = notes
-            .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
+            // Block-level HTML ends a line; everything else is just a tag.
+            .replacingOccurrences(of: "(?i)<br\\s*/?>|</p>|</div>|</li>|<li[^>]*>|</h[1-6]>|</tr>",
+                                  with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "‹")
+            .replacingOccurrences(of: "&gt;", with: "›")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
         let boilerplate = ["http://", "https://", "meeting id", "passcode", "password", "dial", "join ",
                            "join:", "one tap", "tel:", "pin:", "meeting number", "access code",
                            "find your local number", "microsoft teams", "zoom meeting", "google meet",
@@ -233,16 +246,25 @@ final class CalendarService {
     /// The profile an event title points at, or nil when nothing matches
     /// or more than one profile does (ambiguous → keep the user's choice).
     nonisolated static func matchProfile(title: String, profiles: [(id: UUID, name: String)]) -> UUID? {
-        let t = " " + title.lowercased() + " "
+        let t = title.lowercased()
         var hits = Set<UUID>()
         for profile in profiles {
             let name = profile.name.lowercased()
             // A profile named in the title ("Sales discovery w/ Acme").
-            if name.count >= 4, t.contains(name) { hits.insert(profile.id); continue }
-            for hint in profileHints where hint.keywords.contains(where: { t.contains($0) }) {
-                if hint.profileWords.contains(where: { name.contains($0) }) { hits.insert(profile.id) }
+            if name.count >= 4, containsWord(name, in: t) { hits.insert(profile.id); continue }
+            for hint in profileHints where hint.keywords.contains(where: { containsWord($0, in: t) }) {
+                if hint.profileWords.contains(where: { containsWord($0, in: name) }) { hits.insert(profile.id) }
             }
         }
         return hits.count == 1 ? hits.first : nil
+    }
+
+    /// `phrase` in `text` as whole words: "1:1" is not inside "11:15", nor
+    /// "demo" inside "democratic".
+    nonisolated static func containsWord(_ phrase: String, in text: String) -> Bool {
+        // A plural still counts ("Interviews", "demos").
+        let pattern = "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: phrase)
+            + "(?:s|es)?(?![\\p{L}\\p{N}])"
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 }

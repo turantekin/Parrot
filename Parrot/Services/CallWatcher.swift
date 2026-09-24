@@ -79,11 +79,11 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Self.startCategory, actions: [
                 UNNotificationAction(identifier: Self.recordAction, title: "Record", options: []),
                 UNNotificationAction(identifier: Self.ignoreAppAction, title: "Never for This App", options: []),
-            ], intentIdentifiers: [], options: []),
+            ], intentIdentifiers: [], options: [.customDismissAction]),
             UNNotificationCategory(identifier: Self.stopCategory, actions: [
                 UNNotificationAction(identifier: Self.stopAction, title: "Stop Recording", options: []),
                 UNNotificationAction(identifier: Self.keepAction, title: "Keep Recording", options: []),
-            ], intentIdentifiers: [], options: []),
+            ], intentIdentifiers: [], options: [.customDismissAction]),
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [
                 UNNotificationAction(identifier: Self.recordAction, title: "Record Now", options: []),
             ], intentIdentifiers: [], options: []),
@@ -117,9 +117,8 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         if !isRecording, prompt?.kind == .stop { clearPrompt() }
         if isRecording, prompt?.kind == .start { clearPrompt() }
 
-        if mode != .off {
-            let apps = CallDetector.relevantApps(MicActivity.snapshot(isRecording: isRecording),
-                                                 ignored: Self.ignoredApps)
+        if mode != .off, let reading = MicActivity.snapshot(isRecording: isRecording) {
+            let apps = CallDetector.relevantApps(reading, ignored: Self.ignoredApps)
             // The call app let go of the mic before anyone answered: the
             // start offer is stale.
             if apps.isEmpty, prompt?.kind == .start { clearPrompt() }
@@ -139,8 +138,12 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         switch event {
         case .callStarted(let appID):
             // Can't record yet (model still loading, an import running) —
-            // an offer we can't honor is worse than none.
-            guard manager.transcriptionEngine.isReady, !manager.isBusy else { return }
+            // an offer we can't honor is worse than none. Re-arm, so the
+            // offer comes once it can be honored, if the call is still on.
+            guard manager.transcriptionEngine.isReady, !manager.isBusy else {
+                detector.rearm()
+                return
+            }
             let name = CallDetector.displayName(for: appID)
             let eventTitle = manager.calendar.isConnected ? manager.calendar.currentEvent()?.title : nil
             if mode == .auto {
@@ -222,7 +225,7 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
             manager.calendar.events(from: now, to: now.addingTimeInterval(120)),
             now: now, alreadyReminded: remindedEventIDs)
         for event in due {
-            remindedEventIDs.insert(event.id)
+            remindedEventIDs.insert(event.reminderKey)
             let title = event.title.isEmpty ? "Your meeting" : event.title
             post(id: "parrot-meeting-\(event.id.hashValue)", title: "\(title) starts in a minute",
                  body: AutoRecordMode.current == .off
@@ -292,7 +295,10 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
                 Task { await manager.stopRecording() }
             }
         case Self.keepAction, UNNotificationDismissActionIdentifier:
-            if prompt?.kind == .stop || action == Self.keepAction { clearPrompt() }
+            // Swiping the notification away answers it: "not now" for a
+            // start offer, "keep recording" for a stop offer. Only the
+            // prompt's own notification category counts.
+            if category == Self.startCategory || category == Self.stopCategory { clearPrompt() }
         case UNNotificationDefaultActionIdentifier:
             // Clicking the notification itself: bring Parrot forward, where
             // the banner holds the same question.

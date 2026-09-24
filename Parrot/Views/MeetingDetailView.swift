@@ -360,10 +360,16 @@ struct MeetingDetailView: View {
         ScrollView {
             Group {
                 if meeting.summary == nil && meeting.coaching == nil {
-                    if meeting.status == .processing {
-                        reportGeneratingRow("Writing your report…")
-                    } else {
-                        emptyTabState("No report was generated for this meeting.")
+                    VStack(alignment: .leading, spacing: 16) {
+                        if meeting.status == .processing {
+                            reportGeneratingRow("Writing your report…")
+                        } else {
+                            emptyTabState("No report was generated for this meeting.")
+                        }
+                        // Marks don't need a report to be useful.
+                        if !meeting.bookmarks.isEmpty {
+                            bookmarksCard
+                        }
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 16) {
@@ -374,6 +380,9 @@ struct MeetingDetailView: View {
                             receipts: receiptIndex,
                             receiptActions: receiptActions
                         )
+                        // Playback redraws this view ten times a second; the
+                        // report only needs to when its text or lines change.
+                        .equatable()
                         if !meeting.bookmarks.isEmpty {
                             bookmarksCard
                         }
@@ -420,8 +429,17 @@ struct MeetingDetailView: View {
 
     // MARK: - Receipts + bookmarks
 
-    private var receiptIndexKey: String {
-        "\(meeting.segments.count)|\(meeting.speakerNamesData?.hashValue ?? 0)|\(meeting.themName ?? "")"
+    /// Changes whenever a receipt's quote could: lines landing, a voice
+    /// named, or a single line moved to another speaker.
+    private var receiptIndexKey: Int {
+        var hasher = Hasher()
+        hasher.combine(meeting.speakerNamesData)
+        hasher.combine(meeting.themName)
+        for segment in meeting.segments {
+            hasher.combine(segment.id)
+            hasher.combine(segment.speakerLabel)
+        }
+        return hasher.finalize()
     }
 
     private var receiptActions: ReceiptActions {

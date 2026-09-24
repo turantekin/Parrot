@@ -64,11 +64,15 @@ enum MicActivity {
         return uint32(deviceID, kAudioDevicePropertyDeviceIsRunningSomewhere) == 1
     }
 
-    /// Other apps using the mic, as best this macOS can tell.
-    static func snapshot(isRecording: Bool) -> [String] {
+    /// Other apps using the mic, as best this macOS can tell. Nil when it
+    /// can't tell at all: before 14.2 only the device's "in use" flag exists,
+    /// and while Parrot records that flag is Parrot's own. Callers skip the
+    /// detector for a nil reading instead of treating it as "mic released"
+    /// (which would re-offer a call the moment a mid-call recording stops).
+    static func snapshot(isRecording: Bool) -> [String]? {
         if let apps = inputProcesses() { return apps }
-        // Can't tell who holds the mic, and while we record it's us.
-        return (!isRecording && defaultInputInUse()) ? [CallDetector.unknownApp] : []
+        if isRecording { return nil }
+        return defaultInputInUse() ? [CallDetector.unknownApp] : []
     }
 
     // MARK: Core Audio property readers
@@ -213,6 +217,12 @@ struct CallDetector {
                 .replacingOccurrences(of: ".app", with: "")
         }
         return appID.split(separator: ".").last.map(String.init) ?? appID
+    }
+
+    /// The app declined the offer for now (model still loading, an import
+    /// running): offer again on the next reading if the call is still on.
+    mutating func rearm() {
+        announced = false
     }
 
     /// Feeds one reading. `apps` must already be filtered by `relevantApps`.

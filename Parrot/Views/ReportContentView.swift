@@ -32,6 +32,17 @@ struct ReportContentView: View {
     }
 }
 
+/// Compared without the actions: they're the same two operations on the
+/// same meeting every render, and comparing the rest lets `.equatable()`
+/// skip re-parsing the report on every playback tick.
+extension ReportContentView: Equatable {
+    nonisolated static func == (lhs: ReportContentView, rhs: ReportContentView) -> Bool {
+        lhs.summary == rhs.summary && lhs.coaching == rhs.coaching
+            && lhs.talkPercentMe == rhs.talkPercentMe && lhs.receipts == rhs.receipts
+            && (lhs.receiptActions?.play == nil) == (rhs.receiptActions?.play == nil)
+    }
+}
+
 /// What the report can do with a receipt: play the moment, or show the line.
 struct ReceiptActions {
     /// Nil when the meeting has no audio to play.

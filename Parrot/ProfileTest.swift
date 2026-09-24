@@ -1493,6 +1493,15 @@ enum ProfileTest {
               inPerson.update(now: t0, apps: [], isRecording: true) == nil
               && inPerson.update(now: t0 + 600, apps: [], isRecording: true) == nil)
 
+        // Declined for now (model loading): offered again while the call is on.
+        var busy = CallDetector()
+        _ = busy.update(now: t0, apps: ["us.zoom.xos"], isRecording: false)
+        check("first offer", busy.update(now: t0 + 5, apps: ["us.zoom.xos"], isRecording: false) == .callStarted(app: "us.zoom.xos"))
+        busy.rearm()
+        check("re-armed offer comes on the next reading",
+              busy.update(now: t0 + 7, apps: ["us.zoom.xos"], isRecording: false) == .callStarted(app: "us.zoom.xos"))
+        check("taken offer is not repeated", busy.update(now: t0 + 9, apps: ["us.zoom.xos"], isRecording: false) == nil)
+
         // User stopped recording mid-call: no fresh start prompt for the same call.
         var mid = CallDetector()
         _ = mid.update(now: t0, apps: ["us.zoom.xos"], isRecording: true)
@@ -1566,6 +1575,12 @@ enum ProfileTest {
         check("reminder not repeated", C.dueReminders([soon], now: now, alreadyReminded: ["soon"]).isEmpty)
         check("no reminder for solo blocks",
               C.dueReminders([event("x", "Gym", start: 30, minutes: 60)], now: now, alreadyReminded: []).isEmpty)
+        let monday = event("daily", "Standup", start: 45, minutes: 15, people: 4)
+        var tuesday = monday
+        tuesday.start += 86_400; tuesday.end += 86_400
+        let tomorrow = now + 86_400
+        check("recurring: each occurrence reminded",
+              C.dueReminders([tuesday], now: tomorrow, alreadyReminded: [monday.reminderKey]).count == 1)
         check("no reminder once started",
               C.dueReminders([event("y", "Y", start: -5, minutes: 30, people: 2)], now: now, alreadyReminded: []).isEmpty)
     }
@@ -1598,6 +1613,12 @@ enum ProfileTest {
         check("notes drop meeting IDs and passcodes", !cleaned.contains("812 3456") && !cleaned.lowercased().contains("passcode"))
         check("notes drop phone numbers", !cleaned.contains("+1646"))
         check("html notes flattened", C.cleanNotes("<p>Bring the <b>Q3</b> numbers</p>") == "Bring the Q3 numbers")
+        check("html paragraphs stay separate lines",
+              C.cleanNotes("<p>Agenda: renewal, legal Qs</p><p>Join Zoom Meeting https://zoom.us/j/1</p>")
+              == "Agenda: renewal, legal Qs")
+        check("html br variants break lines",
+              C.cleanNotes("Bring numbers<br/>Meeting ID: 1<br />Talk pricing") == "Bring numbers Talk pricing")
+        check("html entities decoded", C.cleanNotes("Q&amp;A&nbsp;prep") == "Q&A prep")
         let long = C.cleanNotes(String(repeating: "word ", count: 200), limit: 50)
         check("long notes capped with ellipsis", long.count <= 51 && long.hasSuffix("…"))
         check("empty notes stay empty", C.cleanNotes("   \n  ").isEmpty)
@@ -1630,6 +1651,10 @@ enum ProfileTest {
         check("1:1 title → coaching", C.matchProfile(title: "Sam / Uygar 1:1", profiles: profiles) == coaching)
         check("custom profile named in title", C.matchProfile(title: "Q3 board update", profiles: profiles) == board)
         check("no hint → keep the user's choice", C.matchProfile(title: "Catch-up", profiles: profiles) == nil)
+        check("a clock time is not a 1:1", C.matchProfile(title: "Acme sync 11:15", profiles: profiles) == nil)
+        check("'demo' inside a word doesn't count", C.matchProfile(title: "Democratic caucus", profiles: profiles) == nil)
+        check("plural still counts", C.matchProfile(title: "Final interviews", profiles: profiles) == interview)
+        check("whole words only", C.containsWord("1:1", in: "sam 1:1") && !C.containsWord("1:1", in: "21:10"))
         check("ambiguous → keep the user's choice",
               C.matchProfile(title: "Sales candidate interview", profiles: profiles) == nil)
         check("no profiles → nil", C.matchProfile(title: "Interview", profiles: []) == nil)
