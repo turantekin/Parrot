@@ -70,8 +70,8 @@ jobs:
           .build/debug/Parrot --profile-test > harness.log 2>&1
           status=$?
           echo "--- failing checks ---"
-          grep -E "^FAIL" harness.log || echo "(none)"
-          echo "passed: $(grep -c '^PASS' harness.log)  failed: $(grep -c '^FAIL' harness.log)"
+          grep -E "^FAIL " harness.log || echo "(none)"
+          echo "passed: $(grep -c '^PASS ' harness.log)  failed: $(grep -c '^FAIL ' harness.log)"
           tail -1 harness.log
           exit $status
 

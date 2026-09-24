@@ -1572,7 +1572,7 @@ enum ProfileTest {
         let soon = event("soon", "Standup", start: 45, minutes: 15, people: 4)
         let reminders = C.dueReminders([soon, call, focus], now: now, alreadyReminded: [])
         check("reminder due inside the minute", reminders.map(\.id) == ["soon"])
-        check("reminder not repeated", C.dueReminders([soon], now: now, alreadyReminded: ["soon"]).isEmpty)
+        check("reminder not repeated", C.dueReminders([soon], now: now, alreadyReminded: [soon.reminderKey]).isEmpty)
         check("no reminder for solo blocks",
               C.dueReminders([event("x", "Gym", start: 30, minutes: 60)], now: now, alreadyReminded: []).isEmpty)
         let monday = event("daily", "Standup", start: 45, minutes: 15, people: 4)
