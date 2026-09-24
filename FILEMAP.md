@@ -8,7 +8,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 178 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
-| `Parrot/ProfileTest.swift` | 1230 | `--profile-test`: headless logic harness, ~350 checks |
+| `Parrot/ProfileTest.swift` | 1750 | `--profile-test`: headless logic harness, ~540 checks |
 | `Parrot/SnapshotTool.swift` | 954 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
 | `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
 

@@ -71,6 +71,21 @@ Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸
     angle brackets neutralised. Launch at login (`SMAppService`) in General
     + a new onboarding step. New entitlement
     `personal-information.calendars` + `NSCalendarsFullAccessUsageDescription`.
+  - **Verified (CI, macOS 15 runner, Xcode 16)**: build clean (no new
+    warnings), `--profile-test` 541 PASS / 0 FAIL (≈190 new checks: stamps,
+    receipt index, report flags, prompts, bookmarks, transcript merge,
+    detector state machine, app names, calendar pick/reminders/notes/invite
+    safety/profile match, attendees), snapshot + help-shot renders reviewed
+    (report chips + unverified tags, Settings cards, onboarding step), `.app`
+    assembles and `codesign --verify --deep` passes with the calendar
+    entitlement. A code review pass fixed 9 findings (re-offer a call
+    declined while the model loads, per-occurrence reminders, pre-14.2
+    mid-call re-prompt, whole-word title hints, HTML notes, notification
+    dismiss, bookmarks without a report, receipt refresh on reassign,
+    report redraws during playback).
+  - **Help screenshots**: `settings-general.png` / `settings-recording.png`
+    in `docs/help/img` predate the new cards; regenerate with
+    `--help-shots` at release time (CI renders them fine).
   - **Needs Uygar on a real Mac**: (1) one call per mode — Ask: Zoom/Meet
     call → notification within ~5 s, Record works from the notification and
     the banner, "Call ended?" ~20 s after hanging up; Auto: starts and stops
