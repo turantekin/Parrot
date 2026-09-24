@@ -1,0 +1,63 @@
+# Build + logic harness on a real Mac for every push and pull request.
+# Mirrors what a contributor runs locally: `swift build` (not Xcode, see
+# CLAUDE.md), the --profile-test harness, the offscreen snapshot renders, and
+# the .app assembly (ad-hoc signed; no secrets are used or needed).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["docs/**", "*.md"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build (debug)
+        run: swift build -c debug --force-resolved-versions
+
+      - name: Logic harness (--profile-test)
+        run: .build/debug/Parrot --profile-test
+
+      - name: Snapshot renders
+        run: |
+          mkdir -p snapshots
+          .build/debug/Parrot --snapshot snapshots/report.png
+          .build/debug/Parrot --copilot-snapshot snapshots/copilot.png
+          .build/debug/Parrot --sidebar-snapshot snapshots/sidebar.png
+
+      - name: Assemble app bundle (ad-hoc)
+        run: make bundle CONFIG=debug SIGN_IDENTITY=-
+
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots
+          path: snapshots/
+          if-no-files-found: ignore
