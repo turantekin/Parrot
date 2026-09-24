@@ -71,6 +71,7 @@ jobs:
           status=$?
           echo "--- failing checks ---"
           grep -E "^FAIL" harness.log || echo "(none)"
+          echo "passed: $(grep -c '^PASS' harness.log)  failed: $(grep -c '^FAIL' harness.log)"
           tail -1 harness.log
           exit $status
 
@@ -80,6 +81,21 @@ jobs:
           .build/debug/Parrot --snapshot snapshots/report.png
           .build/debug/Parrot --copilot-snapshot snapshots/copilot.png
           .build/debug/Parrot --sidebar-snapshot snapshots/sidebar.png
+
+      - name: Help screenshots (--help-shots)
+        run: .build/debug/Parrot --help-shots snapshots/help
+
+      # Small JPEG previews in the log, for reviewers who can't open artifacts.
+      - name: Preview renders (base64 JPEG)
+        if: always()
+        run: |
+          for f in snapshots/report.png snapshots/help/settings-recording.png snapshots/help/settings-general.png snapshots/help/onboarding-automatic.png; do
+            [ -f "$f" ] || continue
+            sips -Z 560 -s format jpeg -s formatOptions 45 "$f" --out /tmp/preview.jpg >/dev/null
+            echo "=== PREVIEW $f ==="
+            base64 -i /tmp/preview.jpg | tr -d '\n'; echo
+            echo "=== END ==="
+          done
 
       - name: Assemble app bundle (ad-hoc)
         run: make bundle CONFIG=debug SIGN_IDENTITY=-

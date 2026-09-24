@@ -325,6 +325,12 @@ enum HelpShots {
                 .environment(rm).environment(rm.profileStore)
                 .modelContainer(container))
 
+        UserDefaults.standard.register(defaults: ["onboardingStep": 3])
+        shot("onboarding-automatic.png", size: .init(width: 500, height: 600),
+             OnboardingView(isPresented: .constant(true))
+                .environment(rm).environment(rm.profileStore)
+                .modelContainer(container))
+
         // Reuses the dashboard shot just written as the attached screenshot, so
         // the guide shows the sheet the way a user meets it.
         shot("bug-report.png", size: .init(width: 460, height: 470),
