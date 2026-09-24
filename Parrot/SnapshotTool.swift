@@ -360,6 +360,9 @@ enum HelpShots {
 ///   Parrot --liveloop-test /path/audio.aiff [model]
 /// Set LIVELOOP_REALTIME=1 to feed at recording pace (slow, but reproduces
 /// live polling interleave); default feeds everything and drains.
+/// LIVELOOP_IMPORT=1 runs the audio-file import path instead. For idle-noise
+/// work: PARROT_LOOP_TRACE=1 prints each clip's voice score, and
+/// PARROT_VAD_THRESHOLD=0 turns the voice gate off for an A/B.
 /// Born from a real drop: the middle sentence of a three-sentence test never
 /// reached the transcript while both neighbors did (2026-08-01).
 enum LiveLoopTest {
@@ -377,6 +380,16 @@ enum LiveLoopTest {
             let engine = TranscriptionEngine()
             await engine.loadModel(model.isEmpty ? "base" : model)
             guard engine.isReady else { print("liveloop-test: model failed to load"); exit(1) }
+            await engine.loadSpeechDetector()  // the app loads it in the background
+
+            // LIVELOOP_IMPORT=1: the audio-file import path instead of the live
+            // loop (whole-file decode + the no-voice line filter).
+            if ProcessInfo.processInfo.environment["LIVELOOP_IMPORT"] != nil {
+                let results = (try? await engine.transcribeFile(url: URL(fileURLWithPath: audioPath))) ?? []
+                print("=== import-test — \(results.count) segment(s) ===")
+                for r in results { print(String(format: "[%6.2f – %6.2f] %@", r.startTime, r.endTime, r.text)) }
+                exit(0)
+            }
 
             var emitted: [(text: String, start: TimeInterval, end: TimeInterval)] = []
             engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime)) }

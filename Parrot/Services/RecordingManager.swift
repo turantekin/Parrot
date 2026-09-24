@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import CoreGraphics
 import AVFoundation
+import UserNotifications
 
 /// Orchestrates audio capture, transcription, and storage for a recording session.
 @MainActor
@@ -45,6 +46,16 @@ final class RecordingManager {
     private(set) var isStopping = false
     private var timer: Timer?
     private var modelContext: ModelContext?
+
+    /// "Still recording?" for the forgot-to-stop case (#50: a call left
+    /// running for two idle hours). A transcript line is the voice signal;
+    /// the voice gate keeps an idle room from producing any.
+    private var lastVoiceAt: Date?
+    private var lastIdleReminderAt: Date?
+    /// PARROT_IDLE_REMINDER_SECONDS shortens it for testing.
+    static let idleReminderAfter: TimeInterval = ProcessInfo.processInfo
+        .environment["PARROT_IDLE_REMINDER_SECONDS"].flatMap(TimeInterval.init) ?? 15 * 60
+    static let idleReminderID = "idle-reminder"
 
     /// Non-nil while a file import runs — drives the import banner in the UI.
     private(set) var importProgress: ImportProgress?
@@ -229,6 +240,7 @@ final class RecordingManager {
         // Wire transcription output to storage and the live copilot
         transcriptionEngine.onSegment = { [weak self] result in
             Task { @MainActor in
+                self?.lastVoiceAt = .now
                 self?.addSegment(result)
                 self?.callAnalysisEngine.ingest(
                     text: result.text,
@@ -247,12 +259,20 @@ final class RecordingManager {
         currentMeeting = meeting
         recordingStartTime = .now
         isRecording = true
+        lastVoiceAt = .now
+        lastIdleReminderAt = nil
 
         // Start elapsed time timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let start = self.recordingStartTime else { return }
                 self.elapsedTime = Date.now.timeIntervalSince(start)
+                if let voice = self.lastVoiceAt,
+                   Self.idleReminderDue(now: .now, lastVoice: voice,
+                                        lastReminder: self.lastIdleReminderAt, after: Self.idleReminderAfter) {
+                    self.lastIdleReminderAt = .now
+                    Self.postIdleReminder(silentFor: Date.now.timeIntervalSince(voice))
+                }
             }
         }
 
@@ -266,6 +286,8 @@ final class RecordingManager {
 
         timer?.invalidate()
         timer = nil
+        // A "Still recording?" left in Notification Center is stale once stopped.
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.idleReminderID])
 
         // Stop the copilot (its ingest no-ops once inactive), then capture — so
         // the transcription buffers stop growing and the drain below terminates.
@@ -433,6 +455,42 @@ final class RecordingManager {
 
     // MARK: - Segment Storage
 
+    /// Due once `after` has passed since the last line AND since the last
+    /// reminder: every 15 minutes of continued silence, never in a live call.
+    nonisolated static func idleReminderDue(now: Date, lastVoice: Date, lastReminder: Date?,
+                                            after: TimeInterval) -> Bool {
+        now.timeIntervalSince(max(lastVoice, lastReminder ?? .distantPast)) >= after
+    }
+
+    nonisolated static func idleReminderBody(silentFor seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        return "Nobody has spoken for \(minutes <= 1 ? "a minute" : "\(minutes) minutes"). Parrot is still recording."
+    }
+
+    /// A notification (it replaces the previous one, so they never pile up)
+    /// plus one dock bounce. macOS asks for notification permission the first
+    /// time this fires, not before; declining leaves just the bounce.
+    private static func postIdleReminder(silentFor seconds: TimeInterval) {
+        NSLog("Parrot: idle reminder, no speech for \(Int(seconds)) s")
+        NSApp.requestUserAttention(.informationalRequest)
+        let content = UNMutableNotificationContent()
+        content.title = "Still recording?"
+        content.body = idleReminderBody(silentFor: seconds)
+        content.sound = .default
+        Task {
+            let center = UNUserNotificationCenter.current()
+            do {
+                guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+                    NSLog("Parrot: idle reminder shown as dock bounce only, notifications are off")
+                    return
+                }
+                try await center.add(UNNotificationRequest(identifier: idleReminderID, content: content, trigger: nil))
+            } catch {
+                NSLog("Parrot: idle reminder notification failed, \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func addSegment(_ result: TranscriptionEngine.TranscriptionResult) {
         // Use the live meeting object directly. The previous code looked the
         // meeting up via model(for: meetingID) where meetingID was captured before
@@ -566,7 +624,8 @@ final class RecordingManager {
                 systemPath: meeting.systemAudioPath.nilIfEmpty,
                 micPath: meeting.micAudioPath?.nilIfEmpty,
                 language: language,
-                apiKey: key
+                apiKey: key,
+                timeline: { [transcriptionEngine] in await transcriptionEngine.speechTimeline(samples: $0) }
             )
             guard !polished.isEmpty else { return 0 }
 

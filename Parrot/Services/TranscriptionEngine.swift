@@ -1,4 +1,5 @@
 import AVFoundation
+import FluidAudio
 import WhisperKit
 import Combine
 import os
@@ -24,6 +25,12 @@ enum AudioSource: CaseIterable {
 @Observable
 final class TranscriptionEngine {
     private var whisperKit: WhisperKit?
+    /// Silero voice-activity model (FluidAudio, on-device), the last gate
+    /// before every decode. Whisper narrates noise ("so", "What can I do?"
+    /// from an idle room), and no loudness rule tells quiet speech from room
+    /// tone. nil until loaded, or if its one-time download failed; then
+    /// nothing is gated. Guarded by `bufferLock` (read from the loop).
+    private var speechDetector: VadManager?
     private var audioBuffers: [AudioSource: [Float]] = [.me: [], .them: []]
     private let bufferLock = OSAllocatedUnfairLock()
     private var transcriptionTask: Task<Void, Never>?
@@ -170,10 +177,74 @@ final class TranscriptionEngine {
             whisperKit = kit
             modelState = .ready
             isReady = true
+            // Background: a first-run download must never hold up recording.
+            Task { await self.loadSpeechDetector() }
         } catch {
             guard loadGeneration == generation, !(error is CancellationError) else { return }
             modelState = .error(error.localizedDescription)
             isReady = false
+        }
+    }
+
+    /// Loads the voice-activity model (~1 MB from Hugging Face the first
+    /// time, like the Whisper models). Until it's there, clips go to Whisper
+    /// ungated, as before. Capped so a stalled download can't hold up the
+    /// polish or import passes that wait on it.
+    func loadSpeechDetector() async {
+        guard bufferLock.withLock({ speechDetector }) == nil else { return }
+        do {
+            let detector = try await Self.withTimeout(seconds: 60) { try await VadManager() }
+            bufferLock.withLock { speechDetector = detector }
+        } catch {
+            AudioCaptureManager.oslog.error("Speech detector unavailable: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Minimum speech probability, in at least one 256 ms window, for a clip
+    /// to reach Whisper. Calibrated 2026-09-24 on real room tone from this
+    /// Mac plus typing/hum/pink noise: words with content scored 1.00 even at
+    /// 0.02× gain over room tone (English, Turkish, one-word answers; lowest
+    /// real-speech clip 0.74), while clips Whisper turned into junk scored
+    /// 0.06–0.64 but for a few faint maybe-voices. PARROT_VAD_THRESHOLD
+    /// overrides it; 0 disables gating but keeps the trace.
+    static let speechThreshold: Float = ProcessInfo.processInfo.environment["PARROT_VAD_THRESHOLD"]
+        .flatMap(Float.init) ?? 0.6
+
+    /// Peak Silero speech probability over the clip; nil when there's no
+    /// detector (not downloaded) or it failed, which means "don't gate".
+    private func speechPeak(_ samples: [Float]) async -> Float? {
+        guard let detector = bufferLock.withLock({ speechDetector }),
+              let results = try? await detector.process(samples) else { return nil }
+        return results.map(\.probability).max()
+    }
+
+    /// Speech probability per 256 ms window for a whole track, for the
+    /// whole-file passes (polish, import) that have no live gate in front of
+    /// Whisper. nil = no detector, keep everything.
+    func speechTimeline(samples: [Float]? = nil, url: URL? = nil) async -> [Float]? {
+        await loadSpeechDetector()
+        guard let detector = bufferLock.withLock({ speechDetector }) else { return nil }
+        let results: [VadResult]?
+        if let samples { results = try? await detector.process(samples) }
+        else if let url { results = try? await detector.process(url) }
+        else { results = nil }
+        return results?.map(\.probability)
+    }
+
+    /// Whether [start, end] ± `pad` seconds holds speech: two consecutive
+    /// voiced windows (~0.5 s). Whole-file Whisper writes its inventions over
+    /// 30 s blocks, and room tone throws lone one-window spikes into those;
+    /// a real word spans 2+ windows, even a quiet "Yes." (2026-09-24
+    /// timelines). The pad forgives drifting timestamps; a span outside the
+    /// timeline is kept, so a mismatch can never delete real text.
+    nonisolated static func hasVoice(_ timeline: [Float], from start: Double, to end: Double,
+                                     pad: Double = 1.0) -> Bool {
+        let window = Double(VadManager.chunkSize) / 16000
+        let lo = max(0, Int(((start - pad) / window).rounded(.down)))
+        let hi = min(timeline.count - 1, Int(((end + pad) / window).rounded(.up)))
+        guard lo <= hi else { return true }
+        return timeline[lo...hi].indices.dropFirst().contains {
+            timeline[$0 - 1] >= speechThreshold && timeline[$0] >= speechThreshold
         }
     }
 
@@ -376,8 +447,16 @@ final class TranscriptionEngine {
             }
             let floor = min(max(minE * 4, ditherFloor), silenceFloor)
             if maxE >= floor { return floor }
+            // Flat for longer than any real utterance runs without a dip is
+            // steady noise (fan, hum, hiss), not un-paused quiet speech: left
+            // as "speech" it was cut every 12 s and Whisper narrated it
+            // ("so", "What can I do?" from an idle room, 2026-09-24).
+            if frames > maxFlatSpeechFrames { return silenceFloor }
             return maxE >= ditherFloor ? ditherFloor : silenceFloor
         }
+        /// How long a flat window may still be quiet speech waiting for its
+        /// pause. Speech dips between words well within 3 s; noise doesn't.
+        static let maxFlatSpeechFrames = 30
         /// 600 ms of continuous silence ends an utterance. Intra-word and
         /// clause gaps run shorter; sentence gaps run longer.
         // ponytail: fixed threshold — adaptive (speaker-rate) pausing if
@@ -473,6 +552,8 @@ final class TranscriptionEngine {
         transcriptionTask?.cancel()
         transcriptionTask = nil
         isTranscribing = true
+        // Retries a detector download that failed at launch (offline first run).
+        Task { await self.loadSpeechDetector() }
 
         // Resolve the transcription backend for this session. Cloud backends
         // need their key; anything missing falls back to on-device with a
@@ -604,7 +685,14 @@ final class TranscriptionEngine {
                             }
                             let energy = pending.isEmpty ? 0
                                 : pending.reduce(into: Float(0)) { $0 += abs($1) } / Float(pending.count)
-                            if energy > floor, let whisperKit = self.whisperKit {
+                            var voiced = energy > floor
+                            if voiced, let peak = await self.speechPeak(pending),
+                               peak < Self.speechThreshold {
+                                // Room noise: no bubble, and no re-check for a beat.
+                                voiced = false
+                                nextPreviewAt[source] = Date().addingTimeInterval(previewBase)
+                            }
+                            if voiced, let whisperKit = self.whisperKit {
                                 // No interim callback here on purpose: each preview
                                 // re-decodes from the utterance's start, so streaming
                                 // its words made the bubble restart the same sentence
@@ -657,6 +745,22 @@ final class TranscriptionEngine {
                     // every decode. `energy` above stays raw on purpose: the
                     // hallucination filter reads the room, not the boosted copy.
                     let decodeSamples = Self.normalizedForDecode(chunk)
+
+                    // No voice in the clip: Whisper would only invent text.
+                    // Ahead of every backend, so noise isn't uploaded either.
+                    // Scored on the RAW clip: boosted room tone reads as
+                    // speech to the detector too (0.8–1.0 vs 0.2–0.4 raw,
+                    // 2026-09-24), while real speech scores 1.0 at any gain.
+                    let vadStarted = Date()
+                    if let peak = await self.speechPeak(chunk) {
+                        if Self.loopTrace {
+                            print(String(format: "TRACE %@ [%.2f-%.2f] vad=%.2f (%.0f ms) energy=%.5f%@",
+                                         source.label, startTime, endTime, peak,
+                                         Date().timeIntervalSince(vadStarted) * 1000, energy,
+                                         peak < Self.speechThreshold ? " SKIP" : ""))
+                        }
+                        guard peak >= Self.speechThreshold else { continue }
+                    }
 
                     // On-device decode — the default path, and the per-chunk
                     // fallback when a cloud backend hiccups (never lose a chunk).
@@ -771,8 +875,13 @@ final class TranscriptionEngine {
                 // transcription keeps pace with real time instead of falling
                 // progressively behind — the regression that left the back half of a
                 // call untranscribed.
-                if !didWork {
-                    if draining { break }  // buffers empty → fully drained, exit
+                if draining {
+                    // Exit only on truly empty buffers. `didWork` counts decodes,
+                    // not discards: a dropped noise blip used to end the drain
+                    // and lose every word buffered after it. Each drain cut
+                    // consumes something, so this always terminates.
+                    if self.bufferLock.withLock({ self.audioBuffers.values.allSatisfy(\.isEmpty) }) { break }
+                } else if !didWork {
                     try? await Task.sleep(for: .milliseconds(250))
                 }
             }
@@ -917,11 +1026,16 @@ final class TranscriptionEngine {
         primeGlossary(into: &options)
 
         let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
+        let timeline = await speechTimeline(url: url)
 
         // One mixed track, so every segment is "Them"; diarization splits it later.
         return results.flatMap(\.segments).compactMap { segment in
             let cleaned = Self.cleaned(segment.text)
             guard !cleaned.isEmpty else { return nil }
+            // Lines Whisper wrote over a stretch with no voice are invented.
+            if let timeline, !Self.hasVoice(timeline, from: Double(segment.start), to: Double(segment.end)) {
+                return nil
+            }
             // Same glossary-prompt echo handling as the live loop.
             guard let text = glossaryActive
                 ? Self.strippingGlossaryEcho(cleaned) : cleaned else { return nil }

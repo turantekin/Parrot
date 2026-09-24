@@ -8,8 +8,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 178 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
-| `Parrot/ProfileTest.swift` | 1154 | `--profile-test`: headless logic harness, ~290 checks |
-| `Parrot/SnapshotTool.swift` | 941 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
+| `Parrot/ProfileTest.swift` | 1230 | `--profile-test`: headless logic harness, ~350 checks |
+| `Parrot/SnapshotTool.swift` | 954 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
 | `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
 
 ## Models (SwiftData `@Model` + Codable values)
@@ -29,12 +29,12 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Services/RecordingManager.swift` | 714 | Orchestrates a recording session end-to-end; the hub |
+| `Services/RecordingManager.swift` | 776 | Orchestrates a recording session end-to-end; the hub; "Still recording?" reminder |
 | `Services/AudioCaptureManager.swift` | 700 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
 | `Services/SystemAudioTap.swift` | 250 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
-| `Services/TranscriptionEngine.swift` | 947 | On-device WhisperKit; `AudioSource` routing; live preview decode |
-| `Services/CloudTranscription.swift` | 383 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
+| `Services/TranscriptionEngine.swift` | 1157 | On-device WhisperKit; `AudioSource` routing; live preview decode; Silero voice gate before every decode |
+| `Services/CloudTranscription.swift` | 392 | Opt-in Groq (batch) and Deepgram (streaming) backends + WAV encode |
 | `Services/DiarizationEngine.swift` | 105 | FluidAudio offline pyannote diarization (CoreML): labels + per-speaker embeddings |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |

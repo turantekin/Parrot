@@ -140,7 +140,7 @@ This is a microphone-and-system-audio app, so you shouldn't have to take my word
 | Feature | Sends | To | When |
 |---|---|---|---|
 | Recording, on-device transcription, speaker detection, voiceprints, document index | Nothing | No one | Always local |
-| Model downloads | A download request | Hugging Face (Whisper and speaker-detection models); Apple (language model for Arabic, Indic and some Cyrillic documents) | Once, first use |
+| Model downloads | A download request | Hugging Face (Whisper, voice-detection and speaker-detection models); Apple (language model for Arabic, Indic and some Cyrillic documents) | Once, first use |
 | Update check | The app's version | GitHub Pages (Sparkle feed) | Once a day; can switch off auto-install |
 | Copilot on Claude or a custom server | Transcript text, matched document passages, profile instructions | Anthropic, or the server you picked | Only if you turn Copilot on |
 | TypeSafe doc answers | The question, a couple of lines of context, candidate document snippets | TypeSafe AI | Only with a TypeSafe key, Claude mode |
@@ -197,6 +197,7 @@ Want the tour again? **Help > Show Welcome Tour**.
 | UI | SwiftUI, native macOS, Inter |
 | Speech-to-text (default) | [WhisperKit](https://github.com/argmaxinc/WhisperKit), on-device on the Neural Engine |
 | Speech-to-text (optional, your key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
+| Voice detection | Silero VAD (MIT) via FluidAudio, on-device: only clips with a voice in them reach Whisper, so an idle room stays blank |
 | Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0), on-device pyannote-derived models (CC-BY-4.0) |
 | Copilot and reports | Claude API (Haiku 4.5, structured outputs) · Ollama · any OpenAI-compatible server |
 | Instant document answers (optional) | TypeSafe AI `jev-latest` |
@@ -251,7 +252,7 @@ The easiest way to report anything: click the little ladybug in the bottom right
 ## Known issues (I'm working on it)
 
 - **Audio permissions reset on ad-hoc source builds.** Identity-less builds look like a new app every time. `make signing-help` shows two fixes. Downloaded release builds keep the grant across updates.
-- **Models need internet once.** Whisper and speaker-detection models download on first use, and macOS fetches a language model the first time you add an Arabic, Indic or (on some Macs) Cyrillic document. After that, everything runs offline.
+- **Models need internet once.** Whisper, voice-detection and speaker-detection models download on first use, and macOS fetches a language model the first time you add an Arabic, Indic or (on some Macs) Cyrillic document. After that, everything runs offline.
 - **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign.
 - **Mic bleed on speakers.** Without headphones, a loud call can still leak into your mic now and then. Headphones fix it.
 
