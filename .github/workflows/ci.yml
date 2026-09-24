@@ -91,7 +91,7 @@ jobs:
         run: |
           for f in snapshots/report.png snapshots/help/settings-recording.png snapshots/help/settings-general.png snapshots/help/onboarding-automatic.png; do
             [ -f "$f" ] || continue
-            sips -Z 560 -s format jpeg -s formatOptions 45 "$f" --out /tmp/preview.jpg >/dev/null
+            sips -Z 460 -s format jpeg -s formatOptions 30 "$f" --out /tmp/preview.jpg >/dev/null
             echo "=== PREVIEW $f ==="
             base64 -i /tmp/preview.jpg | tr -d '\n'; echo
             echo "=== END ==="

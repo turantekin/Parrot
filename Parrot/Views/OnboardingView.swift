@@ -355,13 +355,7 @@ struct OnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Toggle(isOn: Binding(
-                    get: { loginItemOn },
-                    set: { newValue in
-                        let state = LoginItem.set(newValue).state
-                        loginItemOn = state == .on || state == .needsApproval
-                    }
-                )) {
+                HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Open Parrot at login")
                             .font(Theme.Typography.cardTitle)
@@ -369,9 +363,18 @@ struct OnboardingView: View {
                             .font(Theme.Typography.caption)
                             .foregroundStyle(Theme.Colors.ink2)
                     }
+                    Spacer(minLength: 0)
+                    Toggle("Open Parrot at login", isOn: Binding(
+                        get: { loginItemOn },
+                        set: { newValue in
+                            let state = LoginItem.set(newValue).state
+                            loginItemOn = state == .on || state == .needsApproval
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(LoginItem.state == .unavailable)
                 }
-                .toggleStyle(.switch)
-                .disabled(LoginItem.state == .unavailable)
             }
             .frame(maxWidth: 380)
 
