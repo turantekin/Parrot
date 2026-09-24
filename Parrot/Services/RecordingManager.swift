@@ -159,6 +159,46 @@ final class RecordingManager {
         try? modelContext?.save()
     }
 
+    // MARK: - Bookmarks
+
+    /// Bumped on every successful mark so the live view can flash a
+    /// confirmation, whichever path (button, menu, global hotkey) marked it.
+    private(set) var lastMarked: Bookmark?
+
+    /// Marks "now" in the call in progress. Returns nil when not recording,
+    /// or when a mark already sits within `Bookmark.mergeWindow` (a double
+    /// press is one moment).
+    @discardableResult
+    func markMoment(label: String = "") -> Bookmark? {
+        guard isRecording, !isStopping, let meeting = currentMeeting,
+              let start = recordingStartTime else { return nil }
+        guard let mark = meeting.addBookmark(at: Date.now.timeIntervalSince(start), label: label) else {
+            return nil
+        }
+        try? modelContext?.save()
+        lastMarked = mark
+        return mark
+    }
+
+    /// Labels a mark made during the call (the live view's quick field).
+    func labelMoment(_ id: UUID, label: String) {
+        currentMeeting?.renameBookmark(id, to: label)
+        try? modelContext?.save()
+    }
+
+    /// ⌃⌥M marks a moment from any app — the user is in Zoom, not Parrot.
+    /// Registered only while recording so the combo is never held otherwise.
+    private let markHotKey = GlobalHotKey()
+    static let globalMarkHotKeyDefaultsKey = "globalMarkHotKey"
+
+    private func registerMarkHotKey() {
+        let enabled = UserDefaults.standard.object(forKey: Self.globalMarkHotKeyDefaultsKey) as? Bool ?? true
+        guard enabled else { return }
+        markHotKey.register(.markMoment) { [weak self] in
+            Task { @MainActor in self?.markMoment() }
+        }
+    }
+
     // MARK: - Recording Control
 
     /// The one shared entry point for every "start recording" button — checks
@@ -261,6 +301,8 @@ final class RecordingManager {
         isRecording = true
         lastVoiceAt = .now
         lastIdleReminderAt = nil
+        lastMarked = nil
+        registerMarkHotKey()
 
         // Start elapsed time timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -286,6 +328,7 @@ final class RecordingManager {
 
         timer?.invalidate()
         timer = nil
+        markHotKey.unregister()
         // A "Still recording?" left in Notification Center is stale once stopped.
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.idleReminderID])
 
@@ -571,6 +614,7 @@ final class RecordingManager {
             let summary = try await callAnalysisEngine.provider.summarize(
                 transcript: transcript,
                 insightTitles: insightTitles,
+                bookmarks: meeting.bookmarks.map(\.promptLine),
                 instructions: instructions,
                 counterpart: counterpart
             )

@@ -42,7 +42,14 @@ jobs:
         run: swift build -c debug --force-resolved-versions
 
       - name: Logic harness (--profile-test)
-        run: .build/debug/Parrot --profile-test
+        run: |
+          set +e
+          .build/debug/Parrot --profile-test > harness.log 2>&1
+          status=$?
+          echo "--- failing checks ---"
+          grep -E "^FAIL" harness.log || echo "(none)"
+          tail -1 harness.log
+          exit $status
 
       - name: Snapshot renders
         run: |
@@ -59,5 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: snapshots
-          path: snapshots/
+          path: |
+            snapshots/
+            harness.log
           if-no-files-found: ignore

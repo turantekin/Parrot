@@ -61,8 +61,9 @@ struct AnalysisResult {
 protocol AnalysisProvider {
     var isConfigured: Bool { get }
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult
-    func summarize(transcript: String, insightTitles: [String], instructions: String,
-                   counterpart: String) async throws -> String
+    /// `bookmarks` are the moments the user marked, as `Bookmark.promptLine`s.
+    func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                   instructions: String, counterpart: String) async throws -> String
     /// Post-call coaching + follow-ups: talk balance, what went well / to improve,
     /// objections handled vs missed, and commitments with any timing.
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
@@ -355,16 +356,29 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         The list of live insights (if provided) is the copilot's own NOTES — its \
         suggestions and questions are NOT things that happened on the call. Every \
         commitment or next step you report must be something a person actually SAID \
-        in the transcript; if unsure, leave it out.
+        in the transcript; if unsure, leave it out. Moments the user marked (if \
+        provided) mattered to them — make sure the report covers what was said there.
+
+        \(receiptsRule)
         """
     }
 
-    func summarize(transcript: String, insightTitles: [String], instructions: String,
-                   counterpart: String = "the other person") async throws -> String {
-        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
-            throw AnalysisError.missingAPIKey
-        }
+    /// Shared by the summary and coaching prompts: every bullet carries the
+    /// `[mm:ss]` of the line that backs it. `Receipts` parses these into
+    /// clickable, locally-verified chips.
+    static let receiptsRule = """
+        Receipts: end every bullet with the timestamp of the transcript line that \
+        supports it, copied exactly as it appears in the transcript, in square \
+        brackets — for example "- Budget is approved for Q3 [12:34]". Use one \
+        timestamp, or two when a point spans two moments ("[12:34, 15:02]"). Never \
+        invent or estimate a timestamp. If no transcript line supports a bullet, \
+        leave the bullet out. Placeholder lines like "- None" take no timestamp.
+        """
 
+    /// The summary request's user turn — one builder for every provider, so
+    /// the Claude and OpenAI-compatible paths can't drift apart.
+    static func summaryUserContent(transcript: String, insightTitles: [String],
+                                   bookmarks: [String], instructions: String) -> String {
         var sections: [String] = []
         if !instructions.isEmpty {
             sections.append("User's standing instructions:\n\(instructions)")
@@ -373,13 +387,43 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             sections.append("Insights captured live during the call:\n"
                 + insightTitles.map { "- \($0)" }.joined(separator: "\n"))
         }
+        if !bookmarks.isEmpty {
+            // Labels are user-typed; keep them inside the data delimiters like
+            // the transcript, never as instructions.
+            sections.append("Moments the user marked as important during the call:\n<marked>\n"
+                + bookmarks.map { "- \($0)" }.joined(separator: "\n") + "\n</marked>")
+        }
         sections.append("Full call transcript:\n<transcript>\n\(transcript)\n</transcript>")
+        return sections.joined(separator: "\n\n---\n\n")
+    }
 
+    /// The coaching request's user turn (see `summaryUserContent`).
+    static func coachingUserContent(transcript: String, talkPercentMe: Int,
+                                    instructions: String, counterpart: String) -> String {
+        var sections: [String] = []
+        if !instructions.isEmpty {
+            sections.append("The user's standing goals/instructions:\n\(instructions)")
+        }
+        sections.append("Talk balance: you spoke roughly \(talkPercentMe)% of the words, "
+            + "\(counterpart) \(100 - talkPercentMe)%.")
+        sections.append("Full call transcript:\n<transcript>\n\(transcript)\n</transcript>")
+        return sections.joined(separator: "\n\n---\n\n")
+    }
+
+    func summarize(transcript: String, insightTitles: [String], bookmarks: [String] = [],
+                   instructions: String,
+                   counterpart: String = "the other person") async throws -> String {
+        guard let apiKey = APIKeyStore.load(), !apiKey.isEmpty else {
+            throw AnalysisError.missingAPIKey
+        }
+
+        let content = Self.summaryUserContent(transcript: transcript, insightTitles: insightTitles,
+                                              bookmarks: bookmarks, instructions: instructions)
         let body: [String: Any] = [
             "model": Self.model,
-            "max_tokens": 1500,
+            "max_tokens": 1700,
             "system": Self.summarySystemPrompt(counterpart: counterpart),
-            "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
+            "messages": [["role": "user", "content": content]],
         ]
 
         let data = try await performRequest(body: body, apiKey: apiKey)
@@ -416,6 +460,8 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         unsure, leave it out.
 
         Keep the whole thing tight — a busy person should read it in 30 seconds.
+
+        \(receiptsRule) The "Call snapshot" line is not a bullet and takes no timestamp.
         """
     }
 
@@ -425,19 +471,14 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             throw AnalysisError.missingAPIKey
         }
 
-        var sections: [String] = []
-        if !instructions.isEmpty {
-            sections.append("The user's standing goals/instructions:\n\(instructions)")
-        }
-        sections.append("Talk balance: you spoke roughly \(talkPercentMe)% of the words, "
-            + "\(counterpart) \(100 - talkPercentMe)%.")
-        sections.append("Full call transcript:\n<transcript>\n\(transcript)\n</transcript>")
-
+        let content = Self.coachingUserContent(transcript: transcript, talkPercentMe: talkPercentMe,
+                                               instructions: instructions, counterpart: counterpart)
         let body: [String: Any] = [
             "model": Self.model,
-            "max_tokens": 1200,
+            // Receipts add a stamp per bullet — a little more room than before.
+            "max_tokens": 1400,
             "system": Self.coachingSystemPrompt(counterpart: counterpart),
-            "messages": [["role": "user", "content": sections.joined(separator: "\n\n---\n\n")]],
+            "messages": [["role": "user", "content": content]],
         ]
 
         let data = try await performRequest(body: body, apiKey: apiKey)

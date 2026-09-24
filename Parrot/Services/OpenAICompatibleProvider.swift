@@ -169,25 +169,18 @@ final class OpenAICompatibleProvider: AnalysisProvider {
                               read: parsed.read, coach: parsed.coach, resolved: parsed.resolved)
     }
 
-    func summarize(transcript: String, insightTitles: [String], instructions: String,
+    func summarize(transcript: String, insightTitles: [String], bookmarks: [String] = [],
+                   instructions: String,
                    counterpart: String = "the other person") async throws -> String {
         guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
-        var sections: [String] = []
-        if !instructions.isEmpty {
-            sections.append("User's standing instructions:\n\(instructions)")
-        }
-        if !insightTitles.isEmpty {
-            sections.append("Insights captured live during the call:\n"
-                + insightTitles.map { "- \($0)" }.joined(separator: "\n"))
-        }
-        sections.append("Full call transcript:\n<transcript>\n\(transcript)\n</transcript>")
-
         return try await plainChat(
             system: ClaudeAnalysisProvider.summarySystemPrompt(counterpart: counterpart),
-            user: sections.joined(separator: "\n\n---\n\n"),
-            maxTokens: 1500, config: config)
+            user: ClaudeAnalysisProvider.summaryUserContent(
+                transcript: transcript, insightTitles: insightTitles,
+                bookmarks: bookmarks, instructions: instructions),
+            maxTokens: 1700, config: config)
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
@@ -195,18 +188,12 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
-        var sections: [String] = []
-        if !instructions.isEmpty {
-            sections.append("The user's standing goals/instructions:\n\(instructions)")
-        }
-        sections.append("Talk balance: you spoke roughly \(talkPercentMe)% of the words, "
-            + "\(counterpart) \(100 - talkPercentMe)%.")
-        sections.append("Full call transcript:\n<transcript>\n\(transcript)\n</transcript>")
-
         return try await plainChat(
             system: ClaudeAnalysisProvider.coachingSystemPrompt(counterpart: counterpart),
-            user: sections.joined(separator: "\n\n---\n\n"),
-            maxTokens: 1200, config: config)
+            user: ClaudeAnalysisProvider.coachingUserContent(
+                transcript: transcript, talkPercentMe: talkPercentMe,
+                instructions: instructions, counterpart: counterpart),
+            maxTokens: 1400, config: config)
     }
 
     // MARK: - Chat plumbing
@@ -480,10 +467,11 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
         try await liveProvider.analyze(request)
     }
 
-    func summarize(transcript: String, insightTitles: [String], instructions: String,
-                   counterpart: String) async throws -> String {
+    func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                   instructions: String, counterpart: String) async throws -> String {
         try await reportsProvider.summarize(transcript: transcript, insightTitles: insightTitles,
-                                            instructions: instructions, counterpart: counterpart)
+                                            bookmarks: bookmarks, instructions: instructions,
+                                            counterpart: counterpart)
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,

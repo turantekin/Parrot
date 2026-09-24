@@ -62,6 +62,10 @@ final class Meeting {
     /// Lines removed, summed over every trim on this meeting.
     var truncatedLineCount: Int = 0
 
+    /// Moments the user marked (JSON [Bookmark]); see `bookmarks`.
+    /// Defaulted → old rows migrate.
+    var bookmarksData: Data? = nil
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
@@ -197,6 +201,47 @@ final class Meeting {
             return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
         }
         set { speakerNamesData = try? JSONEncoder().encode(newValue) }
+    }
+
+    /// Marked moments, time-sorted (see `bookmarksData`).
+    var bookmarks: [Bookmark] {
+        get {
+            guard let data = bookmarksData else { return [] }
+            return ((try? JSONDecoder().decode([Bookmark].self, from: data)) ?? [])
+                .sorted { $0.time < $1.time }
+        }
+        set {
+            bookmarksData = newValue.isEmpty
+                ? nil
+                : try? JSONEncoder().encode(newValue.sorted { $0.time < $1.time })
+        }
+    }
+
+    /// Marks a moment unless one already sits within `Bookmark.mergeWindow`.
+    @discardableResult
+    func addBookmark(at time: TimeInterval, label: String = "") -> Bookmark? {
+        guard let result = Bookmark.adding(time, label: label, to: bookmarks) else { return nil }
+        bookmarks = result.all
+        return result.added
+    }
+
+    func renameBookmark(_ id: UUID, to label: String) {
+        var all = bookmarks
+        guard let i = all.firstIndex(where: { $0.id == id }) else { return }
+        all[i].label = Bookmark.cleanLabel(label)
+        bookmarks = all
+    }
+
+    func removeBookmark(_ id: UUID) {
+        bookmarks = bookmarks.filter { $0.id != id }
+    }
+
+    /// The transcript as a receipts index (for checking report stamps).
+    var receiptIndex: ReceiptIndex {
+        ReceiptIndex(lines: segments.map {
+            .init(start: $0.startTime, end: $0.endTime,
+                  speaker: displayName(forSpeaker: $0.speakerLabel), text: $0.text)
+        })
     }
 
     /// Distinct non-Me speaker labels, "Speaker 1" first.

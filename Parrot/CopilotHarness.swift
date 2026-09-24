@@ -220,8 +220,8 @@ final class StubAnalysisProvider: AnalysisProvider {
         return AnalysisResult(insights: drafts, sentiment: ["score": 50], read: "stub", coach: nil, resolved: [])
     }
 
-    func summarize(transcript: String, insightTitles: [String], instructions: String,
-                   counterpart: String) async throws -> String { "" }
+    func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                   instructions: String, counterpart: String) async throws -> String { "" }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String) async throws -> String { "" }
