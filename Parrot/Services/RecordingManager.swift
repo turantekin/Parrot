@@ -566,7 +566,8 @@ final class RecordingManager {
                 systemPath: meeting.systemAudioPath.nilIfEmpty,
                 micPath: meeting.micAudioPath?.nilIfEmpty,
                 language: language,
-                apiKey: key
+                apiKey: key,
+                timeline: { [transcriptionEngine] in await transcriptionEngine.speechTimeline(samples: $0) }
             )
             guard !polished.isEmpty else { return 0 }
 

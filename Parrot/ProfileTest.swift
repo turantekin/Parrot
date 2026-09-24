@@ -640,6 +640,33 @@ enum ProfileTest {
                           floor: Seg.adaptiveFloor(for: quietSpeech(10)))
                 == .init(dropLeading: 0, take: nil))
 
+        // Steady noise in the quiet-speech band (fan, hum): flat beyond 3 s is
+        // noise, discarded instead of cut every 12 s into hallucinations.
+        let hum = quietSpeech(Seg.maxFlatSpeechFrames + 1)
+        check("flat window past 3 s reads as noise",
+              Seg.adaptiveFloor(for: hum) == Seg.silenceFloor)
+        check("steady noise is discarded, not decoded",
+              Seg.nextCut(in: hum, draining: false, floor: Seg.adaptiveFloor(for: hum))
+                == .init(dropLeading: hum.count, take: nil))
+        check("flat window up to 3 s is still quiet speech",
+              Seg.adaptiveFloor(for: quietSpeech(Seg.maxFlatSpeechFrames)) == Seg.ditherFloor)
+
+        // Whole-file passes (polish, import): drop lines over voiceless spans.
+        // Windows are 256 ms; speech in windows 40...49 (≈10.2 s–12.8 s).
+        let timeline: [Float] = (0..<100).map { (40...49).contains($0) ? 0.97 : 0.05 }
+        check("line over speech keeps", TranscriptionEngine.hasVoice(timeline, from: 10.5, to: 12.0))
+        check("line over silence drops", !TranscriptionEngine.hasVoice(timeline, from: 20, to: 24))
+        check("line 1 s off the speech still keeps (timestamp drift)",
+              TranscriptionEngine.hasVoice(timeline, from: 13.5, to: 15))
+        check("line past the timeline keeps (never delete on a mismatch)",
+              TranscriptionEngine.hasVoice(timeline, from: 40, to: 42))
+        check("empty timeline keeps", TranscriptionEngine.hasVoice([], from: 0, to: 5))
+        // Room tone throws lone one-window spikes into 30 s invented blocks.
+        let spiky: [Float] = (0..<200).map { $0 == 70 || $0 == 150 ? 0.9 : 0.1 }
+        check("lone spike isn't a voice", !TranscriptionEngine.hasVoice(spiky, from: 0, to: 30))
+        let word: [Float] = (0..<200).map { (70...71).contains($0) ? 0.9 : 0.1 }  // "Yes." ≈ 0.5 s
+        check("a two-window word is a voice", TranscriptionEngine.hasVoice(word, from: 0, to: 30))
+
         // Flat true silence still reads as silence and is discarded.
         check("flat quiet-room window reads as silence",
               Seg.adaptiveFloor(for: roomNoise(8)) == Seg.silenceFloor)

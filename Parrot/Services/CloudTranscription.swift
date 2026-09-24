@@ -323,8 +323,13 @@ enum TranscriptPolisher {
 
     /// Both tracks (system = "Them", mic = "Me"), file-relative timestamps.
     /// Throws on any API failure — caller keeps the live transcript.
+    /// `timeline` gives a track's speech probabilities (256 ms windows);
+    /// lines over stretches with no voice are dropped, since the upload
+    /// includes every idle minute and Whisper fills silence with invented
+    /// text. nil timeline = keep everything.
     static func polish(systemPath: String?, micPath: String?,
-                       language: String?, apiKey: String) async throws -> [PolishedSegment] {
+                       language: String?, apiKey: String,
+                       timeline: ([Float]) async -> [Float]? = { _ in nil }) async throws -> [PolishedSegment] {
         var out: [PolishedSegment] = []
         for (path, speaker) in [(systemPath, "Them"), (micPath, "Me")] {
             guard let path, FileManager.default.fileExists(atPath: path) else { continue }
@@ -332,6 +337,7 @@ enum TranscriptPolisher {
                 NSLog("Parrot: polish skipped \(speaker) track — unsupported format")
                 continue
             }
+            let voice = await timeline(samples)
             let partLength = 16000 * partSeconds
             var offset = 0
             while offset < samples.count {
@@ -344,6 +350,9 @@ enum TranscriptPolisher {
                 for s in segments {
                     let text = TranscriptionEngine.cleaned(s.text)
                     guard !text.isEmpty else { continue }
+                    if let voice, !TranscriptionEngine.hasVoice(voice, from: s.start + shift, to: s.end + shift) {
+                        continue
+                    }
                     out.append(PolishedSegment(text: text, start: s.start + shift,
                                                end: s.end + shift, speaker: speaker))
                 }
