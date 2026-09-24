@@ -190,8 +190,10 @@ final class KnowledgeBaseService {
             // questions on a long document (2026-09-19 eval: the answering chunk
             // sat in the cosine top 8 for 14 of 71 questions, in the BM25 top 8
             // for 55), and fusing the two with equal weight was worse than BM25
-            // alone. So BM25 ranks, and embeddings only fill the slots exact
-            // words did not reach. Chunks with neither signal stay out.
+            // alone. So BM25 ranks, and embeddings fill the slots exact words
+            // did not reach. With no cosine floor, every chunk with a vector
+            // is an embedding candidate, so a KB with topK or more chunks
+            // always fills topK (small talk included).
             let lexicalOrder = Self.bm25Order(
                 query: Self.lexicalTokens(query),
                 documents: snapshot.map { Self.lexicalTokens($0.text) })
@@ -367,10 +369,18 @@ final class KnowledgeBaseService {
     /// model revision. Until then search skips those vectors and the chunks
     /// match on exact words, so results stay correct meanwhile.
     func refreshEmbeddings() async {
-        guard !isRefreshing else { return }
+        // A call that lands mid-refresh (a document in a new script added
+        // during the first-launch re-embed) gets one more pass, not dropped.
+        guard !isRefreshing else { refreshAgain = true; return }
         isRefreshing = true
         defer { isRefreshing = false }
+        repeat {
+            refreshAgain = false
+            await refreshPass()
+        } while refreshAgain
+    }
 
+    private func refreshPass() async {
         // Apple's one-time model download for a language (Cyrillic, Arabic,
         // Indic scripts on a fresh Mac). On-device after that; documents are
         // never uploaded. Can take minutes, so nothing waits on it but this.
@@ -403,6 +413,7 @@ final class KnowledgeBaseService {
     }
 
     private var isRefreshing = false
+    private var refreshAgain = false
 
     // ponytail: one global lock around every model call. Embedding is CPU
     // bound and the docs don't promise NLContextualEmbedding is thread-safe.
