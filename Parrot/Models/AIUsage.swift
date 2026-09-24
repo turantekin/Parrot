@@ -18,10 +18,14 @@ enum AIPricing {
     static let typesafeInputUSDPerMTok = 0.042
     /// Groq whisper-large-v3-turbo: $0.04 per audio hour.
     static let groqUSDPerAudioHour = 0.04
-    /// Deepgram Nova-3 streaming: $0.29 per audio hour per stream — matches the
-    /// "rate applied" on Deepgram's own billing dashboard (verified against a
-    /// real invoice 2026-07-02: 220s billed = $0.01788).
+    /// Deepgram Nova-3 streaming, per audio hour per stream. One pinned
+    /// language: $0.29 (verified against a real invoice 2026-07-02: 220s
+    /// billed = $0.01788). Auto-detect streams as `language=multi`, which
+    /// bills the multilingual rate: $0.35. Both are Pay As You Go
+    /// promotional rates (deepgram.com/pricing, 2026-09-24; regular
+    /// $0.46 / $0.55).
     static let deepgramUSDPerAudioHour = 0.29
+    static let deepgramMultilingualUSDPerAudioHour = 0.35
 }
 
 /// Per-meeting AI usage snapshot, stored denormalized in `Meeting.aiUsageData`
@@ -52,6 +56,9 @@ struct AIUsage: Codable {
     var transcriptionSeconds: Double = 0
     /// Billable audio tracks (mic + system = 2; 1 when the mic never recorded).
     var transcriptionTracks = 2
+    /// Language was auto-detect, so Deepgram billed its multilingual rate.
+    /// nil on meetings saved before this existed (= one-language rate).
+    var transcriptionMultilingual: Bool?
     /// Post-call Groq polish: seconds of audio re-transcribed, all tracks
     /// summed. 0 when polish didn't run.
     var polishSeconds: Double = 0
@@ -89,7 +96,8 @@ struct AIUsage: Codable {
         let transcriptionUSD: Double = switch backend {
         case .local: 0
         case .groq: billedSeconds / 3600 * AIPricing.groqUSDPerAudioHour
-        case .deepgram: billedSeconds / 3600 * AIPricing.deepgramUSDPerAudioHour
+        case .deepgram: billedSeconds / 3600 * (transcriptionMultilingual == true
+            ? AIPricing.deepgramMultilingualUSDPerAudioHour : AIPricing.deepgramUSDPerAudioHour)
         }
         items.append(LineItem(
             label: "Transcription \(backend.label)",

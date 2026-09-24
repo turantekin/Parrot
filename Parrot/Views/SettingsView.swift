@@ -293,7 +293,7 @@ struct SettingsView: View {
                     Picker("", selection: $transcriptionBackend) {
                         Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
                         Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
-                        Text("Deepgram cloud — word-by-word streaming, ~$1/hr").tag(TranscriptionBackend.deepgram.rawValue)
+                        Text("Deepgram cloud — word-by-word streaming, ~$0.70/hr").tag(TranscriptionBackend.deepgram.rawValue)
                     }
                     .pickerStyle(.radioGroup)
                     .labelsHidden()
