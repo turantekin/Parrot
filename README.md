@@ -109,7 +109,7 @@ Live cards and post-call reports can use different brains (say, Ollama live and 
 |---|---|---|
 | **On-device Whisper** (default) | Private, offline, free. Five models from Tiny (40 MB) to Large V3 Turbo (1.6 GB). | Free |
 | **Groq** `whisper-large-v3-turbo` | Big-model accuracy, same latency as local. | ~$0.08 |
-| **Deepgram** Nova-3 | True streaming, words appear ~300 ms after they're spoken. | ~$0.58 |
+| **Deepgram** Nova-3 | True streaming, words appear ~300 ms after they're spoken. | ~$0.70 ($0.58 with one language pinned) |
 
 Cloud engines fall back to on-device automatically if anything fails mid-call. An optional **polish pass** re-transcribes the saved audio with Groq's large model after you hit Stop and rewrites the report from the cleaner text.
 

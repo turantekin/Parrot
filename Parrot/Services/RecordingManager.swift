@@ -628,6 +628,9 @@ final class RecordingManager {
         usage.transcriptionBackend = (backendOverride ?? TranscriptionBackend.selected).rawValue
         usage.transcriptionSeconds = meeting.duration
         usage.transcriptionTracks = meeting.micAudioPath?.nilIfEmpty != nil ? 2 : 1
+        // Same stop-time read as the backend above: auto-detect = Deepgram "multi".
+        let language = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        usage.transcriptionMultilingual = language == nil || language == "auto"
         usage.polishSeconds = polishSeconds
         meeting.aiUsageData = try? JSONEncoder().encode(usage)
         try? modelContext?.save()
