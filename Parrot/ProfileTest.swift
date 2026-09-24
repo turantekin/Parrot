@@ -43,6 +43,7 @@ enum ProfileTest {
         testReplayParser()
         testHybridRetrieval()
         testChunker()
+        testEmbedding()
         testGlossaryPrompt()
         testDiarizedLabel()
         testSpeakerNames()
@@ -1156,5 +1157,25 @@ enum ProfileTest {
               chunks.filter { $0.contains("item ") }.allSatisfy { $0.hasPrefix("### 13.13 Big list\n") })
         check("chunker keeps the whole content", chunks.joined(separator: "\n").contains("item 40 costs £40"))
         check("chunker short plain text is one chunk", K.chunkText("Just one short paragraph that is long enough to keep.").count == 1)
+        // PDF text: single newlines only, so the heading and its body arrive
+        // as one paragraph. It used to be dropped as a bare heading.
+        let pdfText = "# Kuzey Yazılım SSS\n## Fiyatlandırma\nBaşlangıç paketi aylık 1.450 TL'dir ve beş kullanıcıya kadar geçerlidir."
+        check("chunker keeps a paragraph that only starts with a heading",
+              K.chunkText(pdfText).joined().contains("1.450 TL"))
+    }
+
+    static func testEmbedding() {
+        typealias K = KnowledgeBaseService
+        let long = (1...30).map { "Cümle \($0): kargo ücreti ve iade süresi burada anlatılıyor." }.joined(separator: " ")
+        let windows = K.embeddingWindows(long)
+        check("embedding windows keep every character", windows.joined() == long)
+        check("embedding windows stay under the cap", windows.count > 1 && windows.allSatisfy { $0.count <= 400 })
+        // Turkish has no NLEmbedding.sentenceEmbedding; the contextual model covers it.
+        let turkish = K.embed("Başlangıç paketinin aylık fiyatı ne kadar?", language: .turkish)
+        check("Turkish text gets a vector", turkish?.vector.count == 512)
+        // Latin-script languages share one model, so English and Turkish vectors compare.
+        check("English and Turkish share a vector space",
+              turkish != nil && K.embed("How much is the starter plan?", language: .english)?.space == turkish?.space)
+        check("space(for:) matches the space embed reports", K.space(for: .turkish) == turkish?.space)
     }
 }

@@ -84,6 +84,9 @@ enum DocAnswerEval {
             guard !key.isEmpty else { print("doc-answer-eval: no typesafe-api-key in the Keychain"); exit(1) }
             let matcher = JevDocMatcher(apiKey: key)
             let kb = KnowledgeBaseService()
+            // An index from an older build is re-embedded first, so the eval
+            // measures the current model rather than a half-migrated index.
+            await kb.refreshEmbeddings()
             print("doc-answer-eval: \(labels.count) labels, \(kb.documents.count) docs, shape=\(shape)")
             matcher.warmUp()
             try? await Task.sleep(for: .seconds(1))

@@ -5,7 +5,8 @@ import PDFKit
 
 /// On-device knowledge base: documents are chunked and embedded locally with the
 /// NaturalLanguage framework, then matched against the live conversation by cosine
-/// similarity. Nothing here ever touches the network — only the few best-matching
+/// similarity. Documents never leave the Mac: the only download is Apple's own
+/// one-time language model for some scripts, and only the few best-matching
 /// chunks are later included in copilot API calls.
 @MainActor
 @Observable
@@ -22,7 +23,10 @@ final class KnowledgeBaseService {
 
     init(persistent: Bool = true) {
         self.persistent = persistent
-        if persistent { load() }
+        if persistent {
+            load()
+            Task { await refreshEmbeddings() }
+        }
     }
 
     // MARK: - Document Management
@@ -34,6 +38,7 @@ final class KnowledgeBaseService {
             await addDocument(at: url)
         }
         isIndexing = false
+        await refreshEmbeddings()
     }
 
     private func addDocument(at url: URL) async {
@@ -51,20 +56,24 @@ final class KnowledgeBaseService {
         let pieces = Self.chunkText(text)
         let language = NLLanguageRecognizer.dominantLanguage(for: text) ?? .english
 
+        // A chunk without a vector (the language's model is still downloading,
+        // or the OS has none) is still indexed: it matches on exact words, and
+        // refreshEmbeddings gives it a vector once the model is there.
         let embedded: [KBChunk] = await Task.detached(priority: .userInitiated) {
-            pieces.compactMap { piece in
-                guard let vector = Self.embed(piece, language: language) else { return nil }
+            pieces.map { piece in
+                let vector = Self.embed(piece, language: language)
                 return KBChunk(
                     documentName: name,
                     languageRaw: language.rawValue,
                     text: piece,
-                    embedding: vector
+                    embedding: vector?.vector ?? [],
+                    space: vector?.space
                 )
             }
         }.value
 
         guard !embedded.isEmpty else {
-            lastError = "No embeddable text in \(name) — the document language may not be supported on this Mac"
+            lastError = "No text to index in \(name)"
             return
         }
 
@@ -153,27 +162,38 @@ final class KnowledgeBaseService {
         )
 
         let best: [KBChunk] = await Task.detached(priority: .userInitiated) {
-            // Documents may be in different languages; embed the query once per
-            // language so vectors are always compared within the same space.
-            let languages = Set(snapshot.map(\.languageRaw))
+            // Documents may be in different scripts, each with its own model;
+            // embed the query once per model so vectors are always compared
+            // within the same space. Latin-script documents (English, Turkish,
+            // Spanish...) share one model, so an English question can match a
+            // Turkish chunk. A chunk with no current vector scores 0.
             var queryVectors: [String: [Double]] = [:]
-            for raw in languages {
-                queryVectors[raw] = Self.embed(query, language: NLLanguage(rawValue: raw))
+            for raw in Set(snapshot.map(\.languageRaw)) {
+                let language = NLLanguage(rawValue: raw)
+                guard let space = Self.space(for: language), queryVectors[space] == nil,
+                      let vector = Self.embed(query, language: language) else { continue }
+                queryVectors[vector.space] = vector.vector
             }
 
             let cosine: [Double] = snapshot.map { chunk in
-                queryVectors[chunk.languageRaw].map { Self.cosineSimilarity($0, chunk.embedding) } ?? 0
+                chunk.space.flatMap { queryVectors[$0] }.map { Self.cosineSimilarity($0, chunk.embedding) } ?? 0
             }
+            // ponytail: no similarity floor. Mean-pooled contextual vectors sit
+            // near 0.86 for any pair (2026-09-24 eval: answerable 0.88,
+            // off-topic 0.86), so no absolute cut separates them; embedding
+            // hits only ever take the reserved third of the slots anyway.
             let cosineOrder = cosine.indices
-                .filter { cosine[$0] > 0.3 }
+                .filter { cosine[$0] > 0 }
                 .sorted { cosine[$0] > cosine[$1] }
 
             // Exact words first. Sentence embeddings alone miss most factual
             // questions on a long document (2026-09-19 eval: the answering chunk
             // sat in the cosine top 8 for 14 of 71 questions, in the BM25 top 8
             // for 55), and fusing the two with equal weight was worse than BM25
-            // alone. So BM25 ranks, and embeddings only fill the slots exact
-            // words did not reach. Chunks with neither signal stay out.
+            // alone. So BM25 ranks, and embeddings fill the slots exact words
+            // did not reach. With no cosine floor, every chunk with a vector
+            // is an embedding candidate, so a KB with topK or more chunks
+            // always fills topK (small talk included).
             let lexicalOrder = Self.bm25Order(
                 query: Self.lexicalTokens(query),
                 documents: snapshot.map { Self.lexicalTokens($0.text) })
@@ -304,10 +324,16 @@ final class KnowledgeBaseService {
             current = ""
         }
         for paragraph in paragraphs {
+            // A bare heading waits for its paragraph. One that merely starts
+            // with a heading line is body text: PDF text keeps single
+            // newlines, so a whole page can arrive as one "paragraph", and
+            // skipping it left such a PDF with no chunks at all.
             if paragraph.hasPrefix("#") {
-                heading = paragraph
-                section = paragraph
-                continue
+                section = String(paragraph.prefix { $0 != "\n" })
+                if section == paragraph {
+                    heading = paragraph
+                    continue
+                }
             }
             var piece = paragraph
             if let pending = heading {
@@ -337,10 +363,124 @@ final class KnowledgeBaseService {
 
     // MARK: - Embedding
 
-    private nonisolated static func embed(_ text: String, language: NLLanguage) -> [Double]? {
-        let embedding = NLEmbedding.sentenceEmbedding(for: language)
-            ?? NLEmbedding.sentenceEmbedding(for: .english)
-        return embedding?.vector(for: text)
+    /// Re-embeds every chunk whose vector is missing or from another model:
+    /// indexes from before 0.20 (sentence embeddings), documents added while
+    /// their language's model was downloading, and OS updates that ship a new
+    /// model revision. Until then search skips those vectors and the chunks
+    /// match on exact words, so results stay correct meanwhile.
+    func refreshEmbeddings() async {
+        // A call that lands mid-refresh (a document in a new script added
+        // during the first-launch re-embed) gets one more pass, not dropped.
+        guard !isRefreshing else { refreshAgain = true; return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        repeat {
+            refreshAgain = false
+            await refreshPass()
+        } while refreshAgain
+    }
+
+    private func refreshPass() async {
+        // Apple's one-time model download for a language (Cyrillic, Arabic,
+        // Indic scripts on a fresh Mac). On-device after that; documents are
+        // never uploaded. Can take minutes, so nothing waits on it but this.
+        for raw in Set(chunks.filter { $0.space == nil }.map(\.languageRaw)) {
+            if let model = NLContextualEmbedding(language: NLLanguage(rawValue: raw)), !model.hasAvailableAssets {
+                _ = try? await model.requestAssets()
+            }
+        }
+
+        let stale = chunks.filter { chunk in
+            guard let current = Self.space(for: NLLanguage(rawValue: chunk.languageRaw)) else { return false }
+            return chunk.space != current
+        }
+        guard !stale.isEmpty else { return }
+        let refreshed: [UUID: KBChunk] = await Task.detached(priority: .utility) {
+            var out: [UUID: KBChunk] = [:]
+            for var chunk in stale {
+                guard let vector = Self.embed(chunk.text, language: NLLanguage(rawValue: chunk.languageRaw)) else { continue }
+                chunk.embedding = vector.vector
+                chunk.space = vector.space
+                out[chunk.id] = chunk
+            }
+            return out
+        }.value
+        // By id: a document removed or re-added meanwhile keeps its new state.
+        for i in chunks.indices {
+            if let chunk = refreshed[chunks[i].id] { chunks[i] = chunk }
+        }
+        save()
+    }
+
+    private var isRefreshing = false
+    private var refreshAgain = false
+
+    // ponytail: one global lock around every model call. Embedding is CPU
+    // bound and the docs don't promise NLContextualEmbedding is thread-safe.
+    private nonisolated static let embeddingLock = NSLock()
+    private nonisolated(unsafe) static var models: [String: NLContextualEmbedding] = [:]
+
+    /// The loaded model for a language; nil when the OS has none for it or
+    /// its assets aren't downloaded yet. Caller holds `embeddingLock`.
+    private nonisolated static func loadedModel(for language: NLLanguage) -> NLContextualEmbedding? {
+        if let model = models[language.rawValue] { return model }
+        guard let model = NLContextualEmbedding(language: language), model.hasAvailableAssets,
+              (try? model.load()) != nil else { return nil }
+        models[language.rawValue] = model
+        return model
+    }
+
+    /// The vector space a language embeds into right now, if any.
+    nonisolated static func space(for language: NLLanguage) -> String? {
+        embeddingLock.lock()
+        defer { embeddingLock.unlock() }
+        return loadedModel(for: language).map { "\($0.modelIdentifier)/\($0.revision)" }
+    }
+
+    /// Mean of the token vectors from Apple's on-device contextual embedding
+    /// (NaturalLanguage, macOS 14+). It replaced NLEmbedding.sentenceEmbedding,
+    /// which exists only for English, Spanish, German, French, Italian and
+    /// Portuguese; this has one model for 20+ Latin-script languages (Turkish,
+    /// Dutch, Polish, Swedish...) plus Cyrillic, Arabic, CJK and Indic models,
+    /// and ranked answers higher even in English (2026-09-24 eval, cosine top
+    /// 8: 10/30 vs 4/30). The model reads 256 tokens and drops the rest, so
+    /// long text is embedded in sentence windows and pooled across them.
+    nonisolated static func embed(_ text: String, language: NLLanguage) -> (vector: [Double], space: String)? {
+        embeddingLock.lock()
+        defer { embeddingLock.unlock() }
+        guard let model = loadedModel(for: language) else { return nil }
+        var sum = [Double](repeating: 0, count: model.dimension)
+        var count = 0
+        for window in embeddingWindows(text) {
+            guard let result = try? model.embeddingResult(for: window, language: nil) else { continue }
+            result.enumerateTokenVectors(in: window.startIndex..<window.endIndex) { vector, _ in
+                for i in vector.indices { sum[i] += vector[i] }
+                count += 1
+                return true
+            }
+        }
+        guard count > 0 else { return nil }
+        return (sum.map { $0 / Double(count) }, "\(model.modelIdentifier)/\(model.revision)")
+    }
+
+    /// Consecutive sentences joined up to `cap` characters, well under the
+    /// model's 256 tokens (Turkish ran ~3.3 characters a token).
+    nonisolated static func embeddingWindows(_ text: String, cap: Int = 400) -> [String] {
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
+        var windows: [String] = []
+        var current = ""
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            let sentence = String(text[range])
+            if !current.isEmpty, current.count + sentence.count > cap {
+                windows.append(current)
+                current = ""
+            }
+            current += sentence
+            return true
+        }
+        if !current.isEmpty { windows.append(current) }
+        return windows
     }
 
     private nonisolated static func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
