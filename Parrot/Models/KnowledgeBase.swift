@@ -7,6 +7,10 @@ struct KBChunk: Codable, Identifiable {
     var languageRaw: String
     var text: String
     var embedding: [Double]
+    /// The model and revision `embedding` came from; vectors are only ever
+    /// compared within one space. nil = no usable vector yet: indexes from
+    /// before 0.20 (sentence embeddings) or a model still downloading.
+    var space: String?
 }
 
 /// A document the user added to the knowledge base.
