@@ -11,6 +11,8 @@ make test   # headless logic harness (300+ checks), run this before a PR
 
 Build with `make`, not Xcode's UI — Xcode's explicit-modules build intermittently races on WhisperKit's dependencies (`make` uses plain `swift build`). If you want the IDE, `make xcode` regenerates the project from `project.yml`; never hand-edit the `.xcodeproj`.
 
+Dependencies are pinned in the committed `Package.resolved`, so every clone builds the same versions. Don't commit a changed `Package.resolved` by accident. Bumping is a deliberate PR of its own: `swift package update`, then `make test` and launch the app.
+
 `make signing-help` explains how to stop macOS permissions resetting between builds.
 
 ## Finding your way
