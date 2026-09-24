@@ -115,7 +115,7 @@ Cloud engines fall back to on-device automatically if anything fails mid-call. A
 
 ### 🌍 Your language, too
 
-Whisper auto-detects the language of the call, or you can pin one of 14 (English, Turkish, Spanish, German, French, Italian, Portuguese, Dutch, Russian, Arabic, Hindi, Chinese, Japanese, Korean). The copilot and the report answer in the language of the call. Document search works for English, Spanish, German, French, Italian and Portuguese for now. For anything but English, pick Large V3 Turbo or Groq. A **custom vocabulary** list teaches Whisper your product and people names.
+Whisper auto-detects the language of the call, or you can pin one of 14 (English, Turkish, Spanish, German, French, Italian, Portuguese, Dutch, Russian, Arabic, Hindi, Chinese, Japanese, Korean). The copilot and the report answer in the language of the call. Documents work in most major languages, including Turkish, Dutch, Polish, Russian, Arabic, Hindi, Chinese, Japanese and Korean, and an English question can find the answer in a Turkish or Spanish document. For anything but English, pick Large V3 Turbo or Groq. A **custom vocabulary** list teaches Whisper your product and people names.
 
 ### 🧰 And all the everyday stuff
 
@@ -200,7 +200,7 @@ Want the tour again? **Help > Show Welcome Tour**.
 | Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0), on-device pyannote-derived models (CC-BY-4.0) |
 | Copilot and reports | Claude API (Haiku 4.5, structured outputs) · Ollama · any OpenAI-compatible server |
 | Instant document answers (optional) | TypeSafe AI `jev-latest` |
-| Knowledge base | Apple NaturalLanguage sentence embeddings + BM25, all on-device |
+| Knowledge base | Apple NaturalLanguage contextual embeddings + BM25, all on-device |
 | System audio | Core Audio process taps (macOS 15+) · ScreenCaptureKit (macOS 14) |
 | Microphone | AVAudioEngine + vendored SpeexDSP echo canceller |
 | Storage | SwiftData; API keys in the Keychain |
