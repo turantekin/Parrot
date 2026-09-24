@@ -45,6 +45,8 @@ jobs:
       # a user's Mac fetches them the first time a language is used. The
       # embedding checks need the Latin-script model, so fetch it the same way.
       - name: Fetch NaturalLanguage embedding assets
+        timeout-minutes: 6
+        continue-on-error: true
         run: |
           cat > /tmp/nlassets.swift <<'SWIFT'
           import Foundation
@@ -57,7 +59,7 @@ jobs:
                   print("\(lang.rawValue): \(result.rawValue) \(error?.localizedDescription ?? "")")
                   done.signal()
               }
-              _ = done.wait(timeout: .now() + 300)
+              _ = done.wait(timeout: .now() + 120)
           }
           SWIFT
           swift /tmp/nlassets.swift

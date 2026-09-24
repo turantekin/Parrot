@@ -88,6 +88,8 @@ Tell Parrot what kind of call it is, and the profile decides what the copilot wa
 <p align="center"><img src=".github/readme/after.png" alt="A post-call report: summary, pain points, talk balance, objections handled and missed, what went well, what to improve, and commitments" width="480"></p>
 
 - **Summary:** overview, pain points, key points, next steps.
+- **Receipts on every point.** Each bullet carries a time chip (`12:34`): click it for the exact quote, *Play from Here* or *Show in Transcript*. Chips are checked against the transcript on your Mac, and a promise nobody actually made is marked *unverified* instead of stated as fact.
+- **Moments you marked** during the call (the *Mark* button, or ⌃⌥M from any app) get their own card, and the report is written knowing they mattered.
 - **Coaching:** talk balance, what went well, what to improve, objections and questions marked *Handled* or *Missed*, and commitments from both sides.
 - **Per-call AI cost** down to the cent: model, tokens, calls and transcription minutes, with a line-by-line breakdown. Local features show $0.00, proudly.
 - **Playback synced with the transcript** (0.5x to 2x): click a line, hear that moment.
@@ -119,6 +121,9 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 
 ### 🧰 And all the everyday stuff
 
+- **Notices your calls.** When Zoom, Meet, Teams or FaceTime starts using the mic, Parrot asks *"Record it?"* (or records on its own, if you choose) and offers to stop when the call ends. It only sees that the mic is in use, never another app's audio.
+- **Knows your calendar** (opt-in, read-only, local): meetings take their event's name and guest list, guests become one-click speaker names, and an event title like "Interview: Jane" picks the matching profile.
+- **Opens at login**, if you like, so it's there for the first call of the day.
 - **Records system audio and your mic** as two tracks. On macOS 15+ it uses the audio-only System Audio permission (Core Audio taps); on macOS 14, ScreenCaptureKit. No virtual audio drivers.
 - **Echo cancellation** (SpeexDSP) so the other side doesn't leak into your mic on speakers. The mic reconnects by itself when AirPods die or switch mid-call.
 - **Sentences, not fragments.** Lines land as whole sentences when the speaker pauses, with a live grey preview while they're still talking. Silence is never transcribed.
@@ -145,6 +150,9 @@ This is a microphone-and-system-audio app, so you shouldn't have to take my word
 | Copilot on Claude or a custom server | Transcript text, matched document passages, profile instructions | Anthropic, or the server you picked | Only if you turn Copilot on |
 | TypeSafe doc answers | The question, a couple of lines of context, candidate document snippets | TypeSafe AI | Only with a TypeSafe key, Claude mode |
 | Groq or Deepgram transcription, polish pass | Call audio | Groq or Deepgram | Only if you pick that engine |
+| Calendar | Nothing (read locally through macOS's calendar store) | No one | Only if you connect it |
+| Calendar invite for the Copilot | Event title, guest names, notes (dial-in details removed) | Anthropic, or the server you picked | Only if you turn on "Brief the copilot from the invite" |
+| Call detection | Nothing (asks macOS which apps use the mic) | No one | Unless you turn it off |
 | Copilot on Ollama | Nothing | Your own Mac | Always local |
 
 - **No accounts, no telemetry, no analytics.** There's no Parrot server to phone home to.
@@ -231,8 +239,8 @@ make run
 - [x] **Notarize and distribute.** Done, notarized DMG plus Sparkle auto-updates
 - [x] **Pre-call brief and per-call profiles.** Done
 - [ ] **Live speaker names during the call**, not just after it
-- [ ] **Calendar integration**, to name meetings from what's on my calendar
-- [ ] **Keyword bookmarks**, to mark important moments during a recording
+- [x] **Calendar integration.** Done: meetings take their event's name and guests
+- [x] **Bookmarks.** Done: mark moments mid-call (⌃⌥M from any app), and every report point links to its source
 - [ ] **Better waveform visualization.** The current one is... functional
 
 If any of these excite you, jump in!

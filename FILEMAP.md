@@ -24,6 +24,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Models/KnowledgeBase.swift` | 54 | KB document/chunk/reference value types |
 | `Models/AIUsage.swift` | 144 | Token accounting and per-model price table |
 | `Models/SpeakerProfile.swift` | 30 | Remembered voice: name + running-mean embedding (opt-in, local) |
+| `Models/Bookmark.swift` | 50 | A marked moment (time + label); merge window, prompt line |
 
 ## Services
 
@@ -48,6 +49,12 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/AppUpdater.swift` | 56 | Sparkle updater: daily signed appcast check, installs on quit |
 | `Services/BugReport.swift` | 120 | Pre-filled GitHub issue: diagnostics, own-window screenshot, URL builder |
 | `Services/SpeakerProfileStore.swift` | 69 | Voiceprint matching (cosine ≥ 0.65), remember/forget for named voices |
+| `Services/Receipts.swift` | 175 | Report receipts: parse `[mm:ss]` stamps, verify against the transcript, commitment/placeholder rules |
+| `Services/GlobalHotKey.swift` | 105 | Carbon system-wide shortcut (⌃⌥M mark), registered only while recording |
+| `Services/CallDetector.swift` | 250 | Mic-in-use reading (Core Audio process list) + pure call start/end state machine, app names |
+| `Services/CallWatcher.swift` | 310 | Polls the detector; Ask/Auto modes; notification actions + delegate; calendar reminders |
+| `Services/CalendarService.swift` | 250 | EventKit read-only: current event match, notes cleaning, invite context, title → profile |
+| `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
 
 ## Views
 
@@ -60,9 +67,9 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
 | `Views/SettingsCards.swift` | 187 | Settings building blocks: page, titled card, row, tag chip (the landing-page window look) |
-| `Views/MeetingDetailView.swift` | 900 | Post-call tabs: transcript, insights, report; speaker naming popover + confirm card |
+| `Views/MeetingDetailView.swift` | 1250 | Post-call tabs: transcript, insights, report; receipts actions, bookmarks card/rows; speaker naming popover (+ invitee suggestions) |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
-| `Views/ReportContentView.swift` | 267 | Report section cards, talk-ratio bar, prose blocks |
+| `Views/ReportContentView.swift` | 420 | Report section cards, talk-ratio bar, prose blocks, receipt chips + popover, unverified tag |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
 | `Views/SettingsView.swift` | 970 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 720 | Call-profile editor: kinds, gauges, icon picker |
@@ -72,13 +79,15 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 253 | `AppSession`, menu commands, context menus, notifications |
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
-| `Views/Theme.swift` | 158 | Single source of colors, fonts, metrics |
+| `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
+| `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
 
 ## Build & non-source
 
 | Path | Purpose |
 |---|---|
 | `Makefile` | Canonical build: `swift build` + manual `.app` assembly |
+| `.github/workflows/ci.yml` | macOS CI: build, `--profile-test`, snapshot renders (artifact), ad-hoc `.app` assembly |
 | `project.yml` | xcodegen input; `Parrot.xcodeproj` is generated from it |
 | `Package.swift` | SwiftPM deps (WhisperKit, vendored CSpeexDSP) |
 | `scripts/release.sh` | Release packaging; mirrors the Makefile's bundle step |

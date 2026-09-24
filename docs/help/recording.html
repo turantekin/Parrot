@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="record, start recording, stop, quit, crash, recover, mic muted, another app, device, headphones">
+<meta name="keywords" content="record, start recording, stop, quit, crash, recover, mic muted, another app, device, headphones, auto record, detect call, calendar, bookmark, mark moment">
 <title>Recording a call</title>
 <link rel="canonical" href="https://openparrot.app/help/recording.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -30,6 +30,44 @@ place to add more. Profiles are explained in
 <a href="profiles.html">Call profiles</a>, documents in
 <a href="knowledge.html">Knowledge base</a>.</p>
 
+<h2>Parrot can notice calls for you</h2>
+<p>When Zoom, Google Meet, Teams, FaceTime or any other app starts using your
+microphone, Parrot notices the call and a notification asks
+<strong>"Zoom call started. Record it with Parrot?"</strong> The same question
+shows as a banner at the top of Parrot's window and in the menu bar icon, so
+you'll see it even with notifications turned off. When the call app lets go of
+the mic, Parrot asks whether to stop too. Parrot only sees <em>that</em> the
+mic is in use (the same thing the orange dot in the menu bar shows), never
+the audio of another app.</p>
+
+<p>Pick what happens in Settings &rarr; Recording &rarr; Call Detection:
+<strong>Ask me</strong> (the default), <strong>Record automatically</strong>,
+or <strong>Off</strong>. In automatic mode Parrot starts on its own and stops
+when the call ends. Recording laws differ by place, and many require telling
+everyone on the call, so automatic mode puts that on you. If an app keeps
+getting mistaken for a call (a dictation tool, say), choose
+<strong>Never for This App</strong> on the notification. Settings lists those
+apps with an "Ask Again" button.</p>
+
+<p>Detection only works while Parrot is running, so turn on
+<strong>Open Parrot at login</strong> in Settings &rarr; General.</p>
+
+<h2>Your calendar names the meeting</h2>
+<p>Connect your calendar in Settings &rarr; Recording &rarr; Calendar (or in
+the welcome tour) and a call that lines up with a calendar event takes its
+name and guest list. Guests show up as one-click name suggestions when you
+name the voices after the call. For a call Parrot noticed itself, an event
+title like "Interview: Jane" or "Acme demo" also picks the matching call
+profile, but only when exactly one profile fits. Parrot uses the calendars
+already on your Mac (iCloud, Google, Outlook), reads them and never changes
+them.</p>
+
+<p>Two extra switches appear once it's connected. <strong>Brief the copilot
+from the invite</strong> lets the live Copilot read the event's title, guests
+and notes. It's off by default because that's someone else's writing, and a
+cloud Copilot would receive it. <strong>Remind me before meetings</strong>
+sends a notification a minute before a meeting with guests or a video link.</p>
+
 <h2>While you're recording</h2>
 <p>The bar at the top shows your input and output devices and a live level
 meter for each track. If you switch AirPods mid-call or your Bluetooth
@@ -43,6 +81,19 @@ Parrot silence. Parrot keeps trying to reclaim it every few seconds and
 usually gets it back. The other side of the call keeps recording the whole
 time, so worst case you lose some of your own words, not the meeting. There's
 more on this in <a href="troubleshooting.html">Troubleshooting</a>.</p>
+
+<h2>Marking moments</h2>
+<p>Something important just happened? Click <strong>Mark</strong> at the top
+of the call screen, choose Recording &rarr; Mark Moment, use the menu bar
+icon, or press <kbd>&#8963;&#8997;M</kbd> from any app, even while Zoom or
+your browser is in front. The button offers a box to say what it was
+("pricing question"); typing is optional. Marked moments show up in the report
+under <strong>Moments you marked</strong>, and the report is written knowing
+they mattered to you. After the call you can also right-click any transcript
+line and choose <strong>Bookmark This Line</strong>.</p>
+<p>The <kbd>&#8963;&#8997;M</kbd> shortcut only exists while a recording is
+running, and it's the only key Parrot can see. Turn it off in Settings &rarr;
+Recording &rarr; Bookmarks.</p>
 
 <h2>Stopping</h2>
 <p>Hit Stop and Parrot finishes writing the last words, saves both audio
