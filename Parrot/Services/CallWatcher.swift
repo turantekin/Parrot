@@ -76,16 +76,16 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         center.delegate = self
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.startCategory, actions: [
-                UNNotificationAction(identifier: Self.recordAction, title: "Record"),
-                UNNotificationAction(identifier: Self.ignoreAppAction, title: "Never for This App"),
-            ], intentIdentifiers: []),
+                UNNotificationAction(identifier: Self.recordAction, title: "Record", options: []),
+                UNNotificationAction(identifier: Self.ignoreAppAction, title: "Never for This App", options: []),
+            ], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.stopCategory, actions: [
-                UNNotificationAction(identifier: Self.stopAction, title: "Stop Recording"),
-                UNNotificationAction(identifier: Self.keepAction, title: "Keep Recording"),
-            ], intentIdentifiers: []),
+                UNNotificationAction(identifier: Self.stopAction, title: "Stop Recording", options: []),
+                UNNotificationAction(identifier: Self.keepAction, title: "Keep Recording", options: []),
+            ], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [
-                UNNotificationAction(identifier: Self.recordAction, title: "Record Now"),
-            ], intentIdentifiers: []),
+                UNNotificationAction(identifier: Self.recordAction, title: "Record Now", options: []),
+            ], intentIdentifiers: [], options: []),
         ])
         guard timer == nil else { return }
         let t = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
