@@ -34,6 +34,7 @@ truth for the post-test improvement effort. Update the status table as work land
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
 | — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
+| **N** | Next features (six phases) | ⬜ not started | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
