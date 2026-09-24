@@ -36,6 +36,7 @@ enum ProfileTest {
         testBugReport()
         testSegmenter()
         testQuietMic()
+        testIdleReminder()
         testCopilotBudget()
         testJevMatcher()
         testBriefCard()
@@ -616,6 +617,27 @@ enum ProfileTest {
 
     // The quiet-mic pipeline (2026-08-04 live trace): buffer-derived noise
     // floor + pre-decode loudness normalization.
+    // "Still recording?" (#50): every 15 min of silence, never mid-conversation.
+    static func testIdleReminder() {
+        typealias R = RecordingManager
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let m: TimeInterval = 60
+        check("idle: not due while people talk",
+              !R.idleReminderDue(now: t0 + 20 * m, lastVoice: t0 + 19 * m, lastReminder: nil, after: 15 * m))
+        check("idle: due after 15 silent minutes",
+              R.idleReminderDue(now: t0 + 15 * m, lastVoice: t0, lastReminder: nil, after: 15 * m))
+        check("idle: no repeat right after a reminder",
+              !R.idleReminderDue(now: t0 + 16 * m, lastVoice: t0, lastReminder: t0 + 15 * m, after: 15 * m))
+        check("idle: repeats after another 15 minutes",
+              R.idleReminderDue(now: t0 + 30 * m, lastVoice: t0, lastReminder: t0 + 15 * m, after: 15 * m))
+        check("idle: speech after a reminder restarts the clock",
+              !R.idleReminderDue(now: t0 + 31 * m, lastVoice: t0 + 20 * m, lastReminder: t0 + 15 * m, after: 15 * m))
+        check("idle: body says the minutes",
+              R.idleReminderBody(silentFor: 30 * m) == "Nobody has spoken for 30 minutes. Parrot is still recording.")
+        check("idle: one minute reads naturally",
+              R.idleReminderBody(silentFor: 70).hasPrefix("Nobody has spoken for a minute."))
+    }
+
     static func testQuietMic() {
         typealias Seg = TranscriptionEngine.Segmenter
         func quietSpeech(_ frames: Int) -> [Float] { Array(repeating: 0.0014, count: frames * Seg.frame) }
