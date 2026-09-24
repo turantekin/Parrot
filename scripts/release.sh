@@ -45,13 +45,10 @@ notarize() { # notarize <file>
   fi
 }
 
-echo "==> swift build -c release"
-swift build -c release
-# Ship only the committed pins. If SwiftPM re-resolved (Package.swift changed
-# without a matching Package.resolved), stop: floating deps once produced a
-# binary that aborts at launch (swift-collections 1.7.0, _swift_initBorrow).
-git diff --quiet -- Package.resolved || {
-  echo "!! Package.resolved differs from the commit. Commit a tested bump first." >&2; exit 1; }
+echo "==> swift build -c release (pinned: Package.resolved)"
+# Fail instead of re-resolving if Package.resolved is stale: a floating
+# swift-collections 1.7 build dyld-crashes at launch on macOS 26.6.
+swift build -c release --force-resolved-versions
 
 echo "==> assembling $APP"
 rm -rf "$DIST"
