@@ -201,6 +201,10 @@ struct SettingsView: View {
     private var generalPage: some View {
         let path = AudioCaptureManager.storageDirectory().path
         return SettingsPage {
+            SettingsCard(title: "Startup") {
+                LoginItemRow(first: true)
+            }
+
             SettingsCard(title: "Appearance") {
                 SettingsLabeledRow(title: "Appearance", first: true) {
                     Picker("", selection: $appearance) {
@@ -282,6 +286,10 @@ struct SettingsView: View {
                     Hint("System audio comes straight from macOS (audio only, never the screen); the microphone uses your default input device.")
                 }
             }
+
+            CallDetectionCard()
+
+            CalendarCard()
 
             SettingsCard(title: "Bookmarks") {
                 SettingsToggleRow(

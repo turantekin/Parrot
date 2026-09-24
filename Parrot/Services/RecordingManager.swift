@@ -18,6 +18,10 @@ final class RecordingManager {
     /// without a key (see CallAnalysisEngine.fastPathAvailable).
     let docMatcher = JevDocMatcher()
     let profileStore = ProfileStore()
+    /// The Mac's calendars (opt-in): names meetings, lists who's on them.
+    let calendar = CalendarService()
+    /// Notices calls in other apps and offers to record them.
+    let callWatcher = CallWatcher()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -94,6 +98,10 @@ final class RecordingManager {
         self.modelContext = modelContext
         recoverInterruptedRecordings(in: modelContext)
         profileStore.seedAndMigrateIfNeeded(context: modelContext, knowledgeBase: knowledgeBase)
+        // Detection needs no model to watch the mic; it declines to offer a
+        // recording until the model below is ready.
+        callWatcher.recordingManager = self
+        callWatcher.start()
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
@@ -205,12 +213,41 @@ final class RecordingManager {
         if isRecording { registerMarkHotKey() }
     }
 
+    // MARK: - Detected calls
+
+    /// Starting, stopping or importing: not the moment to offer a recording.
+    var isBusy: Bool { isStarting || isStopping || importProgress != nil }
+
+    /// Starts recording a call noticed in another app (or from a calendar
+    /// reminder). Same permission preflight as every Record button; the
+    /// matched calendar event may pick the profile. Returns whether a
+    /// recording is running afterwards.
+    @discardableResult
+    func startDetectedCall(appID: String?) async -> Bool {
+        guard let modelContext, !isRecording, !isBusy else { return isRecording }
+        var override: CallProfile?
+        if calendar.isConnected, let event = calendar.currentEvent() {
+            let profiles = profileStore.profiles(in: modelContext)
+            if let id = CalendarService.matchProfile(title: event.title,
+                                                     profiles: profiles.map { ($0.id, $0.name) }) {
+                override = profiles.first { $0.id == id }
+            }
+        }
+        do {
+            try await preflightPermissionsAndStart(modelContext: modelContext, profileOverride: override)
+        } catch {
+            NSLog("Parrot: detected-call recording failed to start, \(error.localizedDescription)")
+        }
+        return isRecording
+    }
+
     // MARK: - Recording Control
 
     /// The one shared entry point for every "start recording" button — checks
     /// permissions, then starts. Returns without starting (and without throwing)
     /// when a permission flow was triggered instead.
-    func preflightPermissionsAndStart(modelContext: ModelContext) async throws {
+    func preflightPermissionsAndStart(modelContext: ModelContext,
+                                      profileOverride: CallProfile? = nil) async throws {
         // Check the system-audio permission BEFORE touching any capture API.
         // macOS 15+: the audio-only tap permission (optimistic after the one
         // official prompt — its grant can't be read back, see PermissionFlow).
@@ -233,10 +270,13 @@ final class RecordingManager {
         // Non-fatal: system audio still records if denied.
         _ = await PermissionFlow.requestMicrophone()
 
-        try await startRecording(modelContext: modelContext)
+        try await startRecording(modelContext: modelContext, profileOverride: profileOverride)
     }
 
-    func startRecording(modelContext: ModelContext) async throws {
+    /// `profileOverride` records this one call under another profile (a
+    /// detected call whose calendar title names one) without changing the
+    /// user's active choice.
+    func startRecording(modelContext: ModelContext, profileOverride: CallProfile? = nil) async throws {
         self.modelContext = modelContext
         // Reject re-entry up front (before any await) so a double-trigger can't
         // start two recordings / two transcription loops. Also blocked while a
@@ -253,10 +293,22 @@ final class RecordingManager {
         modelContext.insert(meeting)
 
         // Persist active profile/brief/snapshot onto the meeting
-        let profile = profileStore.activeProfile
+        let profile = profileOverride ?? profileStore.activeProfile
         meeting.profile = profile
-        meeting.brief = nextCallBrief.nilIfEmpty
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
+
+        // The calendar event this call belongs to names the meeting and
+        // lists who's on it. The invite's text reaches the copilot only if
+        // the user turned that on (it's someone else's writing, and the
+        // copilot may be a cloud model), and never as the user's own brief.
+        var calendarContext = ""
+        if calendar.isConnected, let event = calendar.currentEvent() {
+            meeting.apply(event)
+            if UserDefaults.standard.bool(forKey: CalendarService.useDetailsKey) {
+                calendarContext = CalendarService.inviteContext(for: event)
+            }
+        }
+        meeting.brief = nextCallBrief.nilIfEmpty
 
         // Set up audio capture. On failure, remove the just-inserted meeting —
         // otherwise it lingers as a ghost .recording row until the next launch's
@@ -300,7 +352,7 @@ final class RecordingManager {
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
         callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
         docMatcher.resetUsage()
-        callAnalysisEngine.start(profile: profile, brief: nextCallBrief)
+        callAnalysisEngine.start(profile: profile, brief: nextCallBrief, calendarContext: calendarContext)
 
         currentMeeting = meeting
         recordingStartTime = .now

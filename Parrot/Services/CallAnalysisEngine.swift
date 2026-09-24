@@ -117,6 +117,9 @@ final class CallAnalysisEngine {
     let provider: AnalysisProvider
     /// The user's one-liner for this call; the prompt carries it as "Brief for this specific call".
     private(set) var callBrief = ""
+    /// The matched calendar invite, when the user shares it with the copilot
+    /// (see AnalysisRequest.calendarContext).
+    private(set) var calendarContext = ""
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
     private var meCharacters = 0
     private var themCharacters = 0
@@ -149,7 +152,7 @@ final class CallAnalysisEngine {
         UserDefaults.standard.bool(forKey: "copilotEnabled")
     }
 
-    func start(profile: CallProfile?, brief: String = "") {
+    func start(profile: CallProfile?, brief: String = "", calendarContext: String = "") {
         guard isEnabled else {
             status = .off
             return
@@ -173,6 +176,7 @@ final class CallAnalysisEngine {
         sentiment = [:]; sentimentRead = nil; coachLine = nil
         activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.calendarContext = calendarContext
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
         // Open the TLS connection now so the first excerpt does not pay it.
@@ -385,7 +389,8 @@ final class CallAnalysisEngine {
             persona: profile?.persona ?? "",
             counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
-            gauges: profile?.gauges ?? []
+            gauges: profile?.gauges ?? [],
+            calendarContext: calendarContext
         )
 
         do {

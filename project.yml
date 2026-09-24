@@ -75,6 +75,9 @@ targets:
         com.apple.security.device.microphone: true
         # Outbound HTTPS for the Claude copilot API.
         com.apple.security.network.client: true
+        # Read-only use of the Mac's own calendars (EventKit): names meetings
+        # and lists attendees. Nothing leaves the Mac; opt-in in Settings.
+        com.apple.security.personal-information.calendars: true
         # User-picked files (knowledge base imports, audio import) + Downloads.
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.downloads.read-write: true
@@ -98,6 +101,10 @@ targets:
         # prompt (Core Audio process tap). This replaces the Screen Recording
         # ask on modern macOS; without the key the tap is silently denied.
         NSAudioCaptureUsageDescription: "Parrot records your meeting's audio (what you hear) to transcribe it on-device. It never sees your screen."
+        # macOS 14+ calendar prompt (EventKit full access — needed to read
+        # events; Parrot never writes to the calendar). Opt-in: asked only
+        # when the user clicks Connect Calendar.
+        NSCalendarsFullAccessUsageDescription: "Parrot reads your calendar to name your meetings and know who's on the call. It never changes your calendar, and nothing leaves your Mac."
         # The in-app Help Book (docs/help, assembled by scripts/assemble-help.sh).
         # Both keys must live HERE, not only in Info.plist: xcodegen regenerates
         # the plist and silently dropped them once (7be0c1d), which broke

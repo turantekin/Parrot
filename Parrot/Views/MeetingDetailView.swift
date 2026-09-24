@@ -960,6 +960,23 @@ struct SpeakerNamePopover: View {
                 .tint(Theme.Colors.accent)
             }
 
+            // Invitees from the calendar event, not yet given to a voice.
+            let invited = meeting.unassignedAttendeeNames
+            if !invited.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("On the invite")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    HStack(spacing: 6) {
+                        ForEach(invited.prefix(4), id: \.self) { person in
+                            Button(person) { assign(person) }
+                                .controlSize(.small)
+                                .help("This voice is \(person)")
+                        }
+                    }
+                }
+            }
+
             ForEach(meeting.longestSegments(for: label), id: \.id) { clip in
                 Button {
                     playClip(clip.startTime, min(clip.endTime, clip.startTime + 8))

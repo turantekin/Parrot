@@ -66,6 +66,12 @@ final class Meeting {
     /// Defaulted → old rows migrate.
     var bookmarksData: Data? = nil
 
+    /// People on the calendar invite this call matched (JSON [Attendee]).
+    /// Defaulted → old rows migrate.
+    var attendeesData: Data? = nil
+    /// EventKit identifier of the matched calendar event, nil if none.
+    var calendarEventID: String? = nil
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
@@ -214,6 +220,35 @@ final class Meeting {
             bookmarksData = newValue.isEmpty
                 ? nil
                 : try? JSONEncoder().encode(newValue.sorted { $0.time < $1.time })
+        }
+    }
+
+    /// Invitees from the matched calendar event (the user excluded).
+    var attendees: [Attendee] {
+        get {
+            guard let data = attendeesData else { return [] }
+            return (try? JSONDecoder().decode([Attendee].self, from: data)) ?? []
+        }
+        set { attendeesData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    }
+
+    /// Invitee names not yet given to a voice — the naming UI's suggestions.
+    var unassignedAttendeeNames: [String] {
+        let used = Set(speakerNames.values.map { $0.lowercased() })
+        var seen = Set<String>()
+        return attendees.map(\.displayName).filter {
+            !$0.isEmpty && !used.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted
+        }
+    }
+
+    /// Takes a calendar event's title and invitees. A title the user already
+    /// typed is kept; only the generated "Meeting <date>" one is replaced.
+    func apply(_ event: CalendarEventInfo) {
+        calendarEventID = event.id
+        attendees = event.attendees
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty, self.title == Self.defaultTitle(for: date) {
+            self.title = String(title.prefix(200))
         }
     }
 

@@ -10,6 +10,15 @@ struct MenuBarView: View {
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
+        if let prompt = recordingManager.callWatcher.prompt {
+            Button(prompt.kind == .start
+                   ? "Record \(prompt.appName) Call"
+                   : "Call Ended? Stop Recording") {
+                recordingManager.callWatcher.acceptPrompt()
+            }
+            Divider()
+        }
+
         if recordingManager.isRecording {
             Text("Recording — \(recordingManager.formattedElapsedTime)")
 

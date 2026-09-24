@@ -63,9 +63,19 @@ struct ContentView: View {
                     ImportingBanner(progress: progress)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if let prompt = recordingManager.callWatcher.prompt {
+                    CallPromptBanner(
+                        prompt: prompt,
+                        onAccept: { recordingManager.callWatcher.acceptPrompt() },
+                        onDismiss: { recordingManager.callWatcher.dismissPrompt() },
+                        onIgnoreApp: { recordingManager.callWatcher.ignorePromptApp() }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .padding(.top, 12)
         }
+        .animation(.easeInOut(duration: 0.2), value: recordingManager.callWatcher.prompt)
         // Always reachable, except mid-call: a live recording is the one time
         // the window is nobody else's business (and it keeps the button out of
         // call screenshots).
