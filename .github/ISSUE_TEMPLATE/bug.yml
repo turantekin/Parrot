@@ -1,0 +1,73 @@
+name: Something's broken
+description: A bug, a crash, or Parrot doing something it shouldn't.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Tip: the ladybug button inside Parrot (or **Help > Report a Bug**) fills most of this in for you.
+
+        Please don't paste API keys, and check a screenshot or log for anything private from your calls before you post it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect instead?
+      placeholder: I hit Stop and the report never showed up. The meeting stays on "Processing".
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I make it happen?
+      placeholder: |
+        1. Start a recording on a Google Meet call
+        2. Turn on the Copilot with Ollama
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Parrot version
+      description: Parrot > About Parrot, or Settings > General.
+      placeholder: "0.19.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 15.5, MacBook Air M2
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Parrot?
+      multiple: true
+      options:
+        - Recording or permissions
+        - Transcription
+        - Speaker names
+        - Live Copilot
+        - Knowledge (documents)
+        - Call profiles
+        - Post-call report
+        - Import or export
+        - Updates
+        - Something else
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Whatever applies. It helps a lot with audio bugs.
+      placeholder: |
+        Transcription: on-device, Large V3 Turbo (or Groq / Deepgram)
+        Copilot: Claude / Ollama (which model) / custom server
+        Audio: AirPods, built-in mic, external interface...
+        Call app: Zoom, Meet, Teams...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: For audio problems, run Parrot with PARROT_AUDIO_DEBUG=1 and grab the log (see Troubleshooting in the help guide).
+      render: text

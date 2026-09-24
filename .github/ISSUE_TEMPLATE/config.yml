@@ -1,0 +1,13 @@
+# Blank issues stay on: the app's Help > Report a Bug button opens
+# /issues/new with a pre-filled title, body and label, and that needs them.
+blank_issues_enabled: true
+contact_links:
+  - name: Quickest way to report a bug
+    url: https://turantekin.github.io/Parrot/help/troubleshooting.html
+    about: In Parrot, click the ladybug in the corner (or Help > Report a Bug). It fills in your version and settings for you.
+  - name: Question or "how do I...?"
+    url: https://github.com/turantekin/Parrot/discussions/categories/q-a
+    about: Ask in Discussions. The user guide at turantekin.github.io/Parrot/help may already have the answer.
+  - name: Security or privacy problem
+    url: https://github.com/turantekin/Parrot/security/advisories/new
+    about: Please report these privately, not as a public issue.
