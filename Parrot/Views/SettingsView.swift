@@ -292,7 +292,7 @@ struct SettingsView: View {
                 SettingsBlockRow(title: "Engine", first: true) {
                     Picker("", selection: $transcriptionBackend) {
                         Text("On-device Whisper — private, free").tag(TranscriptionBackend.local.rawValue)
-                        Text("Groq cloud — big-model accuracy, ~$0.04/hr").tag(TranscriptionBackend.groq.rawValue)
+                        Text("Groq cloud — big-model accuracy, ~$0.08/hr").tag(TranscriptionBackend.groq.rawValue)
                         Text("Deepgram cloud — word-by-word streaming, ~$0.70/hr").tag(TranscriptionBackend.deepgram.rawValue)
                     }
                     .pickerStyle(.radioGroup)
@@ -309,7 +309,7 @@ struct SettingsView: View {
                 }
                 SettingsToggleRow(
                     title: "Polish transcript after each call",
-                    detail: "Re-transcribes the saved audio with a large Groq model (~$0.04/hr) and regenerates the report.",
+                    detail: "Re-transcribes the saved audio with a large Groq model (~$0.08/hr) and regenerates the report.",
                     isOn: $polishAfterCall
                 )
                 SettingsToggleRow(

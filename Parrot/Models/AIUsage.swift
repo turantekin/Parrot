@@ -16,7 +16,12 @@ enum AIPricing {
     /// TypeSafe jev-latest: $0.042 per 1M input tokens, output free
     /// (docs.typesafe.ai/models, verified 2026-09-19).
     static let typesafeInputUSDPerMTok = 0.042
-    /// Groq whisper-large-v3-turbo: $0.04 per audio hour.
+    /// Groq whisper-large-v3-turbo: $0.04 per audio hour, so ~$0.08 per call
+    /// hour over two tracks. Groq bills each request at least 10 s; live
+    /// chunks are single lines (often shorter), but silence is never sent,
+    /// so billed time lands near call length × tracks.
+    /// ponytail: estimate from duration × tracks; count max(10 s, chunk) per
+    /// request if the row ever needs to match an invoice exactly.
     static let groqUSDPerAudioHour = 0.04
     /// Deepgram Nova-3 streaming, per audio hour per stream. One pinned
     /// language: $0.29 (verified against a real invoice 2026-07-02: 220s
