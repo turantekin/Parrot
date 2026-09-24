@@ -16,7 +16,7 @@ WhisperKit's transitive deps; `swift build` is the reliable path.
 ```
 make          # build + assemble dist/Parrot.app
 make run      # build, assemble, launch
-make test     # headless logic harness (~60 checks) via --profile-test
+make test     # headless logic harness (300+ checks) via --profile-test
 make clean
 ```
 

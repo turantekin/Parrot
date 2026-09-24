@@ -1,104 +1,215 @@
+<a href="https://openparrot.app"><img src=".github/readme/banner.png" alt="Parrot: Help during the call. Not after it. A meeting recorder for your Mac with a live copilot." width="100%"></a>
+
+<p align="center">
+  <a href="https://github.com/turantekin/Parrot/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/turantekin/Parrot?include_prereleases&label=release&color=1a8db5"></a>
+  <img alt="macOS 14+ on Apple Silicon" src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-0a0a0a?logo=apple">
+  <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-34a353"></a>
+  <img alt="Native SwiftUI" src="https://img.shields.io/badge/SwiftUI-native-f08a24?logo=swift&logoColor=white">
+  <a href="https://github.com/turantekin/Parrot/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/turantekin/Parrot?style=flat&color=e3503c"></a>
+</p>
+
+<p align="center">
+  <a href="https://openparrot.app"><b>Website</b></a> ·
+  <a href="https://github.com/turantekin/Parrot/releases"><b>Download</b></a> ·
+  <a href="https://turantekin.github.io/Parrot/help/"><b>User guide</b></a> ·
+  <a href="https://github.com/turantekin/Parrot/discussions"><b>Discussions</b></a>
+</p>
+
 # 🦜 Parrot
 
-**A live AI copilot for your calls that runs on your Mac — and never sends your calls anywhere.**
+**A meeting recorder for your Mac with a live AI copilot built in. It records and transcribes every call on your machine, suggests answers from your own documents while you're still talking, and writes the report before you've hung up.**
 
-**Website:** [openparrot.app](https://openparrot.app) · **Download:** [latest release](https://github.com/turantekin/Parrot/releases) · **Guide:** [Parrot Help](https://turantekin.github.io/Parrot/help/)
+No bot joins your meeting. It works with Google Meet, Zoom, Teams, or anything else your Mac can hear. Transcription, speaker detection and your documents stay on your Mac. The copilot's brain is your choice: **Claude** with your own key, any OpenAI-compatible server, or a **local model through Ollama, which makes the whole thing free and offline**.
 
-While you're on a Google Meet, Zoom, or any call, Parrot listens along and helps in real time: when the other side asks something, a suggested answer appears — grounded in *your* documents, your pricing, your FAQ. Objections get pinned on screen until you've handled them. Action items are captured the moment you promise them. A live score and a one-line coach tell you how the call is going while it's still going. And when you hang up, the report is already being written.
+<img src=".github/readme/hero.png" alt="Parrot's live call screen: call score 78 with a coach line, a suggested answer quoted from northwind-faq.md, a resolved pricing question, a next step you promised, and the live transcript" width="100%">
 
-Underneath it is a fully private recorder: on-device transcription (WhisperKit), both sides of the call, no cloud, no account, no data leaving your machine. The copilot's brain is your choice — **Claude** with your own key, or a **local model through Ollama, which makes the entire thing free and offline**. Either way you get a pause button, pace controls, and a per-call cost breakdown down to the cent.
-
-![The live copilot mid-call: suggested answer with a copy button, a pinned pricing question, call score and coach line, live transcript alongside](docs/help/img/live-screen.png)
-
-*A demo call, but a real screen: the pinned card is answering the pricing question the other side just asked. [The full guide is here.](https://turantekin.github.io/Parrot/help/)*
+*The live call screen, as drawn on [openparrot.app](https://openparrot.app). The other side asked about data residency, and the answer came straight from the FAQ you dropped in.*
 
 ---
 
 ## Hey! 👋
 
-So here's the deal — I'm Uygar, and I'm trying to build my own meeting recorder from scratch. I got tired of paying for services like Otter.ai that send all my conversations to some server I don't control. I thought, "How hard can it be to do this locally on my Mac?" Turns out... it's a journey. 😄
+So here's the deal. I'm Uygar, and I'm trying to build my own meeting recorder from scratch. I got tired of paying for services like Otter.ai that send all my conversations to some server I don't control. I thought, "How hard can it be to do this locally on my Mac?" Turns out... it's a journey. 😄
 
-I'm building this with the help of [Claude](https://claude.ai) (yes, the AI — we've had a lot of late-night coding sessions together), and honestly, it's been one of the most fun projects I've worked on. It's not perfect yet — there are still bugs I'm chasing, permissions that are being annoying, and features I haven't figured out. But the core works: it captures audio, transcribes in real-time using WhisperKit, and keeps everything on your machine.
+I'm building this with the help of [Claude](https://claude.ai) (yes, the AI, we've had a lot of late-night coding sessions together), and honestly, it's been one of the most fun projects I've worked on. It's not perfect yet: there are still bugs I'm chasing, permissions that are being annoying, and features I haven't figured out. But the core works, and it's on every one of my client calls now.
 
-**This is a personal project. I'm learning as I go.** I'm sharing it publicly because why not? If there are any crazy coders out there who stumble upon this and want to help improve it, I would really, truly appreciate it. Whether it's fixing a bug, improving the speaker detection, or just telling me I'm doing something wrong — all of it helps. Open a PR, open an issue, or just say hi. 🙌
+**This is a personal project. I'm learning as I go.** If there are any crazy coders out there who stumble upon this and want to help improve it, I would really, truly appreciate it. Fixing a bug, improving the speaker detection, or just telling me I'm doing something wrong: all of it helps. Open a PR, open an issue, or just say hi. 🙌
 
 If you find this useful or just think the idea is cool, give it a star. It'll make my day.
 
-## What It Does
+## Contents
 
-- **Records system audio + microphone** — Captures what everyone says in a meeting (audio-only Core Audio taps on macOS 15+, ScreenCaptureKit on macOS 14) plus your own voice
-- **Knows who said what** — On-device speaker detection tells the people on the call apart. Name each voice once from short clips, and the transcript, reports, and coaching all use real names. Turn on **Remember voices** and Parrot suggests who's talking on the next call. Free and fully local. (Meetily charges $10/month for diarization; Anarlog $15/month, via the cloud.)
-- **Real-time transcription, your choice of engine** — On-device WhisperKit by default (private, free). Or bring your own key for **Groq** (big-model accuracy for ~$0.04/hr) or **Deepgram** (true streaming — words appear ~300 ms after they're spoken). Cloud engines fall back to on-device automatically if anything fails mid-call
-- **Transcripts read like people talk** — Lines land as whole sentences when the speaker pauses (not chopped 2-second fragments), with a live preview filling in while they're still mid-sentence. Silence is never transcribed
-- **Forgot to hit stop?** — Right-click a transcript line → **Delete Everything After This Line** and the nonsense tail is gone. The audio recording is kept in full, and a small note under the transcript remembers what you trimmed
-- **Post-call polish pass (optional)** — After you hit Stop, re-transcribe the whole call through Groq's large model and regenerate the reports from the cleaner text, for pennies
-- **Live Call Copilot** — An always-on assistant that watches the conversation: a live coach card with a 0–100 "how is this call going" score, suggested answers grounded in *your* documents (and, with a TypeSafe AI key, the matching section of a document on screen within about half a second of a question), pinned blocker/question cards that auto-resolve when you handle them, and action items captured as you promise them. Opt-in, and you pick the brain: **Claude** (bring your own key), a **local model via Ollama** (fully offline AI), or any OpenAI-compatible server. Transcript text goes to your chosen provider, audio never leaves your Mac
-- **You control what the Copilot spends** — A pace setting (Relaxed fits free model tiers), a dial for how much conversation each request carries, and a pause button right on the call screen: while paused, nothing is sent and nothing is spent
-- **Call Profiles** — Reshape the copilot per call type (sales discovery, 1:1 coaching, interviews…): each profile has its own insight kinds, sentiment gauges, persona, and tone
-- **Per-call AI cost transparency** — Every meeting shows what the AI actually cost: model, tokens, calls, transcription minutes, and estimated dollars, with a line-by-line breakdown. Local features show $0.00, proudly
-- **Knows who's talking, live** — Your mic is transcribed as "Me" and system audio as "Them", live and with zero ML guesswork; speaker detection then refines who's who within "Them" after the call
-- **Post-call reports** — AI summary with pain points, plus a coaching report: talk ratio, what went well, what to improve, objections handled vs missed, and commitments
-- **Per-call notes** — Type notes live during the call (side panel) and edit them later; stored with the meeting
-- **Playback synced with the transcript** — Click a transcript line, hear that moment
-- **Import existing recordings** — Drop an audio file (m4a, mp3, wav, aac…) onto the app and it's transcribed, diarized, and summarized like any live meeting
-- **Doesn't lose your meeting** — If the app crashes or gets force-quit mid-call, the recording is recovered with its transcript and reports on next launch. AirPods dying mid-call no longer kill the mic either
-- **Searchable history, export, menu bar extra, dark mode** — Meetings stored locally, TXT/SRT export, quick start/stop from the menu bar
+[What it does](#what-it-does) · [Privacy: what leaves your Mac](#privacy-what-leaves-your-mac) · [Getting started](#getting-started) · [Keyboard shortcuts](#keyboard-shortcuts) · [Tech stack](#tech-stack) · [Build from source](#build-from-source) · [Want to help?](#want-to-help-) · [Known issues](#known-issues-im-working-on-it) · [Similar projects](#similar-projects)
 
-## Tech Stack
+## What it does
+
+### 🎯 Live Copilot: help during the call
+
+An always-on assistant that watches the conversation and puts the right thing on screen. No button pressing, the whole call.
+
+- **Suggested answers** the moment the other side asks something, grounded in *your* documents, with the file named on the card and a Copy button.
+- **Pinned cards** for objections and open questions. They stay on screen until you handle them, then resolve themselves.
+- **Next steps** captured the moment you promise them ("Promised by you").
+- **A live call score** from 0 to 100, a one-line coach, a mood read, and gauges like *Buying temp* or *You're talking*. Your talk share turns orange past 70%.
+- **Brief it before the call.** A line or two on the dashboard ("Renewal call, legal wants to know where the data is stored") and it knows who you're talking to from the first second. Edit the brief mid-call from the *Briefed* card.
+- **You control what it spends.** Pace (Fast, Balanced, Relaxed for free tiers), how much conversation each request carries (2, 5 or 10 minutes), and a pause button on the call screen: while paused, nothing is sent and nothing is spent.
+- **Answers from your docs in about half a second** (optional, Claude mode): add a TypeSafe AI key and the matching excerpt shows as a *From your docs* card while Claude is still writing.
+
+### 📚 Knowledge base: brief it like a new teammate
+
+<p align="center"><img src=".github/readme/knowledge.png" alt="Knowledge settings with security-faq.pdf tagged for Sales discovery, and the copilot answering the SSO question from it" width="560"></p>
+
+- Drop in PDFs, text or Markdown: pricing sheets, FAQs, playbooks. They're chunked and embedded **on your Mac** with Apple's NaturalLanguage framework, plus an exact-word (BM25) index. Nothing is uploaded; only the few passages that match a question go to the copilot provider you picked.
+- Give each document a note ("use for pricing questions") and tag it into the profiles that should use it.
+- **Coaching instructions** for every call ("keep answers short, always offer three price options").
+- Choose whether it may answer from **general knowledge** when your documents don't cover it. Every card says where its answer came from.
+
+### 🎭 Call profiles: one app, every kind of call
+
+<p align="center"><img src=".github/readme/profiles.png" alt="A custom 'Investor update' profile: an Interest gauge, Concern, Metric asked and Follow-up cards, your rules, and a report line written about the investor" width="560"></p>
+
+Tell Parrot what kind of call it is, and the profile decides what the copilot watches for and how the report is written.
+
+- **Seven built-ins:** Default, Sales discovery, 1:1 coaching, Interview, Customer support, Vendor call, Generic. Sales looks for objections and buying signals; Interview for follow-ups and red flags; a 1:1 gets reflections and open questions.
+- **Make your own:** name it, say who the other side is, write a persona and rules, pick its documents, add your own card types (with color, icon, "keep on screen until handled") and gauges.
+
+### 🗣️ Speaker names: names, not "Speaker 2"
+
+<p align="center"><img src=".github/readme/speakers.png" alt="A follow-up call where Parrot suggests 'sounds like Jeremy?' and 'sounds like Lily?' with Play and Confirm buttons" width="560"></p>
+
+- **Me vs Them is exact**, live: your mic and the call audio are separate tracks.
+- **After the call, on-device speaker detection** ([FluidAudio](https://github.com/FluidInference/FluidAudio), a 13 MB model) tells the voices on the other side apart.
+- **Name a voice once** from short clips and every line takes the name. Reports and coaching use real names.
+- **Remember voices** (opt-in): next call, Parrot asks "sounds like Jeremy?" One click to confirm. Voiceprints stay on the Mac; forget one anytime.
+- Got one line wrong? Right-click it and reassign just that line.
+
+### 📝 The report writes itself, then it coaches you
+
+<p align="center"><img src=".github/readme/after.png" alt="A post-call report: summary, pain points, talk balance, objections handled and missed, what went well, what to improve, and commitments" width="480"></p>
+
+- **Summary:** overview, pain points, key points, next steps.
+- **Coaching:** talk balance, what went well, what to improve, objections and questions marked *Handled* or *Missed*, and commitments from both sides.
+- **Per-call AI cost** down to the cent: model, tokens, calls and transcription minutes, with a line-by-line breakdown. Local features show $0.00, proudly.
+- **Playback synced with the transcript** (0.5x to 2x): click a line, hear that moment.
+- **Notes** you type during or after the call are kept with the meeting.
+
+### 🧠 You pick the brain
+
+<p align="center"><img src=".github/readme/brain-ollama.png" alt="Copilot settings with Ollama (local) selected, running llama3.2:3b. What leaves your Mac: nothing, it works with the Wi-Fi off" width="560"></p>
+
+| Copilot and reports | What it is | What leaves your Mac |
+|---|---|---|
+| **Claude** (`claude-haiku-4-5`) | Sharpest cards. Your own key. About $0.07 per call hour. | Transcript text, to Anthropic. Never audio. |
+| **Ollama** (local) | `llama3.2:3b`, `gemma3:4b`, or any model you like. Parrot can pull it for you. Free. | Nothing. Works with the Wi-Fi off. |
+| **Custom server** | Anything OpenAI-compatible: OpenAI, Gemini, Groq, OpenRouter, LM Studio. | Transcript text, to the server you picked. |
+
+Live cards and post-call reports can use different brains (say, Ollama live and Claude for the report).
+
+| Transcription | Why pick it | ~Cost per call hour (both sides) |
+|---|---|---|
+| **On-device Whisper** (default) | Private, offline, free. Five models from Tiny (40 MB) to Large V3 Turbo (1.6 GB). | Free |
+| **Groq** `whisper-large-v3-turbo` | Big-model accuracy, same latency as local. | ~$0.08 |
+| **Deepgram** Nova-3 | True streaming, words appear ~300 ms after they're spoken. | ~$0.58 |
+
+Cloud engines fall back to on-device automatically if anything fails mid-call. An optional **polish pass** re-transcribes the saved audio with Groq's large model after you hit Stop and rewrites the report from the cleaner text.
+
+### 🌍 Your language, too
+
+Whisper auto-detects the language of the call, or you can pin one of 14 (English, Turkish, Spanish, German, French, Italian, Portuguese, Dutch, Russian, Arabic, Hindi, Chinese, Japanese, Korean). The copilot and the report answer in the language of the call. Document search works for English, Spanish, German, French, Italian and Portuguese for now. For anything but English, pick Large V3 Turbo or Groq. A **custom vocabulary** list teaches Whisper your product and people names.
+
+### 🧰 And all the everyday stuff
+
+- **Records system audio and your mic** as two tracks. On macOS 15+ it uses the audio-only System Audio permission (Core Audio taps); on macOS 14, ScreenCaptureKit. No virtual audio drivers.
+- **Echo cancellation** (SpeexDSP) so the other side doesn't leak into your mic on speakers. The mic reconnects by itself when AirPods die or switch mid-call.
+- **Sentences, not fragments.** Lines land as whole sentences when the speaker pauses, with a live grey preview while they're still talking. Silence is never transcribed.
+- **Never loses a meeting.** If Parrot crashes or gets force-quit mid-call, the recording is recovered with its transcript and report on next launch. ⌘Q mid-call finishes the recording first.
+- **Forgot to hit stop?** Right-click a line, choose *Delete Everything After This Line*, and the tail is gone. The audio is kept in full.
+- **Import recordings.** Drop an audio file (m4a, mp3, wav, aac, aiff, caf) on the window and it's transcribed, split by speaker and summarised like a live call.
+- **Export** a meeting as TXT (notes, report, copilot cards and transcript in one file) or SRT subtitles.
+- **Searchable history.** Search titles and transcripts, meetings grouped by day, with a talk-ratio strip on each.
+- **Menu bar item** to start and stop from anywhere, and a dashboard with your meetings, hours and words.
+- **Keeps itself up to date** with signed Sparkle updates that install when you quit, never during a recording.
+- **A real user guide** inside the app (Help > Parrot Help, searchable and offline), also [on the web](https://turantekin.github.io/Parrot/help/).
+- **Bug reports in two clicks.** The ladybug in the corner writes the boring parts (version, model, settings) and hands you a pre-filled GitHub issue to check and post yourself.
+- Light and dark mode, native SwiftUI, no Electron.
+
+## Privacy: what leaves your Mac
+
+This is a microphone-and-system-audio app, so you shouldn't have to take my word for anything. Here's everything that can leave the machine, and when:
+
+| Feature | Sends | To | When |
+|---|---|---|---|
+| Recording, on-device transcription, speaker detection, voiceprints, document index | Nothing | No one | Always local |
+| Model downloads | A download request | Hugging Face (Whisper and speaker-detection models) | Once, first use |
+| Update check | The app's version | GitHub Pages (Sparkle feed) | Once a day; can switch off auto-install |
+| Copilot on Claude or a custom server | Transcript text, matched document passages, profile instructions | Anthropic, or the server you picked | Only if you turn Copilot on |
+| TypeSafe doc answers | The question, a couple of lines of context, candidate document snippets | TypeSafe AI | Only with a TypeSafe key, Claude mode |
+| Groq or Deepgram transcription, polish pass | Call audio | Groq or Deepgram | Only if you pick that engine |
+| Copilot on Ollama | Nothing | Your own Mac | Always local |
+
+- **No accounts, no telemetry, no analytics.** There's no Parrot server to phone home to.
+- **Keys live in your macOS Keychain**, never in files or logs.
+- **Signed and notarized.** Releases are Developer ID-signed and Apple-notarized; updates are EdDSA-signed.
+- **Small and auditable.** About 17k lines of Swift with three dependencies (WhisperKit, FluidAudio, Sparkle) plus a vendored SpeexDSP echo canceller. [FILEMAP.md](FILEMAP.md) maps every source file, so an afternoon of reading covers the lot.
+- **Honest about the process.** The code is written with heavy AI assistance (Claude Code) under human direction, and every change runs a 300+ check logic harness plus visual snapshot checks before it lands.
+
+Found something that contradicts any of this? That's a security issue, see [SECURITY.md](SECURITY.md).
+
+## Getting started
+
+> 📖 **[Parrot Help](https://turantekin.github.io/Parrot/help/)** walks through every feature. The same pages ship inside the app under **Help > Parrot Help**.
+
+1. **Download** the notarized `.dmg` from the **[Releases page](https://github.com/turantekin/Parrot/releases)** (or the button on [openparrot.app](https://openparrot.app)) and drag Parrot into Applications. Needs macOS 14 (Sonoma) or later on Apple Silicon.
+2. **Allow two permissions.** The welcome tour shows live status for each and deep-links to the right Settings pane:
+   - **System Audio Recording** for the other side of the call. On macOS 15+ this is the audio-only permission. On macOS 14 it's Screen Recording instead (that's how older macOS exposes system audio; Parrot only ever captures audio) and takes effect after you reopen Parrot.
+   - **Microphone** for your side.
+3. **Pick a Whisper model.** It downloads once, with a progress bar:
+
+   | Model | Size | Good for |
+   |---|---|---|
+   | Tiny | 40 MB | Fastest |
+   | Base | 140 MB | A good default |
+   | Small | 460 MB | Better accuracy |
+   | Large V3 Turbo Compressed | 626 MB | Near-best, low memory. The sweet spot |
+   | Large V3 Turbo | 1.6 GB | Best accuracy, and best for non-English calls |
+
+4. **Hit record** on your next call. That's it for a private recorder. For the copilot:
+5. **Turn on the Copilot** (optional) in **Settings > Copilot**: pick Claude (paste a key from [console.anthropic.com](https://console.anthropic.com) under Settings > API Keys), Ollama ([install it](https://ollama.com), Parrot pulls the model), or your own server.
+6. **Feed it your knowledge** (optional) in **Settings > Knowledge**, and pick or build a profile in **Settings > Profiles**.
+
+Want the tour again? **Help > Show Welcome Tour**.
+
+## Keyboard shortcuts
+
+| Shortcut | Does |
+|---|---|
+| ⌘R | Start recording |
+| ⌘. | Stop recording |
+| ⌘O | Import an audio file |
+| ⌘E | Export transcript (TXT) |
+| ⌘F | Search meetings |
+| ⌘, | Settings |
+
+## Tech stack
 
 | What | How |
 |------|-----|
-| UI | SwiftUI, native macOS (no Electron!) |
-| Speech-to-Text (default) | [WhisperKit](https://github.com/argmaxinc/WhisperKit) — on-device, runs on Neural Engine |
-| Speech-to-Text (optional, BYO key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
-| Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0) — on-device pyannote-derived models (CC-BY-4.0), ~13 MB downloaded on first use |
-| Copilot & reports (optional, BYO key) | Claude API (Haiku) with structured outputs |
-| Instant document answers (optional, BYO key, Claude mode) | TypeSafe AI `jev-latest`, one probability per matching knowledge-base chunk |
-| Knowledge base | Apple NaturalLanguage embeddings — documents chunked & embedded on-device, never uploaded |
-| System Audio | Core Audio process taps on macOS 15+ · ScreenCaptureKit on macOS 14 (no virtual audio drivers needed) |
-| Microphone | AVAudioEngine |
-| Storage | SwiftData + SQLite |
-| Project | [xcodegen](https://github.com/yonaskolb/XcodeGen) — `project.yml` is the source of truth |
-| Target | macOS 14.0+ (Sonoma and later) |
+| UI | SwiftUI, native macOS, Inter |
+| Speech-to-text (default) | [WhisperKit](https://github.com/argmaxinc/WhisperKit), on-device on the Neural Engine |
+| Speech-to-text (optional, your key) | Groq `whisper-large-v3-turbo` (HTTP chunks) · Deepgram Nova-3 (websocket streaming) |
+| Speaker detection | [FluidAudio](https://github.com/FluidInference/FluidAudio) (Apache-2.0), on-device pyannote-derived models (CC-BY-4.0) |
+| Copilot and reports | Claude API (Haiku 4.5, structured outputs) · Ollama · any OpenAI-compatible server |
+| Instant document answers (optional) | TypeSafe AI `jev-latest` |
+| Knowledge base | Apple NaturalLanguage sentence embeddings + BM25, all on-device |
+| System audio | Core Audio process taps (macOS 15+) · ScreenCaptureKit (macOS 14) |
+| Microphone | AVAudioEngine + vendored SpeexDSP echo canceller |
+| Storage | SwiftData; API keys in the Keychain |
+| Updates | [Sparkle](https://sparkle-project.org), EdDSA-signed appcast |
+| Project | [XcodeGen](https://github.com/yonaskolb/XcodeGen): `project.yml` is the source of truth |
 
-## Screenshots
+## Build from source
 
-The post-call report — summary, coaching, and commitments as section cards:
-
-![Post-call report with section cards](docs/screenshots/report.png)
-
-| Live Copilot during a call | Live transcript | Meeting history |
-|---|---|---|
-| ![Live Copilot panel with call score and suggested answer](docs/screenshots/copilot.png) | ![Chat-bubble live transcript](docs/screenshots/copilot-bubbles.png) | ![Sidebar meeting list with waveforms](docs/screenshots/sidebar.png) |
-
-*Rendered by the app's own snapshot harness with demo data — these are the real views the code draws, not mockups.*
-
-## Why Trust an App That Hears Your Calls?
-
-Fair question — this is a microphone-and-system-audio app, and you shouldn't have to take my word for anything. The properties you can check yourself:
-
-- **Local by default.** Out of the box there is exactly one network call in the whole app: a once-a-day GitHub check for new releases. Transcription, diarization, embeddings, reports — all on-device.
-- **Cloud features are opt-in, with your own keys.** Groq/Deepgram transcription, the Claude copilot and the TypeSafe document shortcut only exist after you paste your key, and they're labelled with exactly what they send (transcript text and, for TypeSafe, matching document snippets — audio never leaves the Mac). Keys live in your Keychain, not in files.
-- **No accounts, no telemetry, no analytics.** There's no server for Parrot to phone home to.
-- **Small and auditable.** ~13k lines of Swift, two real dependencies (WhisperKit, plus a vendored SpeexDSP echo canceller). [FILEMAP.md](FILEMAP.md) maps every source file so an afternoon of reading covers the whole thing.
-- **Signed and notarized.** Releases are Developer ID-signed and Apple-notarized — what you download is what was built.
-- **Honest about the process.** The code is written with heavy AI assistance (Claude Code) under human direction, and every change runs a ~94-check logic harness plus visual snapshot verification before it lands. Outside PRs get read line by line — ask [@wkoszek](https://github.com/wkoszek).
-
-Found something that contradicts any of this? That's a security issue — see [SECURITY.md](SECURITY.md).
-
-## Getting Started
-
-> 📖 There's a proper user guide now — **[Parrot Help](https://turantekin.github.io/Parrot/help/)** — with a walkthrough of every feature. The same pages ship inside the app under **Help → Parrot Help**, searchable and offline.
-
-### Download (the easy way)
-
-Grab the latest notarized `.dmg` from the **[Releases page](https://github.com/turantekin/Parrot/releases)**, drag Parrot into Applications, and hit record. No Xcode, no build step. Requires macOS 14+ (Sonoma) on Apple Silicon.
-
-*It's an early beta — if something breaks, please open an issue. That genuinely helps.*
-
-### Build from source
-
-Prerequisites: macOS 14.0+, Apple Silicon recommended, and an Xcode / Swift 5.9+ toolchain.
+Prerequisites: macOS 14.0+, Apple Silicon recommended, and an Xcode / Swift toolchain.
 
 ```bash
 git clone https://github.com/turantekin/Parrot.git
@@ -106,160 +217,62 @@ cd Parrot
 make run
 ```
 
-`make run` compiles with `swift build`, assembles `dist/Parrot.app`, signs it with whatever identity you already have (ad-hoc if none), and launches it. `make help` lists the rest (`make test`, `make install`, `make clean`…).
+`make run` compiles with `swift build`, assembles `dist/Parrot.app`, signs it with whatever identity you already have (ad-hoc if none), and launches it. `make help` lists the rest (`make test`, `make install`, `make clean`...).
 
-Two things worth knowing:
+- **Build with `make`, not Xcode's UI.** Xcode's explicit-modules build intermittently races on WhisperKit's dependencies. `make xcode` regenerates the project from `project.yml` if you want the IDE; keep the actual builds on `make`.
+- **Permissions and rebuilds.** macOS ties the audio and microphone grants to the signing identity, so ad-hoc builds re-ask after every rebuild. `make signing-help` shows two free ways to make them stick.
+- **Finding your way:** [FILEMAP.md](FILEMAP.md) has one line per source file; [AGENTS.md](AGENTS.md) has the layout and conventions; [CONTRIBUTING.md](CONTRIBUTING.md) is the human orientation.
 
-- **Build with `make`, not Xcode's UI** — Xcode's explicit-modules build intermittently races on WhisperKit's transitive dependencies. If you want the IDE anyway, `make xcode` regenerates the project from `project.yml`; keep the actual builds on `make`.
-- **Permissions and rebuilds** — macOS ties the Screen Recording and Microphone grants to the signing identity, so ad-hoc builds re-ask after every rebuild. `make signing-help` shows two free ways to make them stick.
+## What's next (my wishlist)
 
-### Permissions
-
-On first launch, Parrot walks you through the two permissions it needs:
-1. **System Audio Recording** — the other side of the call. On macOS 15+ this is the audio-only permission (Core Audio process tap): no screen-content rights, no periodic "Parrot is recording your screen" re-confirmations. On macOS 14 it's the classic Screen Recording permission instead — that's simply how older macOS exposes system audio; Parrot only ever captures audio, never screen content
-2. **Microphone** — your side of the call
-
-The onboarding page shows live status for both and deep-links to the exact Settings panes. On macOS 14, one quirk to know: Screen Recording takes effect when the app restarts — if the row doesn't turn green after you grant it, quit and reopen Parrot (onboarding picks up right where you left off). On macOS 15+ no restart is needed; the row confirms itself the first time Parrot hears meeting audio. And if you ever want the walkthrough again, it's one click away: Help → Show Welcome Tour.
-
-### Choose a Model
-
-Parrot uses WhisperKit models for transcription. Pick one during onboarding:
-
-| Model | Size | Speed | Accuracy |
-|-------|------|-------|----------|
-| tiny | ~40 MB | Fastest | Basic |
-| base | ~140 MB | Fast | Good |
-| small | ~460 MB | Moderate | Better |
-| large-v3-turbo compressed | ~626 MB | Moderate | Near-best |
-| large-v3-turbo | ~1.6 GB | Slower | Best |
-
-The model downloads automatically on first use, with a progress bar so you can
-see it happening. `base` is a good default; the compressed turbo is the sweet
-spot if you want accuracy without the memory.
-
-### Or pick a cloud transcription engine (optional)
-
-In **Settings → Transcription** you can trade "audio never leaves the Mac" for accuracy or speed — bring your own key, pay the provider directly:
-
-| Engine | ~Cost (1-hr call, both tracks) | Why pick it |
-|--------|-------------------------------|-------------|
-| On-device Whisper | free | Private. The default. |
-| Groq | ~$0.08 | Large-model accuracy, same latency as local |
-| Deepgram | ~$0.58 | True streaming — words appear as they're spoken |
-
-With a TypeSafe key (Settings → API Keys) and the Copilot on Claude, the moment the other side asks something your documents cover, the matching excerpt shows as a "From your docs" card within about a second, while Claude is still writing. It costs well under $0.02 per call hour and shows on the meeting's cost row as "TypeSafe", together with the duplicate-card checks the same model does after each Claude pass.
-
-There's also a **"Polish transcript after each call"** toggle (needs a Groq key): re-transcribes the saved audio with the large model after you hit Stop and regenerates the reports from the cleaner text (~$0.04 per call hour). Whatever you use, the meeting header shows the estimated cost afterwards.
-
-### Enable the Live Call Copilot (optional)
-
-The Copilot watches the live transcript during a recording and pushes suggested answers, blockers, and action items into a side panel — automatically, the whole call, no button pressing.
-
-1. Get a Claude API key from [console.anthropic.com](https://console.anthropic.com)
-2. Open **Settings → Copilot**, paste the key (stored in your keychain), and flip the toggle
-3. Start a recording — the Copilot panel appears next to the live transcript
-
-**Privacy note:** Copilot sends transcript *text* to Anthropic's API to generate suggestions. Your audio never leaves your Mac, and nothing is sent unless you enable the feature. It runs on Claude Haiku, so a full hour-long call costs only a few cents.
-
-### Give the Copilot your knowledge (optional but powerful)
-
-In **Settings → Knowledge** you can brief the copilot like you'd brief a new teammate:
-
-- **Drop in documents** — pricing sheets, FAQs, playbooks (PDF/text/markdown). They're chunked and indexed **on this Mac** (Apple's NaturalLanguage framework plus an exact-word index; the index never leaves your Mac, and only the few passages matching a question ever travel to the copilot provider you chose). When a question comes up on a call, the copilot grounds its suggested answer in the best-matching passages and cites the source on the card. Add a TypeSafe AI key in **Settings → API Keys** and the matching section also shows as a "From your docs" card within about half a second, before Claude's answer arrives. Each document takes an optional note like *"use for pricing questions"*.
-- **Coaching instructions** — standing guidance for every call: tone, style, behavior ("keep answers short and casual, always offer Good/Better/Best on price").
-- **General-knowledge fallback** — choose whether the copilot may answer beyond your documents. Cards always show where an answer came from: your document's name or *"general knowledge"*.
-- **Pre-call brief** — a brief box on the dashboard before you hit record ("Renewal call with Northwind, legal wants to know where the data is stored") so the copilot has context from second one. The same card shows the profile and the documents in play, and once the call starts the copilot panel repeats all three as a "Briefed" card you can edit mid-call.
-
-## Project Structure
-
-```
-Parrot/
-  ParrotApp.swift              # App entry point (+ CLI harness flags)
-  Models/
-    Meeting.swift              # Meeting data model (SwiftData)
-    TranscriptSegment.swift    # Individual transcript segments
-    Insight.swift              # Copilot insight cards
-    CallProfile.swift          # Per-call-type copilot configuration
-    KnowledgeBase.swift        # Embedded document chunks
-    AIUsage.swift              # Per-call usage/cost snapshot + pricing table
-  Services/
-    AudioCaptureManager.swift  # System audio + mic capture (+ echo cancel)
-    TranscriptionEngine.swift  # Backend seam: local Whisper loop + cloud routing
-    CloudTranscription.swift   # Groq + Deepgram backends, polish pass
-    DiarizationEngine.swift    # Speaker refinement within "Them"
-    CallAnalysisEngine.swift   # Live copilot loop (triggers, dedup, sentiment)
-    AnalysisProvider.swift     # Claude API client + usage metering + Keychain
-    KnowledgeBaseService.swift # On-device embedding + retrieval
-    RecordingManager.swift     # Orchestrates everything
-    ExportService.swift        # TXT/SRT export
-  Views/
-    ContentView.swift          # Main navigation
-    DashboardView.swift        # Landing page with record button
-    LiveRecordingView.swift    # Copilot center stage + chat-bubble transcript + notes
-    CopilotPanelView.swift     # Coach card, pinned cards, insight feed
-    MeetingDetailView.swift    # Report/transcript/insights/notes tabs + cost row
-    SettingsView.swift         # Copilot, Transcription, Knowledge, Profiles
-    Theme.swift                # Design tokens (colors, typography)
-    ...
-  ProfileTest.swift            # `--profile-test` logic harness (~60 checks)
-  SnapshotTool.swift           # `--snapshot` / `--copilot-snapshot` offscreen renders
-```
-
-The full per-file map (with line counts) lives in [FILEMAP.md](FILEMAP.md); conventions and layout for tooling and coding agents are in [AGENTS.md](AGENTS.md), and the human orientation is [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Contributing note: the project is generated with **xcodegen** — if you add or move files, edit `project.yml` and run `make xcode` rather than editing the `.xcodeproj` by hand.
-
-## What's Next (My Wishlist)
-
-Things I want to add but haven't figured out yet:
-
-- [x] **Real speaker diarization** — done! On-device via [FluidAudio](https://github.com/FluidInference/FluidAudio): Parrot tells the people on the call apart, you name each voice from short clips, and (opt-in) it remembers voices for next time. Free, on your Mac
-- [x] **Local LLM for summaries & copilot** — done! Point the copilot and reports at **Ollama** and every AI feature runs on your Mac, no key, no cloud. (An in-process MLX model, skipping Ollama entirely, may still come one day)
-- [ ] **Calendar integration** — auto-name meetings based on what's on my calendar
-- [ ] **Keyword bookmarks** — mark important moments during a recording
-- [ ] **Better waveform visualization** — the current one is... functional
-- [x] **Notarize and distribute** — done! Notarized DMG on the [Releases page](https://github.com/turantekin/Parrot/releases), and since 0.14.0 Parrot keeps itself up to date (Sparkle)
+- [x] **Real speaker diarization.** Done, on-device, with naming and remembered voices
+- [x] **Local LLM for summaries and copilot.** Done, through Ollama (an in-process MLX model may still come one day)
+- [x] **Notarize and distribute.** Done, notarized DMG plus Sparkle auto-updates
+- [x] **Pre-call brief and per-call profiles.** Done
+- [ ] **Live speaker names during the call**, not just after it
+- [ ] **Calendar integration**, to name meetings from what's on my calendar
+- [ ] **Keyword bookmarks**, to mark important moments during a recording
+- [ ] **Better waveform visualization.** The current one is... functional
 
 If any of these excite you, jump in!
 
-## Want to Help? 🙏
+## Want to help? 🙏
 
-Seriously, if you're into Swift/macOS development, audio processing, or ML on-device — I'd love your help. I'm one person building this in my spare time with Claude as my coding buddy, and there's a lot I don't know yet.
+Seriously, if you're into Swift/macOS development, audio processing, or on-device ML, I'd love your help. I'm one person building this in my spare time with Claude as my coding buddy, and there's a lot I don't know yet.
 
-Here's where I could really use a hand:
+- **Speaker detection.** Overlapping speech and very similar voices can still fool it, and live labels during the call are still cooking.
+- **Permission edge cases.** Core Audio taps have no permission-status API (an unauthorized tap just delivers silence). If you know TCC quirks around `kTCCServiceAudioCapture`, I want to hear from you.
+- **Bug fixes.** Found something broken? Open a PR, I'll review it quickly.
+- **Feature ideas.** [Open an idea](https://github.com/turantekin/Parrot/issues/new/choose) or start a [discussion](https://github.com/turantekin/Parrot/discussions).
+- **Just vibes.** Even "cool project" or "this is dumb, do it this way instead". I'm all ears.
 
-- **Speaker diarization** — Real on-device diarization landed in 0.16.0 (FluidAudio, pyannote-derived models). Overlapping speech and very similar voices can still fool it, and live speaker labels during the call are still cooking. If you know this space, I'd love the help.
-- **Permission edge cases** — macOS 15+ now uses the audio-only System Audio Recording permission (Core Audio process taps), with ScreenCaptureKit kept for macOS 14. The catch: taps have no permission-status API at all (an unauthorized tap just delivers silence), so if you know TCC quirks around `kTCCServiceAudioCapture`, I want to hear from you.
-- **Bug fixes** — Found something broken? Open a PR, I'll review it quickly.
-- **Feature ideas** — Open an issue and let's chat about it.
-- **Just vibes** — Even if you just want to say "cool project" or "this is dumb, do it this way instead" — I'm all ears.
+The easiest way to report anything: click the little ladybug in the bottom right corner of the app (or **Help > Report a Bug...**). Start with [CONTRIBUTING.md](CONTRIBUTING.md), and please be kind ([Code of Conduct](CODE_OF_CONDUCT.md)). Stuck? See [SUPPORT.md](SUPPORT.md).
 
-No formal process. No templates. Just open an issue or PR and we'll figure it out together. Easiest way: click the little ladybug in the bottom right corner of the app (or **Help → Report a Bug…**). It writes the boring parts for you — version, model, settings — and hands you a pre-filled issue to look over and post yourself. Ideas go through the same button.
+## Known issues (I'm working on it)
 
-## Known Issues (I'm Working on It)
+- **Audio permissions reset on ad-hoc source builds.** Identity-less builds look like a new app every time. `make signing-help` shows two fixes. Downloaded release builds keep the grant across updates.
+- **Models need internet once.** Whisper and speaker-detection models download on first use. After that, everything runs offline.
+- **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign.
+- **Mic bleed on speakers.** Without headphones, a loud call can still leak into your mic now and then. Headphones fix it.
 
-- **Audio permissions reset on ad-hoc source builds** — macOS ties the System Audio / Screen Recording and Microphone grants to the signing identity, and identity-less builds look like a new app every time. `make signing-help` shows two free ways to make it stick. Downloaded release builds keep the grant across updates.
-- **WhisperKit model download needs internet** — Only on first run. After that, everything is offline.
-- **Speaker diarization isn't perfect** — "Me" vs "Them" is exact (separate audio tracks), and since 0.16.0 real on-device speaker detection splits the far side apart. Similar voices or heavy crosstalk can still get a line wrong — right-click that line to reassign just it.
+## Similar projects
 
-## Similar Projects
+Parrot isn't alone in the "no cloud, no bots, just transcribe my meeting" corner. If you're evaluating approaches, read all of these:
 
-Parrot isn't alone in the "no cloud, no bots, just transcribe my meeting" corner — if you're evaluating approaches, read all of these:
+- [Meetily](https://github.com/Zackriya-Solutions/meetily): local Whisper/Parakeet transcription with Ollama summaries (Rust)
+- [Hyprnote](https://github.com/fastrepl/hyprnote): privacy-first meeting notepad, mic + system audio, on-device models
+- [screenpipe](https://github.com/mediar-ai/screenpipe): continuous local screen and audio capture with local Whisper
 
-- [Meetily](https://github.com/Zackriya-Solutions/meetily) — local Whisper/Parakeet transcription with Ollama summaries (Rust)
-- [Hyprnote](https://github.com/fastrepl/hyprnote) — privacy-first meeting notepad, mic + system audio, on-device models
-- [screenpipe](https://github.com/mediar-ai/screenpipe) — continuous local screen & audio capture with local Whisper
-
-Parrot's angle: fully native SwiftUI + WhisperKit, and a *live* in-call copilot rather than only post-call notes.
+Parrot's angle: fully native SwiftUI + WhisperKit, and a *live* in-call copilot grounded in your own documents, rather than only post-call notes.
 
 ## License
 
-GPL-3.0 — Use it, learn from it, improve it. If you ship a modified version, it has to stay open source under the same license.
+GPL-3.0. Use it, learn from it, improve it. If you ship a modified version, it has to stay open source under the same license.
 
 Releases up to and including v0.11.3 were published under MIT and remain MIT.
 
 ---
 
-*Built with SwiftUI, WhisperKit, and way too many late-night [Claude Code](https://claude.ai) sessions.* 🌙
+<p align="center"><a href="https://openparrot.app"><img src="Parrot/Assets.xcassets/AppIcon.appiconset/icon_128@2x.png" width="56" alt=""></a></p>
 
-*If you're reading this and you've also tried to build something stupid-ambitious as a personal project — I see you. Keep going.* 🦜
+<p align="center"><i>Built with SwiftUI, WhisperKit, and way too many late-night <a href="https://claude.ai">Claude Code</a> sessions. 🌙<br>If you've also tried to build something stupid-ambitious as a personal project: I see you. Keep going. 🦜</i></p>

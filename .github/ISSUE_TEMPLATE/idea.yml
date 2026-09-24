@@ -1,0 +1,32 @@
+name: An idea
+description: A feature, an improvement, or "it would be nice if...".
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation matters more than the solution. What happens on your calls today?
+      placeholder: After a sales call I copy the commitments into our CRM by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      placeholder: A button that sends the Commitments section somewhere, or a Markdown export.
+  - type: dropdown
+    id: data
+    attributes:
+      label: Would it send anything off the Mac?
+      description: Parrot is local-first. Cloud features are fine, but they're always opt-in.
+      options:
+        - No, it can all run on the Mac
+        - Yes, as an opt-in
+        - Not sure
+  - type: checkboxes
+    id: pr
+    attributes:
+      label: Want to build it?
+      options:
+        - label: I'd like to open a PR for this (see CONTRIBUTING.md)
