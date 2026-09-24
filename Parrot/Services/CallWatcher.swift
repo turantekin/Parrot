@@ -55,6 +55,7 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
     /// The current recording was started by auto mode, so auto mode may
     /// stop it too. A recording the user started is only ever offered a stop.
     @ObservationIgnored private var autoStarted = false
+    @ObservationIgnored private var autoStartInFlight = false
 
     static let ignoredAppsKey = "callDetectIgnoredApps"
     static let pollInterval: TimeInterval = 2
@@ -107,9 +108,14 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         guard let manager = recordingManager else { return }
         let mode = AutoRecordMode.current
         let isRecording = manager.isRecording
-        if !isRecording { autoStarted = false }
-        // A stop prompt outlives its recording only until the recording ends.
+        // Not while a start is in flight: auto mode sets the flag just before
+        // the recording (a few awaits away) actually begins.
+        if !isRecording, !manager.isBusy, !autoStartInFlight { autoStarted = false }
+        // A stop prompt outlives its recording only until the recording ends,
+        // and a start prompt is moot once a recording runs (started from the
+        // dashboard, say).
         if !isRecording, prompt?.kind == .stop { clearPrompt() }
+        if isRecording, prompt?.kind == .start { clearPrompt() }
 
         if mode != .off {
             let apps = CallDetector.relevantApps(MicActivity.snapshot(isRecording: isRecording),
@@ -139,8 +145,10 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
             let eventTitle = manager.calendar.isConnected ? manager.calendar.currentEvent()?.title : nil
             if mode == .auto {
                 autoStarted = true
+                autoStartInFlight = true
                 Task {
                     let started = await manager.startDetectedCall(appID: appID)
+                    autoStartInFlight = false
                     if started {
                         post(id: Self.promptID, title: "Parrot is recording",
                              body: "Your \(eventTitle.map { "“\($0)” " } ?? "")\(name) call is being recorded.",
