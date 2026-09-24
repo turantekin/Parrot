@@ -21,8 +21,8 @@ working fully offline with Whisper + Ollama.
 
 | # | Phase | Size | Depends on | Why this slot |
 |---|---|---|---|---|
-| 1 | Receipts + bookmarks | S–M | — | Quick trust win; citation chips are reused by phases 3 and 4 |
-| 2 | Auto-start + calendar | M | — | Daily-use hook; gives phases 3 and 6 "who is on this call" |
+| 1 | Receipts + bookmarks ✅ built | S–M | — | Quick trust win; citation chips are reused by phases 3 and 4 |
+| 2 | Auto-start + calendar ✅ built (+ open at login) | M | — | Daily-use hook; gives phases 3 and 6 "who is on this call" |
 | 3 | Ask Parrot (memory) + auto brief | M–L | 1, 2 | The headline feature; answers cite with phase-1 chips |
 | 4 | Send it where work happens | M | 1, 3 | Exports carry receipts; MCP reuses phase-3 search |
 | 5 | Consent + compliance mode | S–M | 4 | The "on-device only" lock must cover every outbound path, incl. phase 4's |
@@ -44,6 +44,9 @@ lock then gets extended when phase 4 lands.
 ---
 
 ## Phase 1 — Receipts + bookmarks
+
+*Built 2026-09-24. Chips open a popover (quote, Play from Here, Show in
+Transcript) rather than jumping straight away; bookmark hotkey is ⌃⌥M.*
 
 **User sees:** every summary bullet, next step and coaching point ends with a
 small time chip (`12:34`). Click it: playback jumps there and the Transcript
@@ -80,6 +83,10 @@ validator keeps wrong stamps off screen; measure citation rate per provider.
 ---
 
 ## Phase 2 — Auto-start + calendar
+
+*Built 2026-09-24 with two changes from this plan: invite text reaches the
+copilot only behind an opt-in switch (off by default, delimited as data), and
+"Open Parrot at login" was added (Settings → General and onboarding).*
 
 **User sees:** when a call starts in Zoom, Meet, Teams, FaceTime, Slack or
 anything else that grabs the mic, a prompt: *"Call started. Record with

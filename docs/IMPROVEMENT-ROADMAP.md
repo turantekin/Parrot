@@ -34,13 +34,51 @@ truth for the post-test improvement effort. Update the status table as work land
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
 | — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
-| **N** | Next features (six phases) | ⬜ not started | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
+| **N** | Next features (six phases) | 🟡 N1 + N2 built | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-09-24** — **N1 Receipts + bookmarks and N2 Auto-start + calendar
+  built** (plan: `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`).
+  - **CI**: new `.github/workflows/ci.yml` builds on GitHub's macOS runner,
+    runs `--profile-test`, renders the three snapshots (artifact) and
+    assembles the ad-hoc `.app`. It fetches Apple's NaturalLanguage
+    embedding assets first — the two Turkish-embedding checks failed on a
+    fresh runner before any change (assets are on-demand).
+  - **N1**: report prompts (both providers, one shared builder) require a
+    `[mm:ss]` receipt per bullet; `Receipts` parses and verifies them against
+    the transcript locally (±3 s of a real line); chips open the quote with
+    Play from Here / Show in Transcript; a commitment with no valid receipt
+    shows *unverified* (only in receipts-era reports). Bookmarks: Mark button
+    + label popover, Recording menu, menu-bar item, ⌃⌥M global hotkey
+    (Carbon, registered only while recording, toggle in Settings), report
+    card, transcript rows, "Bookmark This Line", TXT export, fed to the
+    summary prompt inside `<marked>`.
+  - **N2**: `CallDetector` reads which processes capture input (Core Audio
+    process list, macOS 14.2+; device-level fallback before) → pure state
+    machine (5 s start debounce, 20 s end debounce, never "ends" an
+    in-person recording). `CallWatcher`: Ask (default) / Auto / Off,
+    notifications with actions + in-window banner + menu-bar item, "Never
+    for This App". `CalendarService` (EventKit, read-only, opt-in): current
+    event → meeting title + attendees; invitee names in speaker naming;
+    title → profile for detected calls (unambiguous only); optional
+    reminders. Invite text reaches the copilot only if "Brief the copilot
+    from the invite" is on (off by default), inside `<calendar_invite>` with
+    angle brackets neutralised. Launch at login (`SMAppService`) in General
+    + a new onboarding step. New entitlement
+    `personal-information.calendars` + `NSCalendarsFullAccessUsageDescription`.
+  - **Needs Uygar on a real Mac**: (1) one call per mode — Ask: Zoom/Meet
+    call → notification within ~5 s, Record works from the notification and
+    the banner, "Call ended?" ~20 s after hanging up; Auto: starts and stops
+    by itself. (2) Connect Calendar → the macOS prompt, then a call during
+    an event takes its name/guests. (3) ⌃⌥M from inside Zoom marks a moment.
+    (4) After a call with a cloud or Ollama report, chips appear and click
+    through; note the citation rate on llama3.2:3b. (5) Open at login toggle
+    shows in System Settings → Login Items.
 
 - **2026-08-04** — **Audio-only capture built** (macOS 15+ process taps; the
   Anarlog-teardown item). What landed:
