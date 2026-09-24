@@ -70,6 +70,7 @@ struct SettingsView: View {
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
+    @AppStorage(RecordingManager.globalMarkHotKeyDefaultsKey) private var globalMarkHotKey = true
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
     @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
@@ -280,6 +281,16 @@ struct SettingsView: View {
                 SettingsRow(first: true) {
                     Hint("System audio comes straight from macOS (audio only, never the screen); the microphone uses your default input device.")
                 }
+            }
+
+            SettingsCard(title: "Bookmarks") {
+                SettingsToggleRow(
+                    title: "Mark moments from any app with \(GlobalHotKey.Combo.markMoment.display)",
+                    detail: "While a call records, \(GlobalHotKey.Combo.markMoment.display) marks the moment even when Zoom or your browser is in front. Parrot only hears that one shortcut, never other keys, and only during a recording.",
+                    first: true,
+                    isOn: $globalMarkHotKey
+                )
+                .onChange(of: globalMarkHotKey) { recordingManager.refreshMarkHotKey() }
             }
         }
     }

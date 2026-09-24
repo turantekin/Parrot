@@ -13,6 +13,11 @@ struct MenuBarView: View {
         if recordingManager.isRecording {
             Text("Recording — \(recordingManager.formattedElapsedTime)")
 
+            Button("Mark Moment") {
+                recordingManager.markMoment()
+            }
+            .disabled(recordingManager.isStopping)
+
             Button(recordingManager.isStopping ? "Finalizing…" : "Stop Recording") {
                 Task { await recordingManager.stopRecording() }
             }

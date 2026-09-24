@@ -9,21 +9,119 @@ struct ReportContentView: View {
     let coaching: String?
     /// Me's share of the words, for the talk-balance bar (nil → no bar).
     var talkPercentMe: Int?
+    /// The transcript, for checking `[mm:ss]` receipts. Empty → stamps are
+    /// stripped and no chips or flags show (e.g. a meeting with no lines).
+    var receipts: ReceiptIndex = .empty
+    /// What a receipt chip can do; nil → chips still show the quote, no buttons.
+    var receiptActions: ReceiptActions?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let summary, !summary.isEmpty {
-                ReportProse(text: summary)
+                ReportProse(text: summary, receipts: receipts, actions: receiptActions)
             }
 
             if let coaching, !coaching.isEmpty {
                 if let pct = talkPercentMe {
                     TalkRatioBar(percentMe: pct)
                 }
-                ReportProse(text: coaching)
+                ReportProse(text: coaching, receipts: receipts, actions: receiptActions)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// What the report can do with a receipt: play the moment, or show the line.
+struct ReceiptActions {
+    /// Nil when the meeting has no audio to play.
+    var play: ((TimeInterval) -> Void)?
+    var showInTranscript: (TimeInterval) -> Void
+}
+
+// MARK: - Receipts
+
+/// "12:34" beside a report bullet — the transcript line that backs it.
+/// Click for the quote, with Play and Show in Transcript.
+struct ReceiptChip: View {
+    let line: ReceiptIndex.Line
+    let actions: ReceiptActions?
+    @State private var showing = false
+
+    var body: some View {
+        Button { showing.toggle() } label: {
+            Text(Receipts.stamp(line.start))
+                .font(Theme.Typography.receipt)
+                .foregroundStyle(Theme.Colors.accent)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Theme.Colors.accent.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("\(line.speaker): \(line.text)")
+        .accessibilityLabel("Source at \(Receipts.stamp(line.start))")
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            ReceiptPopover(line: line, actions: actions) { showing = false }
+        }
+    }
+}
+
+/// The receipt itself: who said it, their words, and a way to hear it.
+struct ReceiptPopover: View {
+    let line: ReceiptIndex.Line
+    let actions: ReceiptActions?
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(line.speaker)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                Text(Receipts.stamp(line.start))
+                    .font(Theme.Typography.receipt)
+                    .foregroundStyle(Theme.Colors.ink2)
+            }
+            Text("\u{201C}\(line.text)\u{201D}")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if let actions {
+                HStack(spacing: 8) {
+                    if let play = actions.play {
+                        Button {
+                            play(line.start)
+                        } label: {
+                            Label("Play from Here", systemImage: "play.fill")
+                        }
+                    }
+                    Button {
+                        dismiss()
+                        actions.showInTranscript(line.start)
+                    } label: {
+                        Label("Show in Transcript", systemImage: "text.bubble")
+                    }
+                }
+                .controlSize(.small)
+                .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .frame(width: 320, alignment: .leading)
+    }
+}
+
+/// Shown instead of a chip when a commitment has no receipt: the model
+/// claimed a promise the transcript doesn't back up.
+struct UnverifiedTag: View {
+    var body: some View {
+        Label("unverified", systemImage: "questionmark.circle")
+            .font(Theme.Typography.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .labelStyle(.titleAndIcon)
+            .help("Parrot couldn't find this in the transcript. Check it before acting on it.")
+            .accessibilityLabel("Unverified: no matching line in the transcript")
     }
 }
 
@@ -93,6 +191,8 @@ struct TalkRatioBar: View {
 /// section as a card.
 struct ReportProse: View {
     let text: String
+    var receipts: ReceiptIndex = .empty
+    var actions: ReceiptActions?
 
     enum Block {
         case bullet(String, level: Int)
@@ -106,6 +206,9 @@ struct ReportProse: View {
 
     var body: some View {
         let sections = Self.sections(from: text)
+        // Only a report written under the receipts rule gets "unverified"
+        // flags — older reports never claimed a source.
+        let flagging = receipts.reportHasReceipts(text)
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
                 if let title = section.title {
@@ -114,7 +217,8 @@ struct ReportProse: View {
                                       tint: Self.tint(for: title)) {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
-                                row(block)
+                                row(block, check: Self.checked(block, section: title,
+                                                               receipts: receipts, flagging: flagging))
                             }
                         }
                     }
@@ -122,7 +226,8 @@ struct ReportProse: View {
                     // Overview/preamble — breathes outside any card.
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
-                            row(block)
+                            row(block, check: Self.checked(block, section: nil,
+                                                           receipts: receipts, flagging: flagging))
                         }
                     }
                 }
@@ -130,29 +235,72 @@ struct ReportProse: View {
         }
     }
 
-    @ViewBuilder private func row(_ block: Block) -> some View {
+    /// A block's text with its stamps lifted out, the lines they verify,
+    /// and whether it's a commitment with no receipt.
+    struct Checked: Equatable {
+        let text: String
+        let lines: [ReceiptIndex.Line]
+        let unverified: Bool
+    }
+
+    static func checked(_ block: Block, section: String?, receipts: ReceiptIndex,
+                        flagging: Bool) -> Checked {
         switch block {
-        case .bullet(let text, let level):
+        case .bullet(let raw, _):
+            let cited = Receipts.extract(raw)
+            let lines = receipts.verified(cited.times)
+            let unverified = flagging && lines.isEmpty
+                && Receipts.isCommitmentSection(section) && !Receipts.isPlaceholder(cited.text)
+            return Checked(text: cited.text, lines: lines, unverified: unverified)
+        case .paragraph(let raw, _):
+            let cited = Receipts.extract(raw)
+            return Checked(text: cited.text, lines: receipts.verified(cited.times), unverified: false)
+        }
+    }
+
+    @ViewBuilder private func row(_ block: Block, check: Checked) -> some View {
+        switch block {
+        case .bullet(_, let level):
             HStack(alignment: .top, spacing: 8) {
                 Circle()
                     .fill(level > 0 ? Theme.Colors.subtle.opacity(0.6) : Theme.Colors.ink3)
                     .frame(width: 5, height: 5)
                     .padding(.top, 7) // optical: centers the dot on the first 13pt line
                     .padding(.leading, level > 0 ? 16 : 2)
-                Self.styled(text)
+                Self.styled(check.text)
                     .font(Theme.Typography.body)
                     .foregroundStyle(level > 0 ? Theme.Colors.subtle : Theme.Colors.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                receiptColumn(check)
             }
 
-        case .paragraph(let text, let lede):
-            Self.styled(text)
-                .font(lede ? Theme.Typography.lede : Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink)
-                .lineSpacing(lede ? 3 : 1.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+        case .paragraph(_, let lede):
+            HStack(alignment: .top, spacing: 8) {
+                Self.styled(check.text)
+                    .font(lede ? Theme.Typography.lede : Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .lineSpacing(lede ? 3 : 1.5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                receiptColumn(check)
+            }
+        }
+    }
+
+    /// Chips (or the unverified tag) in a right-hand margin, top-aligned
+    /// with the text they back.
+    @ViewBuilder private func receiptColumn(_ check: Checked) -> some View {
+        if check.unverified {
+            UnverifiedTag()
+                .padding(.top, 1)
+        } else if !check.lines.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(Array(check.lines.enumerated()), id: \.offset) { _, line in
+                    ReceiptChip(line: line, actions: actions)
+                }
+            }
+            .padding(.top, 1)
         }
     }
 

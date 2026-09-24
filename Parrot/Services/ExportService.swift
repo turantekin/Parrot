@@ -24,6 +24,14 @@ enum ExportService {
             """
         }
 
+        let marks = meeting.bookmarks
+        if !marks.isEmpty {
+            output += "\n=== Moments You Marked ===\n\n"
+            for mark in marks {
+                output += "[\(Receipts.stamp(mark.time))] \(mark.label.isEmpty ? "Marked moment" : mark.label)\n"
+            }
+        }
+
         if let summary = meeting.summary {
             output += """
 

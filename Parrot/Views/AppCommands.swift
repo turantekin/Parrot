@@ -157,6 +157,18 @@ struct ParrotCommands: Commands {
             }
             .keyboardShortcut(".")
             .disabled(!recordingManager.isRecording || recordingManager.isStopping)
+
+            Divider()
+
+            // Same combo as the global hotkey RecordingManager registers
+            // while recording; when Parrot is in front the hotkey handles the
+            // press first, and a second trigger within the merge window is
+            // one mark, not two.
+            Button("Mark Moment") {
+                recordingManager.markMoment()
+            }
+            .keyboardShortcut("m", modifiers: [.control, .option])
+            .disabled(!recordingManager.isRecording || recordingManager.isStopping)
         }
 
         // Help: the bundled Apple Help Book (searchable, offline), plus the

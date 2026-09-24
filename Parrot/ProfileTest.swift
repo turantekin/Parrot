@@ -50,6 +50,12 @@ enum ProfileTest {
         testSpeakerNames()
         testVoiceProfiles()
         testTranscriptTruncate()
+        testReceiptStamps()
+        testReceiptIndex()
+        testReportReceipts()
+        testReceiptPrompts()
+        testBookmarks()
+        testTranscriptMerge()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1226,5 +1232,208 @@ enum ProfileTest {
         check("English and Turkish share a vector space",
               turkish != nil && K.embed("How much is the starter plan?", language: .english)?.space == turkish?.space)
         check("space(for:) matches the space embed reports", K.space(for: .turkish) == turkish?.space)
+    }
+
+    // MARK: - Phase 1: receipts + bookmarks
+
+    static func testReceiptStamps() {
+        typealias R = Receipts
+        check("stamp mm:ss", R.parseStamp("12:34") == 754)
+        check("stamp m:ss", R.parseStamp("2:05") == 125)
+        check("stamp long call minutes", R.parseStamp("75:12") == 4512)
+        check("stamp h:mm:ss", R.parseStamp("1:15:12") == 4512)
+        check("stamp rejects bad seconds", R.parseStamp("12:75") == nil)
+        check("stamp rejects one-digit seconds", R.parseStamp("12:3") == nil)
+        check("stamp rejects bad minutes in h:mm:ss", R.parseStamp("1:75:00") == nil)
+        check("stamp rejects words", R.parseStamp("ab:cd") == nil)
+        check("stamp rejects empty part", R.parseStamp(":12") == nil)
+        check("stamp rejects non-ASCII digits", R.parseStamp("١٢:٣٤") == nil)
+        check("stamp formats like the transcript", R.stamp(754) == "12:34")
+        check("stamp formats long call", R.stamp(4512) == "75:12")
+        check("stamp clamps negative", R.stamp(-3) == "00:00")
+
+        let one = R.extract("Budget is approved for Q3 [12:34]")
+        check("extract trailing stamp text", one.text == "Budget is approved for Q3")
+        check("extract trailing stamp time", one.times == [754])
+        let two = R.extract("Pricing came up twice [12:34, 15:02].")
+        check("extract two stamps", two.times == [754, 902])
+        check("extract tidies punctuation", two.text == "Pricing came up twice.")
+        let range = R.extract("Long discussion [12:34–13:10]")
+        check("extract en-dash range", range.times == [754, 790])
+        let paren = R.extract("They said yes (1:02:03)")
+        check("extract parenthesised h:mm:ss", paren.times == [3723] && paren.text == "They said yes")
+        let dup = R.extract("Same moment [01:00] and again [01:00]")
+        check("extract dedups stamps", dup.times == [60])
+        let sic = R.extract("They wrote [sic] the wrong date")
+        check("extract leaves non-stamp brackets", sic.text == "They wrote [sic] the wrong date" && sic.times.isEmpty)
+        let clock = R.extract("Call back at (2:30 pm) tomorrow")
+        check("extract leaves clock times with words", clock.times.isEmpty && clock.text.contains("(2:30 pm)"))
+        let none = R.extract("No stamps here")
+        check("extract no stamps", none.text == "No stamps here" && none.times.isEmpty)
+        let mid = R.extract("Asked [03:10] about the SLA")
+        check("extract mid-line stamp", mid.times == [190] && mid.text == "Asked about the SLA")
+        let andSep = R.extract("Both [01:00 and 02:00]")
+        check("extract 'and' separator", andSep.times == [60, 120])
+
+        check("commitment section: next steps", R.isCommitmentSection("Next steps"))
+        check("commitment section: commitments", R.isCommitmentSection("Commitments & follow-ups"))
+        check("commitment section: action items", R.isCommitmentSection("Action items"))
+        check("not commitment: key points", !R.isCommitmentSection("Key points"))
+        check("not commitment: nil", !R.isCommitmentSection(nil))
+        check("placeholder none", R.isPlaceholder("None"))
+        check("placeholder none surfaced", R.isPlaceholder("None surfaced"))
+        check("placeholder n/a", R.isPlaceholder("N/A."))
+        check("not placeholder", !R.isPlaceholder("Nonetheless we agreed on Friday"))
+    }
+
+    static func sampleReceiptIndex() -> ReceiptIndex {
+        ReceiptIndex(lines: [
+            .init(start: 30, end: 38, speaker: "Sam", text: "We can sign by Friday."),
+            .init(start: 0, end: 6, speaker: "Me", text: "Thanks for joining."),
+            .init(start: 754, end: 760, speaker: "Sam", text: "Budget is approved for Q3."),
+            .init(start: 902, end: 905, speaker: "Me", text: "I'll send the contract."),
+        ])
+    }
+
+    static func testReceiptIndex() {
+        let idx = sampleReceiptIndex()
+        check("index sorted by start", idx.lines.map(\.start) == [0, 30, 754, 902])
+        check("resolve exact start", idx.resolve(754)?.text == "Budget is approved for Q3.")
+        check("resolve a second early (floored stamp)", idx.resolve(753)?.start == 754)
+        check("resolve mid-line", idx.resolve(34)?.start == 30)
+        check("resolve just past the end", idx.resolve(40)?.start == 30)
+        check("resolve silence is nil", idx.resolve(400) == nil)
+        check("resolve past the call is nil", idx.resolve(99_999) == nil)
+        check("resolve negative is nil", idx.resolve(-5) == nil)
+        check("resolve NaN is nil", idx.resolve(.nan) == nil)
+        check("verified keeps valid, drops invented", idx.verified([754, 400, 902]).map(\.start) == [754, 902])
+        check("verified dedups by line", idx.verified([754, 755]).count == 1)
+        check("empty index resolves nothing", ReceiptIndex.empty.resolve(0) == nil)
+        check("report with a valid stamp has receipts", idx.reportHasReceipts("- a [12:34]\n- b"))
+        check("report with only invented stamps has none", !idx.reportHasReceipts("- a [41:07]"))
+        check("old report has no receipts", !idx.reportHasReceipts("Key points:\n- a\n- b"))
+    }
+
+    static func testReportReceipts() {
+        let idx = sampleReceiptIndex()
+        let report = """
+        Quick call about the renewal. [00:00]
+
+        Key points:
+        - Budget is approved for Q3 [12:34]
+        - They like the product
+
+        Next steps:
+        - You send the contract [15:02]
+        - They sign by Friday [00:30]
+        - You offer a 20% discount [41:07]
+        - They introduce the CFO
+        - None
+        """
+        let flagging = idx.reportHasReceipts(report)
+        check("sample report is receipts-aware", flagging)
+        var byText: [String: ReportProse.Checked] = [:]
+        for section in ReportProse.sections(from: report) {
+            for block in section.blocks {
+                let c = ReportProse.checked(block, section: section.title, receipts: idx, flagging: flagging)
+                byText[c.text] = c
+            }
+        }
+        check("overview stamp becomes a chip", byText["Quick call about the renewal."]?.lines.count == 1)
+        check("key point chip resolves", byText["Budget is approved for Q3"]?.lines.first?.start == 754)
+        check("uncited key point is not flagged", byText["They like the product"]?.unverified == false)
+        check("cited next step verified", byText["You send the contract"]?.unverified == false)
+        check("second next step verified", byText["They sign by Friday"]?.lines.first?.speaker == "Sam")
+        check("invented stamp on a promise is flagged", byText["You offer a 20% discount"]?.unverified == true)
+        check("invented stamp gets no chip", byText["You offer a 20% discount"]?.lines.isEmpty == true)
+        check("uncited promise is flagged", byText["They introduce the CFO"]?.unverified == true)
+        check("None placeholder not flagged", byText["None"]?.unverified == false)
+        check("stamps never leak into text", !byText.keys.contains { $0.contains("[") })
+
+        // A report written before receipts: nothing flagged, text unchanged.
+        let old = "Next steps:\n- They introduce the CFO"
+        let oldFlag = idx.reportHasReceipts(old)
+        let block = ReportProse.sections(from: old).first { $0.title != nil }?.blocks.first
+        let c = block.map { ReportProse.checked($0, section: "Next steps", receipts: idx, flagging: oldFlag) }
+        check("pre-receipts report is never flagged", c?.unverified == false)
+        check("pre-receipts text unchanged", c?.text == "They introduce the CFO")
+    }
+
+    static func testReceiptPrompts() {
+        let summary = ClaudeAnalysisProvider.summarySystemPrompt(counterpart: "the client")
+        let coaching = ClaudeAnalysisProvider.coachingSystemPrompt(counterpart: "the client")
+        check("summary prompt carries the receipts rule", summary.contains(ClaudeAnalysisProvider.receiptsRule))
+        check("coaching prompt carries the receipts rule", coaching.contains(ClaudeAnalysisProvider.receiptsRule))
+        check("receipts rule forbids invented stamps", ClaudeAnalysisProvider.receiptsRule.contains("Never invent"))
+        let content = ClaudeAnalysisProvider.summaryUserContent(
+            transcript: "[00:01] Me: hi", insightTitles: ["Suggestion: ask budget"],
+            bookmarks: ["[12:34] pricing"], instructions: "be brief")
+        check("summary content has marked moments", content.contains("<marked>\n- [12:34] pricing\n</marked>"))
+        check("summary content keeps transcript delimiters", content.contains("<transcript>\n[00:01] Me: hi\n</transcript>"))
+        check("summary content keeps instructions", content.hasPrefix("User's standing instructions:\nbe brief"))
+        let noMarks = ClaudeAnalysisProvider.summaryUserContent(
+            transcript: "x", insightTitles: [], bookmarks: [], instructions: "")
+        check("no marked section without bookmarks", !noMarks.contains("<marked>"))
+        let coachContent = ClaudeAnalysisProvider.coachingUserContent(
+            transcript: "x", talkPercentMe: 40, instructions: "", counterpart: "Sam")
+        check("coaching content talk balance", coachContent.contains("you spoke roughly 40% of the words, Sam 60%."))
+    }
+
+    static func testBookmarks() {
+        check("label trimmed to one line", Bookmark.cleanLabel("  pricing\nquestion  ") == "pricing question")
+        check("label capped", Bookmark.cleanLabel(String(repeating: "a", count: 500)).count == Bookmark.maxLabelLength)
+        let first = Bookmark.adding(10, label: "a", to: [])
+        check("first mark added", first?.all.count == 1 && first?.added.time == 10)
+        let dup = Bookmark.adding(11, to: first?.all ?? [])
+        check("double press within the window is one mark", dup == nil)
+        let second = Bookmark.adding(5, to: first?.all ?? [])
+        check("marks stay time-sorted", second?.all.map(\.time) == [5, 10])
+        check("negative time refused", Bookmark.adding(-1, to: []) == nil)
+        check("infinite time refused", Bookmark.adding(.infinity, to: []) == nil)
+        check("prompt line with label", Bookmark(time: 754, label: "pricing").promptLine == "[12:34] pricing")
+        check("prompt line unlabeled", Bookmark(time: 754).promptLine == "[12:34]")
+
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        guard let container = try? ModelContainer(for: schema, configurations: [config]) else {
+            check("bookmark container builds", false); return
+        }
+        let ctx = ModelContext(container)
+        let m = Meeting(title: "t")
+        ctx.insert(m)
+        check("fresh meeting has no bookmarks", m.bookmarks.isEmpty && m.bookmarksData == nil)
+        let a = m.addBookmark(at: 120, label: "later")
+        m.addBookmark(at: 30)
+        check("meeting marks sorted", m.bookmarks.map(\.time) == [30, 120])
+        check("meeting refuses a double mark", m.addBookmark(at: 121) == nil && m.bookmarks.count == 2)
+        if let a { m.renameBookmark(a.id, to: "  renamed\n ") }
+        check("rename cleans label", m.bookmarks.last?.label == "renamed")
+        try? ctx.save()
+        check("bookmarks survive save", m.bookmarks.count == 2)
+        if let a { m.removeBookmark(a.id) }
+        check("remove bookmark", m.bookmarks.map(\.time) == [30])
+        m.removeBookmark(m.bookmarks[0].id)
+        check("removing the last clears storage", m.bookmarksData == nil)
+        m.bookmarksData = Data("not json".utf8)
+        check("corrupt bookmark data reads as empty", m.bookmarks.isEmpty)
+
+        // Export carries the marks.
+        m.bookmarksData = nil
+        m.addBookmark(at: 754, label: "pricing")
+        let txt = ExportService.exportToTXT(meeting: m)
+        check("TXT export lists marked moments", txt.contains("=== Moments You Marked ===\n\n[12:34] pricing"))
+    }
+
+    static func testTranscriptMerge() {
+        let segs = [0.0, 10, 20].map { TranscriptSegment(startTime: $0, endTime: $0 + 5, text: "x") }
+        let marks = [Bookmark(time: 25), Bookmark(time: 12), Bookmark(time: 10)]
+        let merged = TranscriptItem.merge(segments: segs, bookmarks: marks)
+        let times = merged.map(\.time)
+        check("merge keeps every row", merged.count == 6)
+        check("merge orders by time, marks before same-second lines", times == [0, 10, 10, 12, 20, 25])
+        if case .bookmark = merged[1] { check("mark at a line's second sits before it", true) }
+        else { check("mark at a line's second sits before it", false) }
+        check("merge with no marks is the transcript", TranscriptItem.merge(segments: segs, bookmarks: []).count == 3)
+        check("merge with no lines is the marks", TranscriptItem.merge(segments: [], bookmarks: marks).map(\.time) == [10, 12, 25])
     }
 }

@@ -86,6 +86,8 @@ enum Theme {
         static let caption = sans(11)
         /// Tiny uppercase panel label ("ASK PARROT").
         static let cap = sans(11, .semibold)
+        /// Receipt chips ("12:34") beside report bullets.
+        static let receipt = mono(10.5, .medium)
 
         // Live copilot "glance" scale — the panel is read in 1-second glances
         // mid-call, so its focal card runs one step above document sizes.

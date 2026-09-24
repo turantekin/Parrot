@@ -23,6 +23,12 @@ struct LiveRecordingView: View {
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("liveSideTab") private var sideTabRaw = LiveSideTab.transcript.rawValue
     @AppStorage("liveSideCollapsed") private var sideCollapsed = false
+    /// The mark just made from the Mark button — drives the label popover.
+    @State private var labelingMark: Bookmark?
+    @State private var markLabel = ""
+    /// "Marked 12:34" confirmation, whichever path marked (button, menu,
+    /// the ⌃⌥M hotkey from another app).
+    @State private var markFlash: String?
 
     private var sideTab: LiveSideTab { LiveSideTab(rawValue: sideTabRaw) ?? .transcript }
 
@@ -86,6 +92,9 @@ struct LiveRecordingView: View {
 
             Spacer()
 
+            markButton
+                .padding(.trailing, 12)
+
             // Copilot panel toggle
             if copilotEnabled {
                 Button {
@@ -119,6 +128,65 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Theme.Metrics.pad)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Mark moment
+
+    private var markCount: Int { recordingManager.currentMeeting?.bookmarks.count ?? 0 }
+
+    private var markButton: some View {
+        HStack(spacing: 6) {
+            if let markFlash {
+                Text(markFlash)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .transition(.opacity)
+            }
+            Button {
+                if let mark = recordingManager.markMoment() {
+                    markLabel = ""
+                    labelingMark = mark
+                }
+            } label: {
+                Label(markCount > 0 ? "Mark (\(markCount))" : "Mark",
+                      systemImage: markCount > 0 ? "bookmark.fill" : "bookmark")
+                    .font(.appHeadline)
+                    .foregroundStyle(Theme.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(recordingManager.isStopping)
+            .help("Mark this moment for the report (\(GlobalHotKey.Combo.markMoment.display) works from any app)")
+            .popover(item: $labelingMark, arrowEdge: .bottom) { mark in
+                markLabelPopover(mark)
+            }
+        }
+        .onChange(of: recordingManager.lastMarked) { _, mark in
+            guard let mark else { return }
+            withAnimation { markFlash = "Marked \(Receipts.stamp(mark.time))" }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { if markFlash == "Marked \(Receipts.stamp(mark.time))" { markFlash = nil } }
+            }
+        }
+    }
+
+    /// Optional label for a fresh mark. Return saves; clicking away keeps
+    /// whatever was typed (the mark itself already exists).
+    private func markLabelPopover(_ mark: Bookmark) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Marked \(Receipts.stamp(mark.time))")
+                .font(Theme.Typography.cardTitle)
+                .foregroundStyle(Theme.Colors.ink)
+            TextField("What's happening here? (optional)", text: $markLabel)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit { labelingMark = nil }
+        }
+        .padding(12)
+        .onDisappear {
+            let label = markLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !label.isEmpty { recordingManager.labelMoment(mark.id, label: label) }
+        }
     }
 
     // MARK: - Device Bar

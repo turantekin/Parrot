@@ -890,7 +890,8 @@ enum ReportSnapshot {
 
             Divider().overlay(Theme.Colors.line).padding(.vertical, 16)
 
-            ReportContentView(summary: sampleSummary, coaching: sampleCoaching, talkPercentMe: 29)
+            ReportContentView(summary: sampleSummary, coaching: sampleCoaching, talkPercentMe: 29,
+                              receipts: sampleReceipts)
         }
         .frame(width: 600, alignment: .leading)
         .padding(Theme.Metrics.pad)
@@ -925,22 +926,33 @@ enum ReportSnapshot {
 
     Key points:
     - Alex's week was generally positive with mild arguments; morning routine improved despite late-night World Cup watching
-    - Timeout reframed as a 12-minute "regulation corner" (not punishment)
+    - Timeout reframed as a 12-minute "regulation corner" (not punishment) [08:12]
     - Parent struggles with emotion-naming; clinician modelled how to validate Alex's feelings during disappointment
-    - Selective ignoring introduced for attention-seeking behaviours like monster sounds (10–15 minutes max)
+    - Selective ignoring introduced for attention-seeking behaviours like monster sounds (10–15 minutes max) [27:40, 29:05]
 
     Next steps:
-    - Review handouts 20–23 and create a calm-down menu with Alex
+    - Review handouts 20–23 and create a calm-down menu with Alex [44:18]
     - Practise emotion-naming in calm, positive moments first
-    - Confirm online vs in-person for next week before end of workday
+    - Confirm online vs in-person for next week before end of workday [47:02]
     """
+
+    /// Transcript lines the sample stamps point at. "[47:02]" and "[52:40]"
+    /// deliberately have no line, so the render shows an unverified promise
+    /// and an invented stamp dropped.
+    static let sampleReceipts = ReceiptIndex(lines: [
+        .init(start: 492, end: 500, speaker: "NHS Advisor", text: "Let's call it a regulation corner, twelve minutes, not a punishment."),
+        .init(start: 1155, end: 1163, speaker: "Me", text: "Honestly I feel awful when I raise my voice at him."),
+        .init(start: 1660, end: 1668, speaker: "NHS Advisor", text: "Ignore the monster sounds, ten to fifteen minutes at most."),
+        .init(start: 1745, end: 1750, speaker: "NHS Advisor", text: "If it escalates, step in calmly."),
+        .init(start: 2658, end: 2665, speaker: "Me", text: "I'll read handouts twenty to twenty-three and make the menu with Alex."),
+    ])
 
     static let sampleCoaching = """
     Call snapshot: Parenting coaching session on managing a child's behaviour — Me spoke 29%, Them 71%. Heavy teaching call with good engagement.
 
     What went well:
     - Acknowledged gaps in his own skills directly and asked for examples instead of deflecting
-    - Strong vulnerability at 19:15 when sharing guilt over raising his voice, which built trust
+    - Strong vulnerability when sharing guilt over raising his voice, which built trust [19:15]
     - Took notes on handouts and committed to specific follow-ups
 
     What to improve:
@@ -948,7 +960,7 @@ enum ReportSnapshot {
     - Drifted into a 3-minute tech tangent near the end when time was tight
 
     Commitments & follow-ups:
-    - Read handouts 20, 21, 22, 23 before the next meeting
-    - Create a calm-down menu and report back on which skills Alex likes
+    - Read handouts 20, 21, 22, 23 before the next meeting [44:18]
+    - Create a calm-down menu and report back on which skills Alex likes [52:40]
     """
 }

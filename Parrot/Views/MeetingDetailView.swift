@@ -44,6 +44,13 @@ struct MeetingDetailView: View {
     @State private var clipStopTask: Task<Void, Never>?
     /// The line a pending "delete everything after this" is anchored to.
     @State private var truncateAnchor: TranscriptSegment?
+    /// The transcript as a receipts index — cached, not rebuilt on every
+    /// playback tick (the timer re-renders this view ten times a second).
+    @State private var receiptIndex = ReceiptIndex.empty
+    /// A transcript line to bring into view once the Transcript tab shows.
+    @State private var scrollRequest: UUID?
+    @State private var renamingBookmark: Bookmark?
+    @State private var bookmarkLabelText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,6 +108,25 @@ struct MeetingDetailView: View {
             titleText = meeting.title
             themNameText = meeting.themName ?? ""
             prepareAudioPlayer()
+        }
+        // Lines land while a meeting processes, and naming a voice changes
+        // the speaker the receipts quote — rebuild on either.
+        .task(id: receiptIndexKey) {
+            receiptIndex = meeting.receiptIndex
+        }
+        .alert("Rename Bookmark", isPresented: Binding(
+            get: { renamingBookmark != nil },
+            set: { if !$0 { renamingBookmark = nil } }
+        )) {
+            TextField("What happened here?", text: $bookmarkLabelText)
+            Button("Save") {
+                if let mark = renamingBookmark {
+                    meeting.renameBookmark(mark.id, to: bookmarkLabelText)
+                    try? modelContext.save()
+                }
+                renamingBookmark = nil
+            }
+            Button("Cancel", role: .cancel) { renamingBookmark = nil }
         }
         .onDisappear {
             stopPlayback()
@@ -344,8 +370,13 @@ struct MeetingDetailView: View {
                         ReportContentView(
                             summary: meeting.summary,
                             coaching: meeting.coaching,
-                            talkPercentMe: talkPercentMe
+                            talkPercentMe: talkPercentMe,
+                            receipts: receiptIndex,
+                            receiptActions: receiptActions
                         )
+                        if !meeting.bookmarks.isEmpty {
+                            bookmarksCard
+                        }
                         // Summary is in; the coaching pass is still running.
                         if meeting.status == .processing, meeting.coaching == nil {
                             reportGeneratingRow("Analyzing your coaching report…")
@@ -385,6 +416,109 @@ struct MeetingDetailView: View {
             .reduce(0) { $0 + $1.text.split(separator: " ").count }
         let total = meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
         return total > 0 ? Int(Double(me) / Double(total) * 100) : nil
+    }
+
+    // MARK: - Receipts + bookmarks
+
+    private var receiptIndexKey: String {
+        "\(meeting.segments.count)|\(meeting.speakerNamesData?.hashValue ?? 0)|\(meeting.themName ?? "")"
+    }
+
+    private var receiptActions: ReceiptActions {
+        // No audio (a recovered call whose file couldn't be finalized): the
+        // line can still be shown, just not played.
+        ReceiptActions(play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil,
+                       showInTranscript: showInTranscript)
+    }
+
+    private func playFrom(_ time: TimeInterval) {
+        clipStopTask?.cancel()
+        seekTo(time)
+        if !isPlaying { togglePlayback() }
+    }
+
+    private func showInTranscript(_ time: TimeInterval) {
+        seekTo(time)
+        tab = .transcript
+        scrollRequest = activeSegmentID
+    }
+
+    /// "Moments you marked": each bookmark with its time (plays it), label,
+    /// and a menu to rename or remove it.
+    private var bookmarksCard: some View {
+        ReportSectionCard(title: "Moments you marked", icon: "bookmark.fill", tint: Theme.Colors.accent) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(meeting.bookmarks) { mark in
+                    bookmarkRow(mark)
+                }
+            }
+        }
+    }
+
+    private func bookmarkRow(_ mark: Bookmark) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Button {
+                playFrom(mark.time)
+            } label: {
+                Label(Receipts.stamp(mark.time), systemImage: "play.fill")
+                    .font(Theme.Typography.receipt)
+                    .foregroundStyle(Theme.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Play this moment")
+            Text(mark.label.isEmpty ? "Marked moment" : mark.label)
+                .font(Theme.Typography.body)
+                .foregroundStyle(mark.label.isEmpty ? Theme.Colors.ink2 : Theme.Colors.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Menu {
+                Button("Show in Transcript") { showInTranscript(mark.time) }
+                Button("Rename…") {
+                    bookmarkLabelText = mark.label
+                    renamingBookmark = mark
+                }
+                Divider()
+                Button("Remove Bookmark", role: .destructive) {
+                    meeting.removeBookmark(mark.id)
+                    try? modelContext.save()
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Theme.Colors.ink2)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Bookmark options")
+        }
+    }
+
+    /// A bookmark between transcript lines, at the moment it was marked.
+    private func transcriptBookmarkRow(_ mark: Bookmark) -> some View {
+        HStack(spacing: 8) {
+            Text(Receipts.stamp(mark.time))
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.accent)
+                .frame(width: 40, alignment: .trailing)
+            Label(mark.label.isEmpty ? "You marked this moment" : mark.label,
+                  systemImage: "bookmark.fill")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.accent)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .onTapGesture { seekTo(mark.time) }
+        .contextMenu {
+            Button("Rename…") {
+                bookmarkLabelText = mark.label
+                renamingBookmark = mark
+            }
+            Button("Remove Bookmark", role: .destructive) {
+                meeting.removeBookmark(mark.id)
+                try? modelContext.save()
+            }
+        }
     }
 
     // MARK: - Transcript tab
@@ -491,32 +625,55 @@ struct MeetingDetailView: View {
 
     private var transcriptList: some View {
         let ordered = meeting.sortedSegments
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(ordered) { segment in
-                    TranscriptSegmentRow(
-                        segment: segment,
-                        isActive: segment.id == activeSegmentID,
-                        themName: meeting.themName,
-                        meeting: meeting,
-                        playClip: playClip,
-                        onReassign: { segment.speakerLabel = $0 },
-                        // A meeting still transcribing is being appended to as
-                        // we look at it — offer the cut once it has settled.
-                        onTruncate: meeting.status == .done
-                            ? { truncateAnchor = segment } : nil,
-                        isLastLine: segment.id == ordered.last?.id
-                    )
-                    .onTapGesture {
-                        seekTo(segment.startTime)
+        let items = TranscriptItem.merge(segments: ordered, bookmarks: meeting.bookmarks)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(items) { item in
+                        switch item {
+                        case .segment(let segment):
+                            TranscriptSegmentRow(
+                                segment: segment,
+                                isActive: segment.id == activeSegmentID,
+                                themName: meeting.themName,
+                                meeting: meeting,
+                                playClip: playClip,
+                                onReassign: { segment.speakerLabel = $0 },
+                                // A meeting still transcribing is being appended to as
+                                // we look at it — offer the cut once it has settled.
+                                onTruncate: meeting.status == .done
+                                    ? { truncateAnchor = segment } : nil,
+                                isLastLine: segment.id == ordered.last?.id,
+                                onBookmark: {
+                                    meeting.addBookmark(at: segment.startTime)
+                                    try? modelContext.save()
+                                }
+                            )
+                            .id(segment.id)
+                            .onTapGesture {
+                                seekTo(segment.startTime)
+                            }
+                        case .bookmark(let mark):
+                            transcriptBookmarkRow(mark)
+                        }
+                    }
+
+                    if let note = meeting.truncationNote {
+                        truncationFooter(note)
                     }
                 }
-
-                if let note = meeting.truncationNote {
-                    truncationFooter(note)
-                }
+                .padding(Theme.Metrics.pad)
             }
-            .padding(Theme.Metrics.pad)
+            // A receipt's "Show in Transcript" switches tabs, so the list may
+            // only now exist — scroll once it has laid out, then clear.
+            .task(id: scrollRequest) {
+                guard let target = scrollRequest else { return }
+                try? await Task.sleep(for: .milliseconds(80))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                scrollRequest = nil
+            }
         }
         .confirmationDialog(
             "Delete the rest of this transcript?",
@@ -854,6 +1011,8 @@ struct TranscriptSegmentRow: View {
     var onTruncate: (() -> Void)? = nil
     /// Bottom of the transcript: nothing below it to cut.
     var isLastLine: Bool = false
+    /// Set when this line can be bookmarked after the call.
+    var onBookmark: (() -> Void)? = nil
     @State private var naming = false
 
     /// Muted adaptive palette for the other side of the call — "Me" is always
@@ -929,6 +1088,11 @@ struct TranscriptSegmentRow: View {
         )
         .animation(.easeInOut(duration: 0.15), value: isActive)
         .contextMenu {
+            if let onBookmark {
+                Button("Bookmark This Line") { onBookmark() }
+                if canReassign || onTruncate != nil { Divider() }
+            }
+
             // Fix a single misattributed line without touching the rest.
             if let meeting, let onReassign, !isMe {
                 Menu("This line is") {
@@ -1037,5 +1201,44 @@ extension String {
     /// traps). Used for stable speaker/sidebar colors.
     var stableHash: Int {
         unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
+    }
+}
+
+// MARK: - Transcript items
+
+/// A transcript row: a spoken line, or a bookmark between lines.
+enum TranscriptItem: Identifiable {
+    case segment(TranscriptSegment)
+    case bookmark(Bookmark)
+
+    var id: UUID {
+        switch self {
+        case .segment(let s): s.id
+        case .bookmark(let b): b.id
+        }
+    }
+
+    var time: TimeInterval {
+        switch self {
+        case .segment(let s): s.startTime
+        case .bookmark(let b): b.time
+        }
+    }
+
+    /// Lines in order, each bookmark placed just before the first line that
+    /// starts after it (a mark at 12:34 sits between the 12:30 and 12:40
+    /// lines). A bookmark at the same second as a line goes before it.
+    static func merge(segments: [TranscriptSegment], bookmarks: [Bookmark]) -> [TranscriptItem] {
+        var out: [TranscriptItem] = []
+        var marks = bookmarks.sorted { $0.time < $1.time }[...]
+        for segment in segments {
+            while let next = marks.first, next.time <= segment.startTime {
+                out.append(.bookmark(next))
+                marks = marks.dropFirst()
+            }
+            out.append(.segment(segment))
+        }
+        out.append(contentsOf: marks.map { .bookmark($0) })
+        return out
     }
 }

@@ -199,6 +199,12 @@ final class RecordingManager {
         }
     }
 
+    /// Settings toggled mid-call: take effect now, not next recording.
+    func refreshMarkHotKey() {
+        markHotKey.unregister()
+        if isRecording { registerMarkHotKey() }
+    }
+
     // MARK: - Recording Control
 
     /// The one shared entry point for every "start recording" button — checks
