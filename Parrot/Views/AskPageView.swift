@@ -133,12 +133,20 @@ struct AskPageView: View {
                             }
                             ForEach(chat.messages) { message($0).id($0.id) }
                             if let stage {
-                                HStack(spacing: Theme.Metrics.chipInsetH * 1.5) {
+                                HStack(alignment: .center, spacing: Theme.Metrics.chipInsetH * 1.5) {
                                     ParrotAvatar()
-                                    ProgressView().controlSize(.small)
-                                    Text(stage)
-                                        .font(Theme.Typography.secondary)
-                                        .foregroundStyle(Theme.Colors.ink2)
+                                    HStack(spacing: Theme.Metrics.chipInsetH) {
+                                        Text(stage)
+                                            .font(Theme.Typography.secondary)
+                                            .foregroundStyle(Theme.Colors.ink2)
+                                            .contentTransition(.opacity)
+                                        ThinkingDots()
+                                    }
+                                    .padding(.horizontal, Theme.Metrics.bubbleInsetH)
+                                    .padding(.vertical, Theme.Metrics.bubbleInsetV)
+                                    .background(Theme.Colors.chip.opacity(0.5),
+                                                in: RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius))
+                                    .animation(.easeInOut(duration: 0.25), value: stage)
                                 }
                                 .id("stage")
                             }
@@ -293,13 +301,21 @@ struct AskPageView: View {
     private func input(_ chat: AskChat) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .bottom, spacing: Theme.Metrics.chipInsetH * 1.5) {
+                // Three lines tall from the start, so the box is easy to spot.
                 TextField(chat.messages.isEmpty ? "Ask about your meetings…" : "Ask a follow-up…",
                           text: $question, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .font(Theme.Typography.body)
-                    .lineLimit(1...5)
+                    .lineLimit(3, reservesSpace: true)
                     .focused($focused)
                     .onSubmit(send)
+                    .padding(.horizontal, Theme.Metrics.bubbleInsetH)
+                    .padding(.vertical, Theme.Metrics.bubbleInsetV)
+                    .background(Theme.Colors.canvas,
+                                in: RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius)
+                        .stroke(focused ? Theme.Colors.accent : Theme.Colors.line,
+                                lineWidth: focused ? 2 : 1))
                 if running != nil {
                     Button("Stop", action: stop)
                         .keyboardShortcut(.cancelAction)

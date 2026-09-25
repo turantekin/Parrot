@@ -63,7 +63,7 @@ extension RecordingManager {
         let privateIDs = Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
         let excluded: Set<UUID> = local ? [] : privateIDs
         let history = AskEngine.history(chat.messages, cloud: !local, excluded: excluded)
-        progress("Reading your meetings…")
+        progress("Thinking…")
         // Ollama counts as set up whenever it's picked; check it's really
         // there before sending anything (Task 5).
         var ollamaProblem: String?
@@ -101,6 +101,7 @@ extension RecordingManager {
         // Date words only narrow a chat that searches everything — a chat
         // scoped to one meeting always searches that meeting, regardless of
         // what the question says about when.
+        progress("Reading your meetings…")
         let range = AskEngine.dateRange(in: searchQuestion, now: .now)
         let scope = AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
         // Rank wide, put the last answer's meetings first (follow-up

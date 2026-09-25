@@ -137,6 +137,8 @@ enum Theme {
         /// Ask Parrot page: the saved-chats column and the conversation's cap.
         static let chatListWidth: CGFloat = 220
         static let chatMaxWidth: CGFloat = 760
+        /// Ask Parrot's "thinking" dots.
+        static let thinkingDot: CGFloat = 5
     }
 }
 

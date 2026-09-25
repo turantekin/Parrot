@@ -13,6 +13,24 @@ struct BetaTag: View {
     }
 }
 
+/// Three dots that pulse in turn while Parrot works on an answer.
+struct ThinkingDots: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: Theme.Metrics.thinkingDot * 0.6) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Theme.Colors.accent)
+                        .frame(width: Theme.Metrics.thinkingDot, height: Theme.Metrics.thinkingDot)
+                        .opacity(0.25 + 0.75 * max(0, sin(t * 5 - Double(i) * 0.9)))
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// Parrot's face in Ask Parrot: the app icon in a circle with a small ✦
 /// badge, so an answer reads as the app's AI.
 struct ParrotAvatar: View {
