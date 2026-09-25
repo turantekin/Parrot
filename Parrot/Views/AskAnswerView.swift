@@ -32,7 +32,7 @@ struct AskAnswerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !message.answeredByAI, !message.lines.isEmpty {
+            if !message.answeredByAI, !message.refs.isEmpty {
                 Text("Closest moments")
                     .font(Theme.Typography.sectionLabel)
                     .foregroundStyle(Theme.Colors.label)

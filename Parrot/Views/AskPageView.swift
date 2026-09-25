@@ -16,6 +16,10 @@ struct AskPageView: View {
     @State private var question = ""
     @State private var running: Task<Void, Never>?
     @State private var stage: String?
+    /// Identifies the in-flight turn: stop() clears this, so a task that
+    /// unwinds after a new turn started can't touch the new turn's
+    /// stage/running state or save its answer into it.
+    @State private var turn: UUID?
     @State private var renaming: AskChat?
     @State private var renameText = ""
     @FocusState private var focused: Bool
@@ -310,10 +314,15 @@ struct AskPageView: View {
         selectedID = c.id
         question = ""
         let id = c.id
+        let myTurn = UUID()
+        turn = myTurn
         running = Task {
-            let result = await recordingManager.ask(q, in: prior) { stage = $0 }
+            let result = await recordingManager.ask(q, in: prior) { s in
+                if turn == myTurn { stage = s }
+            }
+            guard turn == myTurn else { return }
             stage = nil
-            defer { running = nil }
+            running = nil
             guard !Task.isCancelled, var now = store.chat(id) else { return }
             now.messages.append(AskMessage(answer: result))
             store.upsert(now)
@@ -322,6 +331,7 @@ struct AskPageView: View {
 
     /// Stop: the turn is not saved and the question goes back in the field.
     private func stop() {
+        turn = nil
         running?.cancel()
         running = nil
         stage = nil
