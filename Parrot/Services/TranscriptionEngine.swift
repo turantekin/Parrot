@@ -1026,7 +1026,12 @@ final class TranscriptionEngine {
         options.logProbThreshold = -1.0
         options.noSpeechThreshold = 0.6
         options.temperatureFallbackCount = 3
-        primeGlossary(into: &options)
+        // ponytail: no glossary prompt here. Prompt tokens + timestamped
+        // decoding makes Whisper return empty text for every 30 s window, so
+        // any user with a custom vocabulary got "No speech found" on every
+        // import (2026-09-25). Imports lose the vocabulary hint; bring it back
+        // only with a prompt/timestamp combo that a real file proves works.
+        glossaryActive = false
 
         let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
         let timeline = await speechTimeline(url: url)
