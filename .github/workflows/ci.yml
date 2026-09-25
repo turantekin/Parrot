@@ -100,6 +100,24 @@ jobs:
       - name: Assemble app bundle (ad-hoc)
         run: make bundle CONFIG=debug SIGN_IDENTITY=-
 
+      # A downloadable, optimised build for trying a branch on a real Mac.
+      # Ad-hoc signed (no secrets here): macOS needs the quarantine flag
+      # cleared once — see docs/TESTING-GUIDE.md. ditto keeps the Sparkle
+      # framework's symlinks, which a plain artifact zip would break.
+      - name: Test build (release, ad-hoc)
+        if: github.event_name != 'pull_request'
+        run: |
+          make bundle CONFIG=release SIGN_IDENTITY=- VERSION=0.21.0-test
+          ditto -c -k --keepParent dist/Parrot.app Parrot-test.zip
+
+      - name: Upload test build
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Parrot-test-build
+          path: Parrot-test.zip
+          retention-days: 30
+
       - name: Upload snapshots
         if: always()
         uses: actions/upload-artifact@v4
