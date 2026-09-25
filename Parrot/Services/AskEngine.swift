@@ -123,7 +123,7 @@ enum AskEngine {
             if !people.isEmpty { line += ", with \(people.map(safe).joined(separator: ", "))" }
             return line
         }
-        if sorted.count > limit { lines.append("(\(sorted.count - limit) older meetings not listed)") }
+        if sorted.count > limit { lines.append("(\(sorted.count - limit) older meeting\(sorted.count - limit == 1 ? "" : "s") not listed)") }
         return lines.joined(separator: "\n")
     }
 
@@ -349,7 +349,9 @@ enum AskEngine {
     /// "[03:52]" means that meeting. A meeting's title stands in for its
     /// label: "[Acme renewal, 00:12]".
     static func parseGroup(_ content: String, refs: [String: UUID], titles: [(title: String, label: String)] = []) -> [(UUID, TimeInterval?)]? {
-        let tokens = labelTitles(content.trimmingCharacters(in: .whitespaces), titles).components(separatedBy: CharacterSet(charactersIn: ",; ")).filter { !$0.isEmpty }
+        let trimmed = content.trimmingCharacters(in: .whitespaces)
+        let labelled = labelTitles(trimmed, titles)
+        let tokens = labelled.components(separatedBy: CharacterSet(charactersIn: ",; ")).filter { !$0.isEmpty }
         guard !tokens.isEmpty else { return nil }
         var out: [(UUID, TimeInterval?)] = []
         var current: UUID?
@@ -374,6 +376,8 @@ enum AskEngine {
             }
         }
         if let current, !currentHasTime { out.append((current, nil)) }
+        // A title alone ("[Acme renewal]") is prose, not a citation.
+        if labelled != trimmed, !out.contains(where: { $0.1 != nil }) { return nil }
         return out.isEmpty ? nil : out
     }
 
@@ -403,7 +407,10 @@ enum AskEngine {
     static func parse(_ answer: String, refs: [MeetingRef],
                       isReal: (UUID, TimeInterval) -> Bool) -> [Line] {
         let table = Dictionary(refs.map { ($0.ref, $0.meetingID) }, uniquingKeysWith: { a, _ in a })
-        let titles = refs.map { (title: $0.title, label: $0.ref) }
+        // Titles as the model saw them (safe), and only ones no other
+        // meeting shares: a recurring "Weekly sync" can't say which.
+        let titles = Dictionary(grouping: refs) { safe($0.title).lowercased() }.values
+            .filter { $0.count == 1 }.map { (title: safe($0[0].title), label: $0[0].ref) }
         var lines: [Line] = []
         for raw in answer.components(separatedBy: .newlines) {
             let ns = raw as NSString
@@ -452,10 +459,12 @@ enum AskEngine {
     /// bullet they leave behind: "Sam said X and." → "Sam said X.",
     /// "-" → "".
     static func tidy(_ line: String) -> String {
-        var s = danglingJoiner.stringByReplacingMatches(in: line, range: NSRange(location: 0, length: (line as NSString).length),
-                                                        withTemplate: "$1")
-        // "this week. and." → "this week.."
-        if let last = s.last, ".!?".contains(last), s.dropLast().last.map({ ".!?".contains($0) }) == true { s.removeLast() }
+        let range = NSRange(location: 0, length: (line as NSString).length)
+        var s = danglingJoiner.stringByReplacingMatches(in: line, range: range, withTemplate: "$1")
+        // "this week. and." → "this week.." → "this week." (an ellipsis
+        // with no joiner removed stays).
+        if danglingJoiner.firstMatch(in: line, range: range) != nil,
+           let last = s.last, ".!?".contains(last), s.dropLast().last.map({ ".!?".contains($0) }) == true { s.removeLast() }
         return ["-", "•", "–", "*"].contains(s.trimmingCharacters(in: .whitespaces)) ? "" : s
     }
 

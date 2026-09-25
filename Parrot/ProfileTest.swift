@@ -1205,7 +1205,9 @@ enum ProfileTest {
         check("list: newest first, line format",
               rows.first == "- 23 Sep 2026 10:59, 22 min, \"Meeting ‹Revolut›\", with Mac, Uygar")
         check("list: no people, under a minute", rows.dropFirst().first == "- 22 Sep 2026 09:05, under 1 min, \"Standup\"")
-        check("list: cut list says how many are left out", rows.count == 3 && rows.last == "(1 older meetings not listed)")
+        check("list: cut list says how many are left out", rows.count == 3 && rows.last == "(1 older meeting not listed)")
+        check("list: several left out is plural",
+              AskEngine.meetingList(items, limit: 1).hasSuffix("(2 older meetings not listed)"))
         check("list: full list has no cut line", !AskEngine.meetingList(items, limit: 3).contains("not listed"))
         check("list: empty input gives nothing", AskEngine.meetingList([], limit: 5) == "")
         let withList = AskEngine.answerUser(question: "q", context: "c", history: "", meetingList: "- a meeting")
@@ -1255,6 +1257,23 @@ enum ProfileTest {
               AskEngine.parse("Pricing and terms, [Report - notes].", refs: titled) { _, _ in true }.first?.text == "Pricing and terms.")
         check("junk: whole words only, [unreported] kept",
               AskEngine.parse("It was [unreported] then.", refs: titled) { _, _ in true }.first?.text == "It was [unreported] then.")
+
+        // 3c. Review fixes: shared titles, title-only brackets, "...", safe titles.
+        let weekly1 = UUID(), weekly2 = UUID()
+        let weeklies = [AskEngine.MeetingRef(ref: "M1", meetingID: weekly1, title: "Weekly sync", date: .now, people: []),
+                        AskEngine.MeetingRef(ref: "M2", meetingID: weekly2, title: "weekly sync", date: .now, people: [])]
+        let shared = AskEngine.parse("We agreed [Weekly sync, 12:03].", refs: weeklies) { _, _ in true }
+        check("title: a title two meetings share cites neither", shared.first?.citations.isEmpty == true)
+        let titleOnly = AskEngine.parse("I think [Acme renewal] is key.", refs: titled) { _, _ in true }
+        check("title: a title with no time stays as text",
+              titleOnly.first?.text == "I think [Acme renewal] is key." && titleOnly.first?.citations.isEmpty == true)
+        check("tidy: an ellipsis before a citation stays",
+              AskEngine.parse("and then... [M1 00:12]", refs: titled) { _, _ in true }.first?.text == "and then...")
+        let angled = [AskEngine.MeetingRef(ref: "M1", meetingID: acmeID, title: "Q3 <draft> review", date: .now, people: []),
+                      AskEngine.MeetingRef(ref: "M2", meetingID: followID, title: "Other", date: .now, people: [])]
+        check("title: a title with < > matches as the model saw it",
+              AskEngine.parse("Done [Q3 ‹draft› review, 00:12].", refs: angled) { _, _ in true }.first?.citations
+                == [AskEngine.Citation(meetingID: acmeID, time: 12)])
 
         // 4. "That meeting" is the one just discussed.
         check("rewrite: that call means the last one discussed",
