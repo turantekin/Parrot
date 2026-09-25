@@ -206,6 +206,10 @@ enum HelpShots {
     static func run(outputDir: String) {
         let dir = URL(fileURLWithPath: outputDir, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // The bare binary has no bundle icon; ParrotAvatar draws the app icon.
+        if let icon = NSImage(contentsOfFile: "Parrot/Assets.xcassets/AppIcon.appiconset/icon_128@2x.png") {
+            NSApplication.shared.applicationIconImage = icon
+        }
 
         // Shared world: in-memory store with the built-in profiles and a few
         // meetings, plus managers that look mid-flight.

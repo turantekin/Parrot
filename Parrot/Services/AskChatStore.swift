@@ -59,6 +59,9 @@ final class AskChatStore {
     /// Newest activity first.
     private(set) var chats: [AskChat] = []
     @ObservationIgnored private let directory: URL?
+    /// False when chats.json exists but couldn't be read (permissions, disk):
+    /// saving would replace the real chats with what's in memory.
+    @ObservationIgnored private var canSave = true
 
     init(directory: URL? = AskChatStore.defaultDirectory) {
         self.directory = directory
@@ -146,7 +149,17 @@ final class AskChatStore {
     // MARK: Persistence
 
     private func load() {
-        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return }
+        guard let url = fileURL else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return
+        } catch {
+            canSave = false
+            NSLog("Parrot: saved chats couldn't be opened; not saving over them")
+            return
+        }
         do {
             chats = try JSONDecoder().decode([AskChat].self, from: data).sorted { $0.updated > $1.updated }
         } catch {
@@ -159,7 +172,7 @@ final class AskChatStore {
     }
 
     private func save() {
-        guard let directory, let url = fileURL else { return }
+        guard canSave, let directory, let url = fileURL else { return }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(chats) else { return }
         try? data.write(to: url, options: .atomic)

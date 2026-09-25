@@ -81,6 +81,7 @@ enum ProfileTest {
         testAskNoAI()
         testAskFollowUps()
         testAskBroad()
+        testAskFinalFixes()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1123,6 +1124,51 @@ enum ProfileTest {
               AskEngine.searchScope(chatScope: nil, range: aRange, meetings: meetingDates) == [b])
         check("scope: no chat scope and no range gives nil",
               AskEngine.searchScope(chatScope: nil, range: nil, meetings: meetingDates) == nil)
+    }
+
+    @MainActor
+    static func testAskFinalFixes() {
+        // 1. A local answer is private if its history carried a private exchange.
+        let pub = UUID(), secret = UUID()
+        func answer(_ text: String, cites id: UUID) -> AskMessage {
+            var m = AskMessage(role: .parrot, text: text)
+            m.lines = [AskEngine.Line(text: text, citations: [AskEngine.Citation(meetingID: id, time: 5)])]
+            m.refs = [AskEngine.MeetingRef(ref: "M1", meetingID: id, title: "t", date: .now, people: [])]
+            return m
+        }
+        let withSecret = [AskMessage(role: .me, text: "Secret?"), answer("Secret answer.", cites: secret)]
+        check("private: local turn with a private exchange in history is private",
+              AskEngine.answerIsPrivate(hitMeetingIDs: [pub], messages: withSecret, privateIDs: [secret], local: true))
+        check("private: local turn from a private hit is private",
+              AskEngine.answerIsPrivate(hitMeetingIDs: [secret], messages: [], privateIDs: [secret], local: true))
+        check("private: local turn with only public history and hits is not",
+              !AskEngine.answerIsPrivate(hitMeetingIDs: [pub], messages: [AskMessage(role: .me, text: "Q"), answer("A", cites: pub)],
+                                         privateIDs: [secret], local: true))
+        check("private: a cloud turn is never private",
+              !AskEngine.answerIsPrivate(hitMeetingIDs: [secret], messages: withSecret, privateIDs: [secret], local: false))
+
+        // 2. An unreadable chats.json is never replaced.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("askchats-locked-\(UUID().uuidString)")
+        let file = dir.appendingPathComponent("chats.json")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? "keep me".write(to: file, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        let locked = AskChatStore(directory: dir)
+        locked.upsert(AskChat(title: "New", scope: nil, scopeTitle: nil))
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        check("chats: an unreadable file is not overwritten", (try? String(contentsOf: file, encoding: .utf8)) == "keep me")
+        try? FileManager.default.removeItem(at: dir)
+
+        // 3. Ollama lists untagged models as "name:latest".
+        check("ollama: untagged name matches :latest", OllamaProbe.isInstalled("mistral", in: ["mistral:latest"]))
+        check("ollama: a different tag doesn't match", !OllamaProbe.isInstalled("gemma3:4b", in: ["gemma3:12b"]))
+        check("ollama: untagged model isn't reported missing", AskEngine.ollamaNote(installed: ["mistral:latest"], model: "mistral") == nil)
+
+        // 4. Rewrite: topic changes pass through; lead-in lines are skipped.
+        check("rewrite: prompt keeps unrelated follow-ups unchanged",
+              AskEngine.rewriteSystemPrompt.contains("If the follow-up doesn't refer back to the conversation, return it unchanged."))
+        check("rewrite: lead-in line skipped",
+              AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
     }
 
     static func testDiarizedLabel() {

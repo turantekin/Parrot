@@ -85,7 +85,7 @@ struct OllamaModelStatusView: View {
             status = .serverDown
             return
         }
-        status = installed.contains(model) ? .ready : .missing
+        status = OllamaProbe.isInstalled(model, in: installed) ? .ready : .missing
     }
 
     private func pull() async {

@@ -146,6 +146,11 @@ struct AskPageView: View {
                         .frame(maxWidth: Theme.Metrics.chatMaxWidth, alignment: .leading)
                         .frame(maxWidth: .infinity)
                     }
+                    // A saved chat opens on its latest message.
+                    .defaultScrollAnchor(.bottom)
+                    .onChange(of: chat.id) { _, _ in
+                        proxy.scrollTo(chat.messages.last?.id, anchor: .bottom)
+                    }
                     .onChange(of: chat.messages.count) { _, _ in
                         withAnimation { proxy.scrollTo(chat.messages.last?.id, anchor: .bottom) }
                     }
@@ -284,6 +289,8 @@ struct AskPageView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Theme.Metrics.pad)
+        // Room for the floating bug-report button in the corner.
+        .padding(.trailing, Theme.Metrics.floatingClearance)
     }
 
     private var privacyLine: String {
@@ -315,7 +322,8 @@ struct AskPageView: View {
         draft = AskChat(title: "New chat", scope: scope, scopeTitle: scopeTitle)
         selectedID = nil
         question = ""
-        focused = true
+        // Next tick: the field may not exist yet (first chat on this page).
+        DispatchQueue.main.async { focused = true }
     }
 
     private func select(_ id: UUID) {

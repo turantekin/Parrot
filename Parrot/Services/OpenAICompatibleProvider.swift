@@ -77,6 +77,12 @@ enum OllamaCatalog {
 /// The local Ollama server (loopback only): which models are installed, or
 /// nil when it isn't running. Shared by Settings and Ask Parrot.
 enum OllamaProbe {
+    /// /api/tags lists "mistral" as "mistral:latest": an untagged name
+    /// means its :latest tag.
+    static func isInstalled(_ model: String, in installed: [String]) -> Bool {
+        installed.contains(model) || (!model.contains(":") && installed.contains(model + ":latest"))
+    }
+
     static func installedModels() async -> [String]? {
         struct Tags: Decodable {
             struct Entry: Decodable { let name: String }

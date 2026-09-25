@@ -60,8 +60,10 @@ extension RecordingManager {
         // decision filters private meetings, the history AND routes the
         // requests below, so they can't disagree.
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
-        let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
+        let privateIDs = Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
+        let excluded: Set<UUID> = local ? [] : privateIDs
         let history = AskEngine.history(chat.messages, cloud: !local, excluded: excluded)
+        progress("Reading your meetings…")
         // Ollama counts as set up whenever it's picked; check it's really
         // there before sending anything (Task 5).
         var ollamaProblem: String?
@@ -78,7 +80,6 @@ extension RecordingManager {
             }
         }
 
-        progress("Reading your meetings…")
         // A follow-up is searched as a standalone question: the AI rewrites
         // it; without an AI (or on a bad reply) the previous question rides
         // along and the last answer's meetings are tried first.
@@ -123,7 +124,8 @@ extension RecordingManager {
         let privateNote = excluded.isEmpty ? nil
             : "On-device-only meetings aren't searched when the answer comes from a cloud AI."
         let searchedFor = searchQuestion == question ? nil : searchQuestion
-        let usedPrivate = local && hits.contains { byID[$0.meetingID].map { !CloudGate.mayLeaveMac($0) } ?? false }
+        let usedPrivate = AskEngine.answerIsPrivate(hitMeetingIDs: Set(hits.map(\.meetingID)), messages: chat.messages,
+                                                    privateIDs: privateIDs, local: local)
 
         guard !hits.isEmpty else {
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
