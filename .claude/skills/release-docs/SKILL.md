@@ -76,8 +76,10 @@ Match the last two releases (`gh release view v0.21.0 --json name,body`):
 - A line on new permissions or downloads, then: "Requires macOS 14 or later
   on Apple Silicon. Existing installs will offer the update within a day."
 
-Save it as a file for `scripts/publish.sh <version> <notes-file>` (or
-`gh release create --notes-file`).
+Save it as a file for `scripts/publish.sh <version> <notes-file>`, with the
+title as its first line (`# Parrot X.Y.Z: <short tagline>`): publish.sh makes
+that line the release title, which the website's "New in" pill shows. By
+hand, `gh release create --title "..." --notes-file` does the same.
 
 ## 5. What the website should add
 
@@ -87,8 +89,9 @@ to an existing section, an "everyday" tile, an FAQ entry, or "wait" (anything
 experimental or off by default). Rank by how much it changes why someone
 would download or trust Parrot. Download buttons, version labels and
 /changelog update themselves from GitHub, and help syncs through the site's
-workflow PR, so leave those out. The site changes happen in a separate
-session in `~/Scripts/parrot-site`, using its `/after-release` skill.
+workflow PR, so leave those out. `scripts/publish.sh` also starts the site's
+"Site draft" workflow, which runs its `/after-release` skill and opens a draft
+PR in parrot-site; your list here is a check on that draft.
 
 ## 6. Hand off
 

@@ -4,6 +4,10 @@
 #   scripts/publish.sh 0.14.1                  # notes generated from commits
 #   scripts/publish.sh 0.14.1 notes.md         # notes from a file
 #
+# If the notes file starts with "# Parrot 0.14.1: <tagline>", that line becomes
+# the release title and is left out of the notes. openparrot.app shows the
+# tagline in its "New in" pill. Without it the title is just "Parrot 0.14.1".
+#
 # Run this after scripts/release.sh has built and notarized the DMG.
 #
 # Why this exists: since 0.14.0 a release is three steps, not two, and the
@@ -46,6 +50,18 @@ grep -q "<sparkle:shortVersionString>$VERSION<" docs/appcast.xml || {
   exit 1
 }
 
+TITLE="Parrot $VERSION"
+if [ -n "$NOTES_FILE" ]; then
+  [ -f "$NOTES_FILE" ] || { echo "!! notes file $NOTES_FILE not found" >&2; exit 1; }
+  FIRST="$(head -1 "$NOTES_FILE")"
+  if [[ "$FIRST" == "# Parrot $VERSION: "* ]]; then
+    TITLE="${FIRST#\# }"
+    BODY="$(mktemp)"
+    tail -n +2 "$NOTES_FILE" | sed '/./,$!d' > "$BODY"  # drop the title and the blank lines after it
+    NOTES_FILE="$BODY"
+  fi
+fi
+
 # 1. The GitHub release first. The appcast points at this download, so it has
 #    to exist before any Parrot is told to fetch it.
 if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
@@ -54,7 +70,7 @@ else
   echo "==> creating GitHub release v$VERSION"
   if [ -n "$NOTES_FILE" ]; then
     gh release create "v$VERSION" "$DMG" --repo "$REPO" --prerelease --target master \
-      --title "Parrot $VERSION" --notes-file "$NOTES_FILE"
+      --title "$TITLE" --notes-file "$NOTES_FILE"
   else
     gh release create "v$VERSION" "$DMG" --repo "$REPO" --prerelease --target master \
       --title "Parrot $VERSION" --generate-notes
@@ -93,3 +109,16 @@ echo "Published $VERSION."
 echo "  release: https://github.com/$REPO/releases/tag/v$VERSION"
 echo "  feed:    $FEED (live, download link resolves)"
 echo "  Installed copies will offer it within a day."
+
+# 4. Tell the website. Help sync copies docs/help from this tag; Site draft
+#    writes the site copy as a draft PR to review. Both also run daily, so a
+#    failure here only delays them.
+echo
+for wf in help-sync.yml site-draft.yml; do
+  if gh workflow run "$wf" --repo turantekin/parrot-site >/dev/null 2>&1; then
+    echo "==> started $wf on parrot-site"
+  else
+    echo "!! couldn't start $wf on parrot-site; its daily run will catch up" >&2
+  fi
+done
+echo "  PRs to review: https://github.com/turantekin/parrot-site/pulls"
