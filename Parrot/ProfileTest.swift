@@ -911,12 +911,20 @@ enum ProfileTest {
             anchors: anchors)
         check("unmatched avoids anchor labels", taken == ["Speaker 1": "Speaker 3"])
         let plugged = M.PowerState()
-        check("sweep: 30 s floor early in a call", M.liveSweepDelay(elapsed: 60, power: plugged) == 30)
-        check("sweep: spaced to 10% of a long call", M.liveSweepDelay(elapsed: 3600, power: plugged) == 360)
-        check("sweep: battery doubles the wait",
-              M.liveSweepDelay(elapsed: 3600, power: .init(onBattery: true)) == 720)
-        check("sweep: Low Power Mode skips", M.liveSweepDelay(elapsed: 600, power: .init(lowPower: true)) == nil)
-        check("sweep: a hot Mac skips", M.liveSweepDelay(elapsed: 600, power: .init(hot: true)) == nil)
+        check("sweep: every 15 s plugged in", M.liveSweepDelay(power: plugged) == 15)
+        check("sweep: every 30 s on battery", M.liveSweepDelay(power: .init(onBattery: true)) == 30)
+        check("sweep: Low Power Mode skips", M.liveSweepDelay(power: .init(lowPower: true)) == nil)
+        check("sweep: a hot Mac skips", M.liveSweepDelay(power: .init(hot: true)) == nil)
+        let known: [String: [Float]] = ["Speaker 1": [1, 0, 0], "Speaker 2": [0, 1, 0]]
+        let split = M.windowMapping(newEmbeddings: ["Speaker 1": [0.98, 0.1, 0], "Speaker 2": [0.95, 0, 0.2]],
+                                    speech: ["Speaker 1": 20, "Speaker 2": 3], anchors: known)
+        check("window: one voice split in two maps both to it", split == ["Speaker 1": "Speaker 1", "Speaker 2": "Speaker 1"])
+        let window = M.windowMapping(newEmbeddings: ["Speaker 1": [0, 0.99, 0.1], "Speaker 2": [0, 0, 1]],
+                                     speech: ["Speaker 1": 30, "Speaker 2": 10], anchors: known)
+        check("window: known voice keeps its label, new voice gets the next one",
+              window == ["Speaker 1": "Speaker 2", "Speaker 2": "Speaker 3"])
+        let blip = M.windowMapping(newEmbeddings: ["Speaker 1": [0, 0, 1]], speech: ["Speaker 1": 1.5], anchors: known)
+        check("window: a short unknown blip is left out", blip.isEmpty)
     }
 
     static func testDiarizedLabel() {

@@ -414,11 +414,11 @@ final class RecordingManager {
         if UserDefaults.standard.bool(forKey: "liveSpeakerLabels") {
             liveSweepTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    let delay = Self.liveSweepDelay(elapsed: self?.elapsedTime ?? 0, power: .now)
+                    let delay = Self.liveSweepDelay(power: .now)
                     try? await Task.sleep(for: .seconds(delay ?? 30))
                     // Re-check after the wait: the Mac may have heated up or
                     // gone to Low Power Mode meanwhile.
-                    guard let self, Self.liveSweepDelay(elapsed: self.elapsedTime, power: .now) != nil else { continue }
+                    guard let self, Self.liveSweepDelay(power: .now) != nil else { continue }
                     await self.runLiveSweep()
                 }
             }
@@ -894,20 +894,45 @@ final class RecordingManager {
               let meeting = currentMeeting,
               let path = meeting.systemAudioPath.nilIfEmpty else { return }
         do {
-            let output = try await diarizationEngine.diarize(audioURL: URL(fileURLWithPath: path))
-            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
-            let turns = output.segments.map {
-                DiarizationEngine.SpeakerSegmentResult(
-                    speakerLabel: mapping[$0.speakerLabel] ?? $0.speakerLabel,
-                    startTime: $0.startTime, endTime: $0.endTime)
+            let url = URL(fileURLWithPath: path)
+            // The first sweep reads the whole (still short) call to learn the
+            // voices; after that only the last minute, matched against them.
+            // A call that stays silent past two minutes goes to windows anyway.
+            let windowed = !liveAnchors.isEmpty || elapsedTime > 120
+            let output = windowed
+                ? try await diarizationEngine.diarize(audioURL: url, lastSeconds: Self.liveWindow)
+                : try await diarizationEngine.diarize(audioURL: url)
+            let mapping: [String: String]
+            if windowed {
+                var speech: [String: TimeInterval] = [:]
+                for turn in output.segments { speech[turn.speakerLabel, default: 0] += turn.endTime - turn.startTime }
+                mapping = Self.windowMapping(newEmbeddings: output.embeddings, speech: speech, anchors: liveAnchors)
+            } else {
+                mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
+            }
+            // Turns of clusters left out of the mapping don't label anything.
+            let turns = output.segments.compactMap { turn in
+                mapping[turn.speakerLabel].map {
+                    DiarizationEngine.SpeakerSegmentResult(speakerLabel: $0, startTime: turn.startTime, endTime: turn.endTime)
+                }
             }
             for segment in meeting.segments where segment.speakerLabel != "Me" {
+                // A window only speaks for the lines inside it, and only where
+                // a mapped turn actually overlaps the line.
+                if windowed {
+                    guard segment.startTime >= output.start,
+                          turns.contains(where: { $0.startTime < segment.endTime && $0.endTime > segment.startTime })
+                    else { continue }
+                }
                 if let label = Self.diarizedLabel(for: (segment.startTime, segment.endTime), turns: turns) {
                     segment.speakerLabel = label
                 }
             }
-            liveAnchors = Dictionary(uniqueKeysWithValues:
-                output.embeddings.map { (mapping[$0.key] ?? $0.key, $0.value) })
+            // Known voices keep their reference; a window only adds new ones.
+            for (cluster, embedding) in output.embeddings {
+                guard let label = mapping[cluster], !windowed || liveAnchors[label] == nil else { continue }
+                liveAnchors[label] = embedding
+            }
 
             // Name matching in live: consult remembered voices (opt-in) so the
             // bubbles can show "Gürkan?" instead of Speaker 2. Suggestion only.
@@ -1000,18 +1025,48 @@ final class RecordingManager {
         }
     }
 
-    /// Seconds until the next live sweep, or nil to skip it. A sweep re-reads
-    /// the whole call, so its cost grows with the call (65-min call: ~5 s CPU,
-    /// 250 MB of samples, 2026-09-25). Waiting 10% of the elapsed time keeps
-    /// sweeps near 1-2% of a core at any length; a voice that first speaks
-    /// late in a long call waits longer for its label. Battery doubles the
-    /// wait; Low Power Mode or a hot Mac skips.
-    // ponytail: whole-call re-reads; a sliding window (or LS-EEND streaming)
-    // is the upgrade if long calls still cost too much on older Macs.
-    nonisolated static func liveSweepDelay(elapsed: TimeInterval, power: PowerState) -> TimeInterval? {
+    /// Seconds until the next live sweep, or nil to skip it. After the first
+    /// one, sweeps read only the last `liveWindow` seconds, so their cost is
+    /// flat (the whole-call version cost ~5 s CPU at 65 min, 2026-09-25) and
+    /// they can run often: a new line gets its speaker in ~15 s. Battery
+    /// doubles the wait; Low Power Mode or a hot Mac skips.
+    nonisolated static func liveSweepDelay(power: PowerState) -> TimeInterval? {
         guard !power.lowPower, !power.hot else { return nil }
-        let base = max(30, elapsed * 0.1)
-        return power.onBattery ? base * 2 : base
+        return power.onBattery ? 30 : 15
+    }
+
+    /// How much audio a live window sweep reads.
+    static let liveWindow: TimeInterval = 60
+
+    /// Window sweeps: a minute of audio can split one voice into two clusters,
+    /// so several clusters may map to the SAME known voice (unlike
+    /// `stableMapping`, which is one-to-one). A cluster that matches no known
+    /// voice becomes a new speaker only with `minFreshSpeech` seconds of
+    /// speech; otherwise it's left out and its lines keep their label.
+    // ponytail: one new person split into two big clusters gets two fresh
+    // labels until the post-call pass merges them.
+    nonisolated static func windowMapping(
+        newEmbeddings: [String: [Float]],
+        speech: [String: TimeInterval],
+        anchors: [String: [Float]],
+        minFreshSpeech: TimeInterval = 4
+    ) -> [String: String] {
+        var mapping: [String: String] = [:]
+        let labels = newEmbeddings.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for label in labels {
+            guard let embedding = newEmbeddings[label] else { continue }
+            let best = anchors
+                .map { (label: $0.key, similarity: SpeakerProfileStore.cosine(embedding, $0.value)) }
+                .max { $0.similarity < $1.similarity }
+            if let best, best.similarity >= 0.7 { mapping[label] = best.label }
+        }
+        var next = 1
+        for label in labels where mapping[label] == nil && (speech[label] ?? 0) >= minFreshSpeech {
+            while anchors[("Speaker \(next)")] != nil || mapping.values.contains("Speaker \(next)") { next += 1 }
+            mapping[label] = "Speaker \(next)"
+            next += 1
+        }
+        return mapping
     }
 
     nonisolated static func stableMapping(

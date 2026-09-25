@@ -18,7 +18,15 @@ enum DiarizeTest {
         Task {
             do {
                 let engine = DiarizationEngine()
-                let output = try await engine.diarize(audioURL: URL(fileURLWithPath: audioPath))
+                let url = URL(fileURLWithPath: audioPath)
+                let t0 = Date()
+                let output: DiarizationEngine.Output
+                if let tail = ProcessInfo.processInfo.environment["TAIL"].flatMap(Double.init) {
+                    output = try await engine.diarize(audioURL: url, lastSeconds: tail)
+                } else {
+                    output = try await engine.diarize(audioURL: url)
+                }
+                print("DIARIZE seconds", Date().timeIntervalSince(t0), "start", output.start)
                 var totals: [String: TimeInterval] = [:]
                 for segment in output.segments {
                     totals[segment.speakerLabel, default: 0] += segment.endTime - segment.startTime
