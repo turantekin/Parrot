@@ -157,6 +157,15 @@ struct CallDetector {
         // ScreenCaptureKit's daemon: Parrot's own system-audio fallback
         // (silent-tap rescue) shows up as an input user during recordings.
         "com.apple.replayd",
+        // Dictation apps hold the mic for as long as you talk: a 5 s
+        // dictation read as "FluidVoice call started" (2026-09-25).
+        // FluidVoice and Wispr Flow ids read off a real Mac; the rest are
+        // the apps' published ids. Prefix match covers their helpers.
+        "com.FluidApp.app",
+        "com.electron.wispr-flow",
+        "com.superduper.superwhisper",
+        "com.goodsnooze.MacWhisper",
+        "com.prakashjoshipax.VoiceInk",
         "com.apple.Siri",
         "com.apple.accessibility.heard",
         "com.apple.accessibility.AccessibilityUIServer",
