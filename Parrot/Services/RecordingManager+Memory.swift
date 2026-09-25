@@ -61,7 +61,7 @@ extension RecordingManager {
         // requests below, so they can't disagree.
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
         let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
-        let history = AskEngine.history(chat.messages, cloud: !local)
+        let history = AskEngine.history(chat.messages, cloud: !local, excluded: excluded)
         // Ollama counts as set up whenever it's picked; check it's really
         // there before sending anything (Task 5).
         var ollamaProblem: String?
@@ -98,12 +98,15 @@ extension RecordingManager {
         }
 
         let scope: Set<UUID>? = chat.scope.map { [$0] }
-        var hits: [MemoryChunk] = []
+        let hits: [MemoryChunk]
         if !citedFirst.isEmpty {
-            hits = await memory.search(searchQuestion, within: scope.map { $0.intersection(citedFirst) } ?? citedFirst,
-                                       excluding: excluded, topK: 8)
-        }
-        if hits.isEmpty {
+            // Cited meetings first, not only: "and what about Globex?" must
+            // still reach Globex when it isn't among them.
+            let fromCited = await memory.search(searchQuestion, within: scope.map { $0.intersection(citedFirst) } ?? citedFirst,
+                                                excluding: excluded, topK: 8)
+            let fromAll = await memory.search(searchQuestion, within: scope, excluding: excluded, topK: 8)
+            hits = AskEngine.citedFirst(fromCited, fromAll, limit: 8)
+        } else {
             hits = await memory.search(searchQuestion, within: scope, excluding: excluded, topK: 8)
         }
 

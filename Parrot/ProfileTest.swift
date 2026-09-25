@@ -1045,6 +1045,9 @@ enum ProfileTest {
         let cloud = AskEngine.history(messages, cloud: true)
         check("follow-up: cloud AI never sees private exchanges",
               !cloud.contains("Secret") && cloud.contains("The price went up 20%."))
+        check("follow-up: cloud AI never sees a meeting made private later",
+              !AskEngine.history(messages, cloud: true, excluded: [acme]).contains("The price went up 20%.")
+              && AskEngine.history(messages, cloud: false, excluded: [acme]).contains("The price went up 20%."))
         let many = (0..<5).flatMap { i in [AskMessage(role: .me, text: "Q\(i)"), answer("A\(i)", at: 1)] }
         let limited = AskEngine.history(many, cloud: false)
         check("follow-up: only the last 3 exchanges", !limited.contains("Q1") && limited.contains("Q2") && limited.contains("Q4"))
@@ -1061,6 +1064,20 @@ enum ProfileTest {
               AskEngine.localFollowUp(question: "and them?", previousQuestion: "What did Acme push back on?")
                 == "and them? What did Acme push back on?")
         check("fallback: last answer's meetings", AskEngine.lastCited(messages) == [acme])
+
+        let globex = UUID()
+        let citedChunk = MemoryChunk(meetingID: acme, kind: .transcript, start: 12, text: "Acme chunk", languageRaw: "en")
+        let dupChunk = MemoryChunk(meetingID: acme, kind: .transcript, start: 20, text: "Acme dup", languageRaw: "en")
+        var dupInAll = dupChunk
+        dupInAll.id = citedChunk.id // same chunk resurfacing in the normal search
+        let globexChunk = MemoryChunk(meetingID: globex, kind: .transcript, start: 5, text: "Globex chunk", languageRaw: "en")
+        let merged = AskEngine.citedFirst([citedChunk, dupChunk], [dupInAll, globexChunk], limit: 8)
+        check("citedFirst: cited hits come first", merged.first?.id == citedChunk.id && merged[1].id == dupChunk.id)
+        check("citedFirst: no duplicate ids", Set(merged.map(\.id)).count == merged.count)
+        check("citedFirst: a new meeting still gets through", merged.contains { $0.meetingID == globex })
+        let manyChunks = (0..<10).map { i in MemoryChunk(meetingID: acme, kind: .transcript, start: TimeInterval(i), text: "c\(i)", languageRaw: "en") }
+        check("citedFirst: truncates to the limit", AskEngine.citedFirst(manyChunks, [], limit: 8).count == 8)
+
         check("answer: no history, same prompt as before",
               AskEngine.answerUser(question: "q", context: "c", history: "") == AskEngine.userContent(question: "q", context: "c"))
         check("answer: history comes first",

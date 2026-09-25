@@ -111,14 +111,21 @@ enum AskEngine {
 
     /// The last `limit` exchanges as plain text, citations flattened to
     /// "(Acme renewal, 00:12)". With a cloud AI, exchanges answered from a
-    /// private meeting are left out entirely.
-    static func history(_ messages: [AskMessage], cloud: Bool, limit: Int = 3) -> String {
+    /// private meeting are left out entirely — the `usedPrivate` flag frozen
+    /// on the message (private when it was answered) OR `excluded` (private
+    /// now, e.g. a meeting the user only just marked on-device-only).
+    static func history(_ messages: [AskMessage], cloud: Bool, excluded: Set<UUID> = [], limit: Int = 3) -> String {
         var pairs: [(me: AskMessage, parrot: AskMessage?)] = []
         for m in messages {
             if m.role == .me { pairs.append((m, nil)) }
             else if let last = pairs.indices.last, pairs[last].parrot == nil { pairs[last].parrot = m }
         }
-        let kept = pairs.filter { !(cloud && ($0.parrot?.usedPrivate ?? false)) }.suffix(limit)
+        func isNowPrivate(_ p: AskMessage) -> Bool {
+            p.usedPrivate
+                || p.refs.contains { excluded.contains($0.meetingID) }
+                || p.lines.contains { $0.citations.contains { excluded.contains($0.meetingID) } }
+        }
+        let kept = pairs.filter { !(cloud && ($0.parrot.map(isNowPrivate) ?? false)) }.suffix(limit)
         return kept.map { pair in
             var out = "User: \(safe(pair.me.text))"
             if let p = pair.parrot { out += "\nParrot: \(safe(plain(p)))" }
@@ -172,6 +179,21 @@ enum AskEngine {
     static func lastCited(_ messages: [AskMessage]) -> Set<UUID> {
         guard let last = messages.last(where: { $0.role == .parrot }) else { return [] }
         return Set(last.lines.flatMap { $0.citations.map(\.meetingID) })
+    }
+
+    /// `cited` hits first (in order), then `all`'s hits not already
+    /// included, deduped by chunk id, truncated to `limit`. A follow-up
+    /// tries the last answer's meetings first — but can still reach a new
+    /// one ("and what about Globex?") when they don't answer it either.
+    static func citedFirst(_ cited: [MemoryChunk], _ all: [MemoryChunk], limit: Int) -> [MemoryChunk] {
+        var seen = Set<UUID>()
+        var out: [MemoryChunk] = []
+        for chunk in cited + all where !seen.contains(chunk.id) {
+            seen.insert(chunk.id)
+            out.append(chunk)
+            if out.count == limit { break }
+        }
+        return out
     }
 
     /// The answer request: recent conversation (if any), then the excerpts.
