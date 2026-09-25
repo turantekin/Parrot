@@ -46,7 +46,7 @@ struct SidebarView: View {
                     selectedMeeting = nil
                     showSettings = false
                 }
-                NavRow(title: "Ask Parrot", icon: "text.magnifyingglass", selected: false) {
+                NavRow(title: "Ask Parrot", icon: "sparkles", selected: false) {
                     appSession.askRequest = AppSession.AskRequest(scope: nil, scopeTitle: nil)
                 }
                 .help("Ask anything about your past calls (⌘K)")

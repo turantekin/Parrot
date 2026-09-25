@@ -128,6 +128,15 @@ enum Theme {
         /// Room under scrolled content for the corner bug-report button
         /// (30 pt + 16 pt inset), so a page's last control can clear it.
         static let floatingClearance: CGFloat = 46
+        /// Ask Parrot: the answer avatar and its ✦ badge.
+        static let avatar: CGFloat = 26
+        static let avatarBadge: CGFloat = 12
+        /// Chat bubbles: inner inset.
+        static let bubbleInsetH: CGFloat = 12
+        static let bubbleInsetV: CGFloat = 8
+        /// Ask Parrot page: the saved-chats column and the conversation's cap.
+        static let chatListWidth: CGFloat = 220
+        static let chatMaxWidth: CGFloat = 760
     }
 }
 

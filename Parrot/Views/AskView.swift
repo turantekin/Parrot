@@ -25,7 +25,7 @@ struct AskView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "text.magnifyingglass")
+                Image(systemName: "sparkles")
                     .foregroundStyle(Theme.Colors.accent)
                 Text("Ask Parrot")
                     .font(Theme.Typography.title(18))
@@ -88,32 +88,35 @@ struct AskView: View {
 
     @ViewBuilder
     private func answer(_ result: AskEngine.Result) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !result.answeredByAI, !result.sources.isEmpty {
-                Text("Closest moments")
-                    .font(Theme.Typography.sectionLabel)
-                    .foregroundStyle(Theme.Colors.label)
-            }
-            ForEach(Array(result.lines.enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .top, spacing: 8) {
-                    Text(Self.styled(line.text))
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Colors.ink)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 4) {
-                        ForEach(line.citations, id: \.self) { cite in
-                            citationChip(cite, refs: result.refs)
+        HStack(alignment: .top, spacing: 10) {
+            ParrotAvatar()
+            VStack(alignment: .leading, spacing: 8) {
+                if !result.answeredByAI, !result.sources.isEmpty {
+                    Text("Closest moments")
+                        .font(Theme.Typography.sectionLabel)
+                        .foregroundStyle(Theme.Colors.label)
+                }
+                ForEach(Array(result.lines.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(Self.styled(line.text))
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 4) {
+                            ForEach(line.citations, id: \.self) { cite in
+                                citationChip(cite, refs: result.refs)
+                            }
                         }
                     }
                 }
-            }
-            if let note = result.note {
-                Label(note, systemImage: "info.circle")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let note = result.note {
+                    Label(note, systemImage: "info.circle")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
 

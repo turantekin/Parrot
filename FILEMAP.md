@@ -94,6 +94,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
 | `Views/AskView.swift` | 250 | Ask Parrot sheet: question, cited answer chips, sources, privacy line |
+| `Views/AskAnswerView.swift` | ~30 | Ask Parrot: ParrotAvatar (app icon + ✦ badge); answer rendering from Task 4 |
 | `Views/ConnectionsPrivacySettings.swift` | 260 | Settings → Connections (folder, email, webhook, MCP) and → Privacy (lock, redaction, consent, clean-up) |
 
 ## Build & non-source

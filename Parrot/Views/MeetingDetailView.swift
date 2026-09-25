@@ -154,7 +154,7 @@ struct MeetingDetailView: View {
                 Button {
                     appSession.askRequest = AppSession.AskRequest(scope: meeting.id, scopeTitle: meeting.title)
                 } label: {
-                    Label("Ask", systemImage: "text.magnifyingglass")
+                    Label("Ask", systemImage: "sparkles")
                 }
                 .help("Ask about this call, or all of them")
                 .disabled(meeting.status != .done)
