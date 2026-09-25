@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="ask, search, memory, question, past meetings, last call, promised, history">
+<meta name="keywords" content="ask, search, memory, question, past meetings, last call, promised, history, chat, follow-up, saved chats, rename chat, delete chat, stop, this week, last month, ollama, local, free, which ai">
 <title>Ask Parrot</title>
 <link rel="canonical" href="https://openparrot.app/help/ask.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -18,30 +18,59 @@
 <p>Parrot remembers every call it has finished. Ask it anything, like
 <em>"What did I promise Acme?"</em> or <em>"What did Jeremy say about pricing in
 August?"</em>, and you get a short answer where every fact carries a small chip
-such as <strong>Acme renewal · 12:34</strong>. Click the chip and that meeting
+such as <strong>12:34 · Acme renewal</strong>. Click the chip and that meeting
 opens at that exact line, ready to play.</p>
 
+<img src="img/ask.png" alt="An Ask Parrot chat with a cited answer">
+
 <h2>Where to find it</h2>
-<p><strong>Ask Parrot</strong> in the sidebar, or press <kbd>&#8984;K</kbd>
-anywhere. Inside a meeting, the <strong>Ask</strong> button in the toolbar asks
-about that one call, with a switch to widen it to all of them.</p>
+<p>Open <strong>Ask Parrot</strong> from the sidebar, press <kbd>&#8984;K</kbd>
+anywhere, or click <strong>Ask</strong> on a meeting page to ask about that one
+call.</p>
 
-<h2>How it works, and what leaves your Mac</h2>
-<p>Every finished meeting's transcript and report is indexed on your Mac, with
-the same on-device language models the knowledge base uses. Searching never
-leaves the machine. To write the answer, Parrot hands the few best excerpts
-(not whole meetings, never audio) to the AI you set up for post-call reports.
-With a local model through Ollama, nothing leaves at all. The line at the
-bottom of the Ask window always says which is happening.</p>
+<h2>Chats you can come back to</h2>
+<p>Every question you ask starts or continues a saved chat, listed on the left.
+Click <strong>New chat</strong> to start fresh. Right-click any chat to
+<strong>Rename…</strong> or <strong>Delete</strong> it.</p>
 
-<p>Every citation is checked the same way report receipts are: a chip only
-appears if someone really spoke at that moment of that meeting. With no AI set
-up, Ask still works. It shows the closest moments from your meetings instead of
-a written answer.</p>
+<h2>Follow-ups</h2>
+<p>Ask a follow-up like <em>"and what did we offer them?"</em> and Parrot keeps
+the thread, so you don't have to repeat who or what you're asking about.</p>
 
-<p>Meetings recorded <a href="privacy.html">on-device only</a> are searched
-when the answer comes from a local model, and left out when it would come
-from a cloud one. The answer says so when that happens.</p>
+<h2>Every answer cites its source</h2>
+<p>Click a time chip to open that meeting at that exact moment. A chip that
+reads "deleted" means that meeting is gone.</p>
+
+<h2>Broad questions</h2>
+<p>A question like <em>"What did I promise this week?"</em> covers many
+meetings at once. Words like today, yesterday, this week, last week, this
+month and last month narrow the search to that period.</p>
+
+<h2>Which AI answers</h2>
+<p>The name in the top-right corner of the chat says which AI is writing the
+answer. Switch it there, or in <strong>Settings → Copilot → Model → Ask
+Parrot</strong>. Pick Ollama to keep it free and on your Mac.</p>
+
+<p>If Ask's AI is Ollama and Ollama isn't open, or the model isn't downloaded
+yet, a message at the top of the chat says so, with <strong>Check Again</strong>
+or <strong>Download</strong> (with its size) to fix it.</p>
+
+<h2>No AI set up yet</h2>
+<p>A new chat shows <strong>Get written answers</strong> with two buttons:
+<strong>Use Claude (needs a key)</strong> and <strong>Use a free AI on this
+Mac</strong>. Without an AI, Parrot still works: it shows the closest moments
+from your meetings instead of a written answer.</p>
+
+<h2>What leaves your Mac</h2>
+<p>Search always runs on your Mac. Only the best passages and this chat's
+recent messages go to a cloud AI to write the answer; with a local model
+through Ollama, nothing leaves at all. Meetings recorded
+<a href="privacy.html">on-device only</a> never leave your Mac, including in
+earlier answers that used them.</p>
+
+<h2>Stop</h2>
+<p><strong>Stop</strong> cancels an answer that's still writing. Your question
+goes back in the box so you can edit or resend it.</p>
 
 <h2>"From your last call"</h2>
 <p>When your calendar is connected and a call starts with someone you've met

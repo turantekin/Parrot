@@ -42,6 +42,10 @@ Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸
 
 ## Progress log
 
+- **2026-09-25**: Ask Parrot became a saved chat with follow-ups, its own AI
+  picker (Settings → Copilot → Model → Ask Parrot), sparkles + Parrot avatar,
+  broad questions (12 passages, 3 per meeting, time words).
+
 - **2026-09-25 (on-device test + N6)** — **N1–N5 tested on a real Mac, 14
   bugs fixed; N6 live speaker labels built (switch off by default).**
   - **Fixed from testing**: call detection never saw a call end (Siri's
