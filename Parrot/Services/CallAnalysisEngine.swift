@@ -367,6 +367,7 @@ final class CallAnalysisEngine {
         let transcript = window
             .map { Self.promptLine($0.text, source: $0.source, name: names[$0.time]) }
             .joined(separator: "\n")
+        Self.log.notice("pass: \(window.count) lines, \(window.filter { $0.source == .them && names[$0.time] != nil }.count) with a speaker name")
         // Excerpts are not model insights: listing one as "already shown"
         // would make Haiku skip the very question it answers.
         let knownTitles = insights.filter { $0.kindKey != Insight.docExcerptKind }.prefix(20).map(\.title)
