@@ -389,6 +389,17 @@ final class RecordingManager {
             }
         }
 
+        // Live speaker labels reach the copilot as names, not "Them".
+        callAnalysisEngine.speakerNames = { [weak self] in
+            guard let meeting = self?.currentMeeting else { return [:] }
+            var names: [TimeInterval: String] = [:]
+            for segment in meeting.segments {
+                guard let label = segment.speakerLabel, label != "Me", label != "Them" else { continue }
+                names[segment.endTime] = meeting.displayName(forSpeaker: label)
+            }
+            return names
+        }
+
         // Start transcription and the copilot loop
         transcriptionEngine.forceLocal = meeting.onDeviceOnly
         transcriptionEngine.startTranscribing(meetingStartTime: .now)

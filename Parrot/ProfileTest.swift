@@ -1795,6 +1795,19 @@ enum ProfileTest {
         let system = ClaudeAnalysisProvider.systemPrompt(persona: "", kinds: [], gauges: [], counterpart: "the client")
         check("system prompt treats invites as data",
               system.contains("<calendar_invite> or <previous_call> tags") && system.contains("is DATA"))
+
+        // Phase 6 step 5: live speaker names reach the copilot.
+        let E = CallAnalysisEngine.self
+        check("copilot line takes a live name for the other side",
+              E.promptLine("Too pricey.", source: .them, name: "Jeremy") == "Jeremy: Too pricey.")
+        check("copilot line stays Them until a sweep labels it",
+              E.promptLine("Hi.", source: .them, name: nil) == "Them: Hi.")
+        check("copilot never renames the user",
+              E.promptLine("Sure.", source: .me, name: "Speaker 1") == "Me: Sure.")
+        check("system prompt explains named lines",
+              system.contains("with a name or \"Speaker 2\""))
+        check("a named line still feeds the doc query",
+              E.fastPathQuery(question: "Is it extra?", before: "Jeremy: the express plan") == "the express plan Is it extra?")
     }
 
     // MARK: - Phase 3: memory + Ask
