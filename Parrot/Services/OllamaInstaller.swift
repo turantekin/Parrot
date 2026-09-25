@@ -39,6 +39,12 @@ final class OllamaInstaller {
 
     func openInstalled() async {
         guard let app = Self.installedAppURL() else { return }
+        state = .verifying
+        let signed = await Task.detached { Self.isSignedByOllama(app) }.value
+        guard signed else {
+            state = .failed("That download didn't look right. Get it from ollama.com instead.")
+            return
+        }
         await open(app)
     }
 
@@ -55,7 +61,8 @@ final class OllamaInstaller {
             try await Task.detached { try Self.unzip(zip, into: downloads) }.value
             try? FileManager.default.removeItem(at: zip)
             state = .verifying
-            guard Self.isSignedByOllama(app) else {
+            let signed = await Task.detached { Self.isSignedByOllama(app) }.value
+            guard signed else {
                 try? FileManager.default.removeItem(at: app)
                 state = .failed("That download didn't look right. Get it from ollama.com instead.")
                 return
