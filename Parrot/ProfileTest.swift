@@ -80,6 +80,7 @@ enum ProfileTest {
         testCopilotSetupState()
         testProviderKeyCheck()
         testProgressStall()
+        testOllamaService()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2440,5 +2441,19 @@ enum ProfileTest {
         var slow = TranscriptionEngine.ProgressStall(limit: 60, start: t0)
         for i in 1...20 { slow.note(Double(i) / 100, at: t0 + Double(i * 50)) }
         check("stall: slow but moving never trips (1000 s download)", !slow.isStalled(at: t0 + 1_030))
+    }
+
+    @MainActor
+    static func testOllamaService() {
+        check("ollama: progress line",
+              OllamaService.parsePullLine(#"{"status":"pulling 6a0746a1ec1a","total":200,"completed":50}"#) == .progress(0.25))
+        check("ollama: success", OllamaService.parsePullLine(#"{"status":"success"}"#) == .done)
+        check("ollama: error", OllamaService.parsePullLine(#"{"error":"pull model manifest: file does not exist"}"#)
+              == .failed("pull model manifest: file does not exist"))
+        check("ollama: manifest line carries nothing", OllamaService.parsePullLine(#"{"status":"pulling manifest"}"#) == nil)
+        check("ollama: junk ignored", OllamaService.parsePullLine("not json") == nil)
+        let service = OllamaService()
+        check("ollama: starts checking, not pulling", service.status == .checking && !service.isPulling && service.pullProgress == nil)
+        check("ollama: checking isn't a running server", !service.isServerUp)
     }
 }
