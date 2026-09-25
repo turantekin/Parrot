@@ -236,8 +236,11 @@ enum LastCallBrief {
                 for block in section.blocks {
                     guard case .bullet(let raw, _) = block else { continue }
                     let clean = Receipts.extract(raw).text
+                    // Next steps and commitments restate the same promise in
+                    // other words ("Send X" / "You will send X"). 0.8, not the
+                    // copilot's 0.6: merging two real promises loses one.
                     guard !Receipts.isPlaceholder(clean),
-                          !items.contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame })
+                          !items.contains(where: { CallAnalysisEngine.isNearDuplicate($0, clean, threshold: 0.8) })
                     else { continue }
                     items.append(clean)
                 }

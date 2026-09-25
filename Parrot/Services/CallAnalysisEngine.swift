@@ -762,11 +762,11 @@ final class CallAnalysisEngine {
     /// buying-signal vs timeline-gap on the same launch = 0.66). Rewording that
     /// slips past this token check is handled model-side via the required
     /// "supersedes" field, which the engine filter above enforces.
-    nonisolated static func isNearDuplicate(_ a: String, _ b: String) -> Bool {
+    nonisolated static func isNearDuplicate(_ a: String, _ b: String, threshold: Double = 0.6) -> Bool {
         let ta = significantTokens(a), tb = significantTokens(b)
         guard !ta.isEmpty, !tb.isEmpty else { return false }
         let overlap = Double(ta.intersection(tb).count)
-        return overlap / Double(min(ta.count, tb.count)) >= 0.6
+        return overlap / Double(min(ta.count, tb.count)) >= threshold
     }
 
     private nonisolated static let stopWords: Set<String> = [

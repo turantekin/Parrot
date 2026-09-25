@@ -112,15 +112,17 @@ enum ExportService {
         if !meeting.notes.isEmpty {
             out += "## My notes\n\n\(meeting.notes)\n\n"
         }
-        if let summary = meeting.summary {
-            out += "## Summary\n\n\(markdownReport(summary))\n\n"
-        }
+        // The checklist replaces the report's own next-step and commitment
+        // sections, which listed the same promises a second time.
         let steps = LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 20)
+        if let summary = meeting.summary {
+            out += "## Summary\n\n\(markdownReport(summary, skipCommitments: !steps.isEmpty))\n\n"
+        }
         if !steps.isEmpty {
             out += "## Next steps\n\n" + steps.map { "- [ ] \($0)" }.joined(separator: "\n") + "\n\n"
         }
         if let coaching = meeting.coaching {
-            out += "## Coaching\n\n\(markdownReport(coaching))\n\n"
+            out += "## Coaching\n\n\(markdownReport(coaching, skipCommitments: !steps.isEmpty))\n\n"
         }
         let marks = meeting.bookmarks
         if !marks.isEmpty {
@@ -140,12 +142,15 @@ enum ExportService {
     }
 
     /// Report text with `[12:34]` receipts as inline code, headings as ###.
-    static func markdownReport(_ text: String) -> String {
-        text.components(separatedBy: "\n").map { line -> String in
+    static func markdownReport(_ text: String, skipCommitments: Bool = false) -> String {
+        var skipping = false
+        return ReportProse.unflattened(text).components(separatedBy: "\n").compactMap { line -> String? in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasSuffix(":"), trimmed.split(separator: " ").count <= 7, !trimmed.hasPrefix("-") {
-                return "### " + String(trimmed.dropLast())
+                skipping = skipCommitments && Receipts.isCommitmentSection(String(trimmed.dropLast()))
+                return skipping ? nil : "### " + String(trimmed.dropLast())
             }
+            if skipping { return nil }
             let cited = Receipts.extract(line)
             guard !cited.times.isEmpty else { return line }
             let lead = String(line.prefix { $0 == " " || $0 == "\t" })

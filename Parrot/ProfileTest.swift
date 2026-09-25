@@ -1532,6 +1532,8 @@ enum ProfileTest {
         check("Parrot itself ignored", D.relevantApps(["com.uygar.parrot"], ignored: []).isEmpty)
         check("Siri/dictation ignored", D.relevantApps(["com.apple.SpeechRecognitionCore.speechrecognitiond",
                                                         "com.apple.assistantd"], ignored: []).isEmpty)
+        check("dictation apps are not calls",
+              D.relevantApps(["com.FluidApp.app", "com.electron.wispr-flow.accessibility-mac-app"], ignored: []).isEmpty)
         check("Parrot's own side processes ignored",
               D.relevantApps(["com.apple.CoreSpeech", "com.apple.replayd"], ignored: []).isEmpty)
         let N = NotificationAccess.self
@@ -1872,6 +1874,23 @@ enum ProfileTest {
         let leaked = AskEngine.parse("The prospect in M2 asked for it [M2 12:34].", refs: refs) { _, _ in true }
         check("ask: bare meeting label becomes a date", leaked.first.map {
             !$0.text.contains("M2") && $0.text.contains("call") && $0.citations.count == 1 } == true)
+        // gemma3:4b's real one-line report (2026-09-25 on-device test call).
+        let flat = "This call focused on the renewal. The person offered a two-year price. Pain points: - The person is struggling with the increased pricing. – None surfaced. Key points: - The person can hold this year's price for two years. – None surfaced. Next steps: - You requested that the person put the agreement in writing [00:28]."
+        let flatSections = ReportProse.sections(from: flat)
+        check("report: one-line local report splits into its sections",
+              flatSections.compactMap(\.title) == ["Pain points", "Key points", "Next steps"])
+        check("report: intro stays the lede", flatSections.first?.title == nil)
+        check("report: next step becomes a bullet with its receipt",
+              flatSections.last.map { $0.blocks.contains { if case .bullet(let t, _) = $0 { return t.hasSuffix("[00:28].") } else { return false } } } == true)
+        check("report: one-line report yields its open item",
+              LastCallBrief.openItems(summary: flat, coaching: nil) == ["You requested that the person put the agreement in writing."])
+        check("open items: reworded promise merged",
+              LastCallBrief.openItems(summary: "Next steps:\n- Send written confirmation of the two-year pricing lock offer",
+                                      coaching: "Commitments & follow-ups:\n- You will send written confirmation of the two-year pricing offer").count == 1)
+        check("open items: different promises kept",
+              LastCallBrief.openItems(summary: "Next steps:\n- Send the contract to Sam\n- Send the contract to Bob", coaching: nil).count == 2)
+        let tidy = "Intro line.\n\nPain points:\n- A - B stays whole\n\nCall snapshot: balanced - both spoke."
+        check("report: well-formed report unchanged", ReportProse.unflattened(tidy) == tidy)
         let fallback = AskEngine.excerptLines(hits)
         check("ask: fallback lines cite their moment",
               fallback.first?.citations.first == AskEngine.Citation(meetingID: acme, time: 754))
@@ -1923,7 +1942,7 @@ enum ProfileTest {
         let m = Meeting(title: "Acme: renewal/Q3", date: Date(timeIntervalSince1970: 1_790_000_000))
         ctx.insert(m)
         m.duration = 1800
-        m.summary = "Renewal call.\n\nNext steps:\n- You send the contract [00:30]"
+        m.summary = "Renewal call.\n\nKey points:\n- Budget is approved [00:30]\n\nNext steps:\n- You send the contract [00:30]"
         m.coaching = "Commitments & follow-ups:\n- They confirm budget [00:30]"
         m.notes = "Bring Q3 numbers"
         m.attendees = [Attendee(name: "Jeremy \"JJ\" Smith", email: "j@acme.com")]
@@ -1951,8 +1970,10 @@ enum ProfileTest {
         check("md: quotes escaped in YAML", md.contains("people: [\"Jeremy \\\"JJ\\\" Smith\"]"))
         check("md: parrot id for re-export", md.contains("parrot_id: \(m.id.uuidString)"))
         check("md: next steps as tasks", md.contains("- [ ] You send the contract\n- [ ] They confirm budget"))
-        check("md: receipts as inline code", md.contains("- You send the contract `00:30`"))
-        check("md: report labels become headings", md.contains("### Next steps"))
+        check("md: receipts as inline code", md.contains("- Budget is approved `00:30`"))
+        check("md: report labels become headings", md.contains("### Key points"))
+        check("md: each promise listed once (checklist only)",
+              md.components(separatedBy: "You send the contract").count == 2 && !md.contains("### Next steps"))
         check("md: marked moments", md.contains("- `00:30` pricing"))
         check("md: transcript lines", md.contains("`00:30` **Them:** Send me the contract."))
         let name = ExportService.markdownFilename(for: m)

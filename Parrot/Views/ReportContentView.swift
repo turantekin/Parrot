@@ -317,6 +317,52 @@ struct ReportProse: View {
 
     // MARK: parsing
 
+    /// The section labels the report prompts ask for ("Call snapshot" is a
+    /// prose line, so it isn't here).
+    static let sectionLabels = ["Pain points", "Key points", "Next steps", "What went well",
+                                "What to improve", "Objections & questions", "Commitments & follow-ups"]
+
+    private static let inlineSection: NSRegularExpression = {
+        let labels = sectionLabels.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        // swiftlint:disable:next force_try
+        return try! NSRegularExpression(pattern: "(?i)(^|\\s)(\(labels)):[ \\t]*(?=[-–•][ \\t])")
+    }()
+
+    private static let inlineBullet = try! NSRegularExpression(pattern: "[ \\t]+[-–•][ \\t]+")  // swiftlint:disable:this force_try
+
+    /// Small local models (gemma3:4b, 2026-09-25) write the whole report on
+    /// one line: "…intro. Pain points: - a. – None. Key points: - b.".
+    /// Put each known label on its own line and its " - " items under it.
+    /// Only a known label directly followed by a bullet triggers this, so a
+    /// well-formed report never changes.
+    // ponytail: splits every " - " after such a label, so an item that
+    // itself contains " - " is cut in two; fine until a model does both.
+    static func unflattened(_ text: String) -> String {
+        let ns = text as NSString
+        let matches = inlineSection.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return text }
+        var out = ""
+        func items(_ body: String) -> String {
+            let b = body as NSString
+            let first = b.hasPrefix("-") || b.hasPrefix("–") || b.hasPrefix("•")
+            let listed = inlineBullet.stringByReplacingMatches(
+                in: body, range: NSRange(location: 0, length: b.length), withTemplate: "\n- ")
+            return first ? "- " + listed.dropFirst(1).trimmingCharacters(in: .whitespaces) : listed
+        }
+        for (i, m) in matches.enumerated() {
+            let labelRange = m.range(at: 2)
+            if i == 0 {
+                out += ns.substring(to: labelRange.location).trimmingCharacters(in: .whitespaces)
+            }
+            let bodyStart = m.range.location + m.range.length
+            let bodyEnd = i + 1 < matches.count ? matches[i + 1].range(at: 2).location : ns.length
+            let body = ns.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            out += "\n\n" + ns.substring(with: labelRange) + ":\n" + items(body)
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func sections(from text: String) -> [Section] {
         var sections: [Section] = [Section(title: nil, blocks: [])]
         var sawParagraph = false
@@ -325,7 +371,7 @@ struct ReportProse: View {
             sections[sections.count - 1].blocks.append(block)
         }
 
-        for rawLine in text.components(separatedBy: "\n") {
+        for rawLine in unflattened(text).components(separatedBy: "\n") {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
