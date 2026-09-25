@@ -314,3 +314,40 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 }
+
+/// The notification permission the call prompts and meeting reminders ride
+/// on. Off, they shrink to a Dock bounce the user may never see, so
+/// onboarding asks for it and Settings says when it's missing.
+enum NotificationAccess {
+    enum State: Equatable { case on, off, notAsked }
+
+    static func state() async -> State {
+        switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return .on
+        case .notDetermined: return .notAsked
+        default: return .off
+        }
+    }
+
+    /// Asks once. After a "Don't Allow" (or Allow switched off in System
+    /// Settings) macOS won't ask again, so this opens the Notifications pane.
+    @MainActor
+    static func turnOn() async -> State {
+        if await state() == .off {
+            openSettings()
+            return .off
+        }
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+        return await state()
+    }
+
+    static func openSettings() {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")!)
+    }
+
+    /// Settings warns when something that needs notifications is on.
+    static func needsWarning(_ state: State, mode: AutoRecordMode, reminders: Bool) -> Bool {
+        state != .on && (mode != .off || reminders)
+    }
+}

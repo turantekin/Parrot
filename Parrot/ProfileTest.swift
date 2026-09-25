@@ -1534,6 +1534,12 @@ enum ProfileTest {
                                                         "com.apple.assistantd"], ignored: []).isEmpty)
         check("Parrot's own side processes ignored",
               D.relevantApps(["com.apple.CoreSpeech", "com.apple.replayd"], ignored: []).isEmpty)
+        let N = NotificationAccess.self
+        check("notifications: warn when Ask me has no permission", N.needsWarning(.off, mode: .ask, reminders: false))
+        check("notifications: warn before the first ask too", N.needsWarning(.notAsked, mode: .auto, reminders: false))
+        check("notifications: warn for meeting reminders alone", N.needsWarning(.off, mode: .off, reminders: true))
+        check("notifications: quiet when nothing needs them", !N.needsWarning(.off, mode: .off, reminders: false))
+        check("notifications: quiet when on", !N.needsWarning(.on, mode: .ask, reminders: true))
         check("user-ignored app dropped", D.relevantApps(["us.zoom.xos"], ignored: ["us.zoom.xos"]).isEmpty)
         check("ignoring Chrome covers its helper",
               D.relevantApps(["com.google.Chrome.helper"], ignored: ["com.google.Chrome"]).isEmpty)

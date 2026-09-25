@@ -47,6 +47,8 @@ struct LoginItemRow: View {
 struct CallDetectionCard: View {
     @AppStorage(AutoRecordMode.defaultsKey) private var modeRaw = AutoRecordMode.ask.rawValue
     @State private var ignored: [String] = CallWatcher.ignoredApps.sorted()
+    @AppStorage(CalendarService.remindersKey) private var reminders = false
+    @State private var notifications: NotificationAccess.State = .on
 
     var body: some View {
         SettingsCard(title: "Call Detection",
@@ -63,6 +65,15 @@ struct CallDetectionCard: View {
             }
             SettingsRow {
                 Hint(detail)
+            }
+            if NotificationAccess.needsWarning(notifications, mode: AutoRecordMode(rawValue: modeRaw) ?? .ask,
+                                               reminders: reminders) {
+                SettingsLabeledRow(title: "Notifications are off",
+                                   detail: "Parrot can't ask to record a call or remind you of a meeting. It only bounces its Dock icon.") {
+                    Button(notifications == .notAsked ? "Turn On" : "Open Settings") {
+                        Task { notifications = await NotificationAccess.turnOn() }
+                    }
+                }
             }
             if !ignored.isEmpty {
                 SettingsBlockRow(title: "Never asked for") {
@@ -84,6 +95,11 @@ struct CallDetectionCard: View {
             }
         }
         .onAppear { ignored = CallWatcher.ignoredApps.sorted() }
+        .task { notifications = await NotificationAccess.state() }
+        // Back from System Settings: pick up the new switch.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { notifications = await NotificationAccess.state() }
+        }
     }
 
     private var detail: String {

@@ -303,6 +303,7 @@ struct OnboardingView: View {
     static let stepCount = 5
     @AppStorage(AutoRecordMode.defaultsKey) private var autoRecordRaw = AutoRecordMode.ask.rawValue
     @State private var calendarConnecting = false
+    @State private var notifications: NotificationAccess.State = .notAsked
     @State private var loginItemOn = LoginItem.state == .on || LoginItem.state == .needsApproval
 
     private var automaticStep: some View {
@@ -355,6 +356,19 @@ struct OnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                // The "record this call?" offer is a notification: without
+                // the permission, call detection quietly does nothing.
+                if autoRecordRaw != AutoRecordMode.off.rawValue {
+                    PermissionRow(
+                        icon: "bell.badge",
+                        askTitle: notifications == .off ? "Turn on notifications in Settings" : "Allow notifications",
+                        grantedTitle: "Notifications on",
+                        subtitle: "So Parrot can ask to record when a call starts.",
+                        isGranted: notifications == .on,
+                        action: { Task { notifications = await NotificationAccess.turnOn() } }
+                    )
+                }
+
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Open Parrot at login")
@@ -381,6 +395,10 @@ struct OnboardingView: View {
             Spacer()
         }
         .padding(Theme.Metrics.pad)
+        .task { notifications = await NotificationAccess.state() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { notifications = await NotificationAccess.state() }
+        }
     }
 
     // MARK: - Step 5: Ready
