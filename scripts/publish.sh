@@ -3,10 +3,16 @@
 #
 #   scripts/publish.sh 0.14.1                  # notes generated from commits
 #   scripts/publish.sh 0.14.1 notes.md         # notes from a file
+#   scripts/publish.sh 0.14.1 notes.md plan.md # and draft the website from a plan
 #
 # If the notes file starts with "# Parrot 0.14.1: <tagline>", that line becomes
 # the release title and is left out of the notes. openparrot.app shows the
 # tagline in its "New in" pill. Without it the title is just "Parrot 0.14.1".
+#
+# The plan file is the site plan agreed in the release chat (/release-docs
+# step 5): which new features go where on openparrot.app. With it, the site's
+# "Site draft" workflow writes that copy as a draft PR. Without it, only the
+# help sync starts.
 #
 # Run this after scripts/release.sh has built and notarized the DMG.
 #
@@ -19,8 +25,9 @@
 # followed its download link.
 set -euo pipefail
 
-VERSION="${1:?usage: scripts/publish.sh <version, e.g. 0.14.1> [notes-file]}"
+VERSION="${1:?usage: scripts/publish.sh <version, e.g. 0.14.1> [notes-file] [site-plan-file]}"
 NOTES_FILE="${2:-}"
+PLAN_FILE="${3:-}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="turantekin/Parrot"
 FEED="https://turantekin.github.io/Parrot/appcast.xml"
@@ -49,6 +56,12 @@ grep -q "<sparkle:shortVersionString>$VERSION<" docs/appcast.xml || {
   echo "!! docs/appcast.xml doesn't mention $VERSION — re-run scripts/release.sh $VERSION" >&2
   exit 1
 }
+
+# Checked before anything is published, so a typo can't leave the site behind.
+if [ -n "$PLAN_FILE" ] && [ ! -s "$PLAN_FILE" ]; then
+  echo "!! site plan $PLAN_FILE is missing or empty" >&2
+  exit 1
+fi
 
 TITLE="Parrot $VERSION"
 if [ -n "$NOTES_FILE" ]; then
@@ -110,15 +123,22 @@ echo "  release: https://github.com/$REPO/releases/tag/v$VERSION"
 echo "  feed:    $FEED (live, download link resolves)"
 echo "  Installed copies will offer it within a day."
 
-# 4. Tell the website. Help sync copies docs/help from this tag; Site draft
-#    writes the site copy as a draft PR to review. Both also run daily, so a
-#    failure here only delays them.
+# 4. Tell the website. The release is out, so a failure here only warns.
+#    Help sync copies docs/help from this tag (it also runs daily).
+#    Site draft writes the copy from the site plan, and runs only with one.
+SITE="turantekin/parrot-site"
 echo
-for wf in help-sync.yml site-draft.yml; do
-  if gh workflow run "$wf" --repo turantekin/parrot-site >/dev/null 2>&1; then
-    echo "==> started $wf on parrot-site"
-  else
-    echo "!! couldn't start $wf on parrot-site; its daily run will catch up" >&2
-  fi
-done
-echo "  PRs to review: https://github.com/turantekin/parrot-site/pulls"
+if gh workflow run help-sync.yml --repo "$SITE" >/dev/null 2>&1; then
+  echo "==> started the help sync on parrot-site"
+else
+  echo "!! couldn't start the help sync; its daily run will catch up" >&2
+fi
+DRAFT="gh workflow run site-draft.yml --repo $SITE -F plan=@$PLAN_FILE"
+if [ -z "$PLAN_FILE" ]; then
+  echo "==> no site plan, so no website draft. Update the site in a parrot-site chat with /after-release."
+elif gh workflow run site-draft.yml --repo "$SITE" -F "plan=@$PLAN_FILE" >/dev/null 2>&1; then
+  echo "==> started the website draft from $PLAN_FILE"
+else
+  echo "!! couldn't start the website draft. Retry with: $DRAFT" >&2
+fi
+echo "  PRs to review: https://github.com/$SITE/pulls"
