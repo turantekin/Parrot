@@ -40,32 +40,30 @@ extension RecordingManager {
 
     // MARK: - Ask Parrot
 
-    /// Answers a question about past meetings. `scope` limits it to one
-    /// meeting. Excerpts are found on the Mac; only when a reports brain is
-    /// set up do the few best go to it for a written, cited answer. Private
-    /// (on-device-only) meetings never go to a cloud brain.
+    /// Answers a question in a chat. Follow-ups are rewritten into a
+    /// standalone question before the on-Mac search; only the best passages
+    /// and recent chat go to the Ask AI. Private (on-device-only) meetings
+    /// never go to a cloud brain, and neither do earlier exchanges answered
+    /// from them.
     func ask(_ question: String, in chat: AskChat,
              progress: @MainActor (String) -> Void = { _ in }) async -> AskEngine.Result {
-        let scope = chat.scope
         guard let modelContext else {
             return AskEngine.Result(lines: [], sources: [], refs: [], answeredByAI: false, note: nil)
         }
-        // No full re-sync per question: meetings are indexed when they
-        // finish, when their page closes after an edit, and at launch.
         let meetings = (try? modelContext.fetch(FetchDescriptor<Meeting>())) ?? []
         let byID = Dictionary(meetings.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         let switching = callAnalysisEngine.provider as? SwitchingAnalysisProvider
-        let aiReady = switching?.askConfigured ?? callAnalysisEngine.provider.isConfigured
+        let provider = callAnalysisEngine.provider
+        let aiReady = switching?.askConfigured ?? provider.isConfigured
         // Decided once: whether the answer is written on this Mac. The same
-        // decision filters private meetings AND routes the request below, so
-        // the two can't disagree.
+        // decision filters private meetings, the history AND routes the
+        // requests below, so they can't disagree.
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
         let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
-
+        let history = AskEngine.history(chat.messages, cloud: !local)
         // Ollama counts as set up whenever it's picked; check it's really
-        // there before sending anything, so the user gets the fix, not a
-        // connection error.
+        // there before sending anything (Task 5).
         var ollamaProblem: String?
         if aiReady, switching?.askUsesOllama == true {
             ollamaProblem = AskEngine.ollamaNote(installed: await OllamaProbe.installedModels(),
@@ -73,8 +71,42 @@ extension RecordingManager {
         }
         let aiUsable = aiReady && ollamaProblem == nil
 
+        func complete(_ system: String, _ user: String, _ maxTokens: Int) async throws -> String {
+            try await CloudGate.$scopeLocal.withValue(local) {
+                if let switching { return try await switching.completeAsk(system: system, user: user, maxTokens: maxTokens) }
+                return try await provider.complete(system: system, user: user, maxTokens: maxTokens)
+            }
+        }
+
         progress("Reading your meetings…")
-        let hits = await memory.search(question, within: scope.map { [$0] }, excluding: excluded, topK: 8)
+        // A follow-up is searched as a standalone question: the AI rewrites
+        // it; without an AI (or on a bad reply) the previous question rides
+        // along and the last answer's meetings are tried first.
+        var searchQuestion = question
+        var citedFirst: Set<UUID> = []
+        if !history.isEmpty {
+            if aiUsable,
+               let reply = try? await complete(AskEngine.rewriteSystemPrompt,
+                                               AskEngine.rewriteUser(history: history, question: question), 120),
+               let standalone = AskEngine.parseRewrite(reply) {
+                searchQuestion = standalone
+            } else {
+                let previous = chat.messages.last { $0.role == .me }?.text
+                searchQuestion = AskEngine.localFollowUp(question: question, previousQuestion: previous)
+                citedFirst = AskEngine.lastCited(chat.messages)
+            }
+        }
+
+        let scope: Set<UUID>? = chat.scope.map { [$0] }
+        var hits: [MemoryChunk] = []
+        if !citedFirst.isEmpty {
+            hits = await memory.search(searchQuestion, within: scope.map { $0.intersection(citedFirst) } ?? citedFirst,
+                                       excluding: excluded, topK: 8)
+        }
+        if hits.isEmpty {
+            hits = await memory.search(searchQuestion, within: scope, excluding: excluded, topK: 8)
+        }
+
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
             byID[id].map { m in
                 (id, (title: m.title, date: m.date,
@@ -85,37 +117,34 @@ extension RecordingManager {
         let (context, refs) = AskEngine.context(for: hits, meetings: meta)
         let privateNote = excluded.isEmpty ? nil
             : "On-device-only meetings aren't searched when the answer comes from a cloud AI."
+        let searchedFor = searchQuestion == question ? nil : searchQuestion
+        let usedPrivate = local && hits.contains { byID[$0.meetingID].map { !CloudGate.mayLeaveMac($0) } ?? false }
 
         guard !hits.isEmpty else {
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
-                                    sources: [], refs: [], answeredByAI: false, note: privateNote)
+                                    sources: [], refs: [], answeredByAI: false, note: privateNote, searchedFor: searchedFor)
         }
         guard aiUsable else {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,
-                                    note: ollamaProblem ?? "Pick an AI at the top of this chat for written answers. These are the closest moments.")
+                                    note: ollamaProblem ?? "Pick an AI at the top of this chat for written answers. These are the closest moments.",
+                                    usedPrivate: usedPrivate, searchedFor: searchedFor)
         }
 
         progress("Writing…")
         do {
-            let provider = callAnalysisEngine.provider
-            let answer = try await CloudGate.$scopeLocal.withValue(local) {
-                if let switching {
-                    return try await switching.completeAsk(system: AskEngine.systemPrompt,
-                        user: AskEngine.userContent(question: question, context: context), maxTokens: 700)
-                }
-                return try await provider.complete(system: AskEngine.systemPrompt,
-                    user: AskEngine.userContent(question: question, context: context), maxTokens: 700)
-            }
+            let answer = try await complete(AskEngine.systemPrompt,
+                                            AskEngine.answerUser(question: question, context: context, history: history), 700)
             let lines = AskEngine.parse(answer, refs: refs) { id, time in
                 byID[id]?.receiptIndex.resolve(time) != nil
             }
             return AskEngine.Result(lines: lines, sources: hits, refs: refs, answeredByAI: true, note: privateNote,
-                                    model: switching?.askModelLabel)
+                                    usedPrivate: usedPrivate, model: switching?.askModelLabel, searchedFor: searchedFor)
         } catch {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,
-                                    note: "The AI didn't answer (\(error.localizedDescription)). These are the closest moments.")
+                                    note: "The AI didn't answer (\(error.localizedDescription)). These are the closest moments.",
+                                    usedPrivate: usedPrivate, searchedFor: searchedFor)
         }
     }
 }
