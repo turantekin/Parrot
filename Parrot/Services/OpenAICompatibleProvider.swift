@@ -31,6 +31,12 @@ enum CopilotProviderKind: String, CaseIterable, Identifiable {
         return raw.isEmpty ? nil : CopilotProviderKind(rawValue: raw)
     }
 
+    /// Ask Parrot's provider ("askProvider"); nil = same as reports.
+    static var askSelected: CopilotProviderKind? {
+        let raw = UserDefaults.standard.string(forKey: "askProvider") ?? ""
+        return raw.isEmpty ? nil : CopilotProviderKind(rawValue: raw)
+    }
+
     static func modelName(for kind: CopilotProviderKind) -> String {
         switch kind {
         case .claude: ClaudeAnalysisProvider.model
@@ -441,6 +447,7 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     private let claude = ClaudeAnalysisProvider()
     private let liveCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.liveKind }
     private let reportsCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.reportsKind }
+    private let askCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.askKind }
     /// Ollama, for live passes of an on-device-only call whatever the
     /// Settings choice.
     private let localCompat = OpenAICompatibleProvider { .ollama }
@@ -453,6 +460,23 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     /// Reports kind; "same as live" resolves to the live kind.
     static var reportsKind: CopilotProviderKind {
         CloudGate.forcesLocal ? .ollama : (CopilotProviderKind.reportsSelected ?? liveKind)
+    }
+
+    /// Ask Parrot's kind; "same as reports" resolves to the reports kind.
+    static var askKind: CopilotProviderKind {
+        CloudGate.forcesLocal ? .ollama : (CopilotProviderKind.askSelected ?? reportsKind)
+    }
+
+    /// What the chat header shows: model and where it runs.
+    static func askLabel(kind: CopilotProviderKind, model: String) -> String {
+        switch kind {
+        case .claude:
+            // "claude-haiku-4-5" -> "Claude Haiku"
+            let name = model.split(separator: "-").prefix(2).map { $0.capitalized }.joined(separator: " ")
+            return "\(name) · cloud"
+        case .ollama: return "\(model) · on this Mac"
+        case .custom: return "\(model) · your server"
+        }
     }
 
     private var liveProvider: AnalysisProvider {
@@ -542,6 +566,35 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
 
     var reportsConfigured: Bool { reportsProvider.isConfigured }
 
+    // MARK: Ask Parrot
+
+    /// Ask's provider, falling back to the reports one when not set up.
+    private var askProvider: AnalysisProvider {
+        let kind = Self.askKind
+        let candidate: AnalysisProvider = kind == .claude ? claude : askCompat
+        return candidate.isConfigured ? candidate : reportsProvider
+    }
+
+    private var askEffectiveKind: CopilotProviderKind {
+        let kind = Self.askKind
+        let candidate: AnalysisProvider = kind == .claude ? claude : askCompat
+        return candidate.isConfigured ? kind : reportsEffectiveKind
+    }
+
+    /// Ask Parrot's calls (rewrite and answer), redacted like reports.
+    func completeAsk(system: String, user: String, maxTokens: Int) async throws -> String {
+        var r: Redactor? = (askEffectiveKind != .ollama && Redactor.isEnabled) ? Redactor() : nil
+        let out = try await askProvider.complete(system: system, user: r?.redact(user) ?? user,
+                                                 maxTokens: maxTokens)
+        return r?.restore(out) ?? out
+    }
+
+    var askRunsLocally: Bool { askEffectiveKind == .ollama }
+    var askConfigured: Bool { askProvider.isConfigured }
+    var askModelLabel: String {
+        Self.askLabel(kind: askEffectiveKind, model: CopilotProviderKind.modelName(for: askEffectiveKind))
+    }
+
     // MARK: Role-split metering for the cost row
 
     /// Live bucket: model/provider label + tokens. When both roles share one
@@ -562,7 +615,7 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     }
 
     var usageTotals: AITokenTotals {
-        [claude.usageTotals, liveCompat.usageTotals, reportsCompat.usageTotals, localCompat.usageTotals]
+        [claude.usageTotals, liveCompat.usageTotals, reportsCompat.usageTotals, askCompat.usageTotals, localCompat.usageTotals]
             .reduce(AITokenTotals()) { acc, u in
                 AITokenTotals(inputTokens: acc.inputTokens + u.inputTokens,
                               outputTokens: acc.outputTokens + u.outputTokens,
@@ -574,6 +627,7 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
         claude.resetUsage()
         liveCompat.resetUsage()
         reportsCompat.resetUsage()
+        askCompat.resetUsage()
         localCompat.resetUsage()
     }
 }

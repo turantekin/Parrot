@@ -76,6 +76,7 @@ enum ProfileTest {
         testRetention()
         testPrivacyLedgerAndConsent()
         testLiveLabelStability()
+        testAskRoute()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -925,6 +926,37 @@ enum ProfileTest {
               window == ["Speaker 1": "Speaker 2", "Speaker 2": "Speaker 3"])
         let blip = M.windowMapping(newEmbeddings: ["Speaker 1": [0, 0, 1]], speech: ["Speaker 1": 1.5], anchors: known)
         check("window: a short unknown blip is left out", blip.isEmpty)
+    }
+
+    // MARK: - Ask Parrot chat
+
+    /// Runs `body` with these defaults set, then puts the old values back.
+    private static func withDefaults(_ values: [String: Any], _ body: () -> Void) {
+        let d = UserDefaults.standard
+        let old = values.keys.map { ($0, d.object(forKey: $0)) }
+        for (k, v) in values { d.set(v, forKey: k) }
+        body()
+        for (k, v) in old { if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }
+    }
+
+    @MainActor
+    static func testAskRoute() {
+        typealias S = SwitchingAnalysisProvider
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "", "onDeviceOnly": false]) {
+            check("ask route: same as reports by default", S.askKind == .claude)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "ollama", "askProvider": "", "onDeviceOnly": false]) {
+            check("ask route: follows the reports choice", S.askKind == .ollama)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "ollama", "onDeviceOnly": false]) {
+            check("ask route: its own choice wins", S.askKind == .ollama)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "claude", "onDeviceOnly": true]) {
+            check("ask route: on-device only forces Ollama", S.askKind == .ollama)
+        }
+        check("ask label: local model", S.askLabel(kind: .ollama, model: "gemma3:4b") == "gemma3:4b · on this Mac")
+        check("ask label: Claude", S.askLabel(kind: .claude, model: "claude-haiku-4-5") == "Claude Haiku · cloud")
+        check("ask label: custom server", S.askLabel(kind: .custom, model: "llama") == "llama · your server")
     }
 
     static func testDiarizedLabel() {

@@ -207,10 +207,10 @@ struct AskView: View {
 
     private var privacyLine: String {
         let switching = recordingManager.callAnalysisEngine.provider as? SwitchingAnalysisProvider
-        guard switching?.reportsConfigured == true else {
+        guard switching?.askConfigured == true else {
             return "Search runs on this Mac. Nothing is sent anywhere."
         }
-        if switching?.reportsRunLocally == true {
+        if switching?.askRunsLocally == true {
             return "Search runs on this Mac, and your local model writes the answer. Nothing leaves your Mac."
         }
         return "Search runs on this Mac. The few best excerpts (not whole meetings, never audio) go to your Copilot AI to write the answer."
