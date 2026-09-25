@@ -904,6 +904,13 @@ enum ProfileTest {
             newEmbeddings: ["Speaker 1": [0, 0, 1]],
             anchors: anchors)
         check("unmatched avoids anchor labels", taken == ["Speaker 1": "Speaker 3"])
+        let plugged = M.PowerState()
+        check("sweep: 30 s floor early in a call", M.liveSweepDelay(elapsed: 60, power: plugged) == 30)
+        check("sweep: spaced to 10% of a long call", M.liveSweepDelay(elapsed: 3600, power: plugged) == 360)
+        check("sweep: battery doubles the wait",
+              M.liveSweepDelay(elapsed: 3600, power: .init(onBattery: true)) == 720)
+        check("sweep: Low Power Mode skips", M.liveSweepDelay(elapsed: 600, power: .init(lowPower: true)) == nil)
+        check("sweep: a hot Mac skips", M.liveSweepDelay(elapsed: 600, power: .init(hot: true)) == nil)
     }
 
     static func testDiarizedLabel() {

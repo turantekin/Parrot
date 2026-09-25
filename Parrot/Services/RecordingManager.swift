@@ -3,6 +3,7 @@ import SwiftData
 import CoreGraphics
 import AVFoundation
 import UserNotifications
+import IOKit.ps
 
 /// Orchestrates audio capture, transcription, and storage for a recording session.
 @MainActor
@@ -405,17 +406,20 @@ final class RecordingManager {
         lastMarked = nil
         registerMarkHotKey()
 
-        // Experimental live speaker labels: re-diarize the call-so-far every
-        // 30 s so "Them" bubbles upgrade to stable Speaker N mid-call. The
-        // engine runs ~380× realtime, so each sweep costs seconds; the final
-        // post-call pass stays authoritative.
+        // Experimental live speaker labels: re-diarize the call-so-far so
+        // "Them" bubbles upgrade to stable Speaker N mid-call. Paced by
+        // `liveSweepDelay`; the final post-call pass stays authoritative.
         liveAnchors = [:]
         liveSpeakerSuggestions = [:]
         if UserDefaults.standard.bool(forKey: "liveSpeakerLabels") {
             liveSweepTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(30))
-                    await self?.runLiveSweep()
+                    let delay = Self.liveSweepDelay(elapsed: self?.elapsedTime ?? 0, power: .now)
+                    try? await Task.sleep(for: .seconds(delay ?? 30))
+                    // Re-check after the wait: the Mac may have heated up or
+                    // gone to Low Power Mode meanwhile.
+                    guard let self, Self.liveSweepDelay(elapsed: self.elapsedTime, power: .now) != nil else { continue }
+                    await self.runLiveSweep()
                 }
             }
         }
@@ -979,6 +983,36 @@ final class RecordingManager {
     /// order changes. Greedy in label order: best unused anchor with cosine
     /// ≥ 0.7 (calibrated same-voice ≈ 0.96) wins that anchor's label;
     /// unmatched clusters take the next unused index. Empty anchors → identity.
+    /// What the live sweeps may spend right now.
+    struct PowerState: Equatable {
+        var onBattery = false
+        var lowPower = false
+        var hot = false
+
+        static var now: PowerState {
+            let info = ProcessInfo.processInfo
+            let source = IOPSGetProvidingPowerSourceType(IOPSCopyPowerSourcesInfo()?.takeRetainedValue())?
+                .takeUnretainedValue() as String?
+            return PowerState(onBattery: source == kIOPSBatteryPowerValue,
+                              lowPower: info.isLowPowerModeEnabled,
+                              hot: info.thermalState == .serious || info.thermalState == .critical)
+        }
+    }
+
+    /// Seconds until the next live sweep, or nil to skip it. A sweep re-reads
+    /// the whole call, so its cost grows with the call (65-min call: ~5 s CPU,
+    /// 250 MB of samples, 2026-09-25). Waiting 10% of the elapsed time keeps
+    /// sweeps near 1-2% of a core at any length; a voice that first speaks
+    /// late in a long call waits longer for its label. Battery doubles the
+    /// wait; Low Power Mode or a hot Mac skips.
+    // ponytail: whole-call re-reads; a sliding window (or LS-EEND streaming)
+    // is the upgrade if long calls still cost too much on older Macs.
+    nonisolated static func liveSweepDelay(elapsed: TimeInterval, power: PowerState) -> TimeInterval? {
+        guard !power.lowPower, !power.hot else { return nil }
+        let base = max(30, elapsed * 0.1)
+        return power.onBattery ? base * 2 : base
+    }
+
     nonisolated static func stableMapping(
         newEmbeddings: [String: [Float]],
         anchors: [String: [Float]]
