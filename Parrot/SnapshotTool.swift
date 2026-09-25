@@ -224,6 +224,9 @@ enum HelpShots {
             // Onboarding renders whichever step this points at; the onboarding
             // shots below re-register it per step (1 permissions, 2 models).
             "onboardingStep": 2,
+            // SpeechModelStep starts a real WhisperKit download on appear;
+            // this keeps a screenshot from kicking one off.
+            "onboardingNoAutoDownload": true,
         ])
 
         // A live-looking meeting for the call screen.

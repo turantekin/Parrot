@@ -44,6 +44,9 @@ struct SpeechModelStep: View {
         }
         .padding(Theme.Metrics.pad)
         .onAppear {
+            // The help-shot harness sets this so screenshots never start a
+            // model download.
+            if UserDefaults.standard.bool(forKey: "onboardingNoAutoDownload") { return }
             if UserDefaults.standard.object(forKey: "whisperModel") == nil {
                 select(recommended)
                 return
