@@ -314,15 +314,96 @@ enum AskEngine {
             guard let interval, let start = calendar.date(byAdding: unit, value: -1, to: interval.start) else { return nil }
             return DateInterval(start: start, end: interval.start)
         }
-        if q.contains(" yesterday ") {
+        if q.contains(" yesterday ") || q.contains(" dün ") {
             return calendar.date(byAdding: .day, value: -1, to: now).flatMap { calendar.dateInterval(of: .day, for: $0) }
         }
-        if q.contains(" today ") { return calendar.dateInterval(of: .day, for: now) }
-        if q.contains(" last week ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
-        if q.contains(" this week ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
-        if q.contains(" last month ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
-        if q.contains(" this month ") { return calendar.dateInterval(of: .month, for: now) }
+        if q.contains(" today ") || q.contains(" bugün ") { return calendar.dateInterval(of: .day, for: now) }
+        if q.contains(" last week ") || q.contains(" geçen hafta ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
+        if q.contains(" this week ") || q.contains(" bu hafta ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
+        if q.contains(" last month ") || q.contains(" geçen ay ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
+        if q.contains(" this month ") || q.contains(" bu ay ") { return calendar.dateInterval(of: .month, for: now) }
         return nil
+    }
+
+    // MARK: Questions about the meetings themselves
+
+    enum MeetingQuestion: Equatable { case count, longest(Int), totalTime }
+
+    /// "How many meetings", "my longest meetings", "time spent in meetings"
+    /// (English and Turkish) are answered on the Mac from the meeting list:
+    /// exact, instant, and a small local model can't count or rank reliably.
+    /// A question about meetings with someone ("with Acme", "Acme ile") is
+    /// left to the AI, which can filter by people.
+    static func meetingQuestion(_ question: String) -> (kind: MeetingQuestion, turkish: Bool)? {
+        let q = " " + question.lowercased() + " "
+        func has(_ pattern: String) -> Bool { q.range(of: pattern, options: .regularExpression) != nil }
+        guard !has(#"\bwith\b|\bile\b"#) else { return nil }
+        let number = q.range(of: #"\b([1-9][0-9]?)\b"#, options: .regularExpression).flatMap { Int(q[$0]) }
+        if has(#"\blongest\b"#), has(#"\b(meetings?|calls?)\b"#) { return (.longest(number ?? 5), false) }
+        if has("en uzun"), has("toplant|görüşme") { return (.longest(number ?? 5), true) }
+        if has(#"\bhow many (meetings|calls)\b|\bnumber of (meetings|calls)\b"#) { return (.count, false) }
+        if has("kaç (toplant|görüşme)|toplantı sayı") { return (.count, true) }
+        if has(#"\b(how much time|how long)\b.*\b(meetings|calls)\b|\btime (spent )?in (meetings|calls)\b"#) {
+            return (.totalTime, false)
+        }
+        if has("toplant.*ne kadar|ne kadar.*toplant|toplam.*toplant.*(süre|saat|zaman)") { return (.totalTime, true) }
+        return nil
+    }
+
+    /// The answer to a `meetingQuestion`, each meeting a chip.
+    static func meetingAnswer(_ kind: MeetingQuestion, turkish: Bool,
+                              items: [(id: UUID, title: String, date: Date, duration: TimeInterval)],
+                              range: DateInterval?) -> [Line] {
+        let locale = Locale(identifier: turkish ? "tr_TR" : "en_GB")
+        func day(_ d: Date, year: Bool = true) -> String {
+            let f = DateFormatter()
+            f.locale = locale
+            f.dateFormat = year ? "d MMM yyyy" : "d MMM"
+            return f.string(from: d)
+        }
+        func length(_ seconds: TimeInterval) -> String {
+            let minutes = Int((seconds / 60).rounded())
+            if seconds < 60 { return turkish ? "1 dk'dan az" : "under 1 min" }
+            if minutes < 60 { return turkish ? "\(minutes) dk" : "\(minutes) min" }
+            return turkish ? "\(minutes / 60) sa \(minutes % 60) dk" : "\(minutes / 60) h \(minutes % 60) min"
+        }
+        // "between 21 Sep and 25 Sep 2026" / "21 Eyl ile 27 Eyl 2026 arasında"
+        let period: String = range.map { r in
+            let last = r.end.addingTimeInterval(-1)
+            return turkish ? "\(day(r.start, year: false)) ile \(day(last)) arasında "
+                : " between \(day(r.start, year: false)) and \(day(last))"
+        } ?? ""
+        let count = items.count
+        let total = length(items.map(\.duration).reduce(0, +))
+        func row(_ m: (id: UUID, title: String, date: Date, duration: TimeInterval)) -> Line {
+            Line(text: "- \(m.title): \(length(m.duration)), \(day(m.date))",
+                 citations: [Citation(meetingID: m.id, time: nil)])
+        }
+        guard count > 0 else {
+            return [Line(text: turkish ? "\(period)hiç toplantın yok.".capitalizedFirst
+                                       : "You had no meetings\(period.isEmpty ? " yet" : period).", citations: [])]
+        }
+        switch kind {
+        case .count:
+            let recent = items.sorted { $0.date > $1.date }
+            var lines = [Line(text: turkish
+                ? "\(period)\(count) toplantın var, toplam \(total).".capitalizedFirst
+                : "You had \(count) meeting\(count == 1 ? "" : "s")\(period), \(total) in total.", citations: [])]
+            lines += recent.prefix(10).map(row)
+            if count > 10 {
+                lines.append(Line(text: turkish ? "ve \(count - 10) toplantı daha." : "And \(count - 10) more.", citations: []))
+            }
+            return lines
+        case .longest(let n):
+            let top = items.sorted { $0.duration > $1.duration }.prefix(n)
+            return [Line(text: turkish ? "\(period)en uzun \(top.count) toplantın:".capitalizedFirst
+                                       : "Your \(top.count) longest meeting\(top.count == 1 ? "" : "s")\(period):",
+                         citations: [])] + top.map(row)
+        case .totalTime:
+            return [Line(text: turkish
+                ? "\(period)\(count) toplantıda toplam \(total) geçirdin.".capitalizedFirst
+                : "You spent \(total) in \(count) meeting\(count == 1 ? "" : "s")\(period).", citations: [])]
+        }
     }
 
     /// The meeting IDs to search: a chat scoped to one meeting always
@@ -376,7 +457,9 @@ enum AskEngine {
 
     private static let group: NSRegularExpression = {
         // swiftlint:disable:next force_try
-        try! NSRegularExpression(pattern: #"\s*\[([^\[\]\n]{1,120})\]"#)
+        // [M1 12:34] and, from local models, (M1, M2): parentheses only
+        // count when their content is a real citation.
+        try! NSRegularExpression(pattern: #"\s*(?:\[([^\[\]\n]{1,120})\]|\(([^()\n]{1,120})\))"#)
     }()
 
     /// The citations in one bracket group, or nil when the group isn't a
@@ -454,11 +537,13 @@ enum AskEngine {
             var cursor = 0
             var cites: [Citation] = []
             for m in group.matches(in: raw, range: NSRange(location: 0, length: ns.length)) {
-                let content = ns.substring(with: m.range(at: 1))
+                let square = m.range(at: 1).location != NSNotFound
+                let content = ns.substring(with: m.range(at: square ? 1 : 2))
                 let parsed = parseGroup(content, refs: table, titles: titles)
                 // A broken citation ("[Report - Various timestamps]") is
-                // removed; a real bracket ("[sic]") stays.
-                guard parsed != nil || looksLikeCitation(content) else { continue }
+                // removed; a real bracket ("[sic]") stays. Round brackets
+                // are ordinary prose unless they hold a real citation.
+                guard parsed != nil || (square && looksLikeCitation(content)) else { continue }
                 kept += ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
                 cursor = m.range.location + m.range.length
                 guard let parsed else { continue }

@@ -106,6 +106,21 @@ extension RecordingManager {
         // what the question says about when.
         progress("Reading your meetings…")
         let range = AskEngine.dateRange(in: searchQuestion, now: .now)
+        // "How many / longest / time in meetings": counted here, exactly,
+        // with no AI and nothing sent anywhere.
+        if chat.scope == nil, let mq = AskEngine.meetingQuestion(searchQuestion) {
+            let done = meetings.filter { $0.status == .done && (range?.contains($0.date) ?? true) }
+            let lines = AskEngine.meetingAnswer(mq.kind, turkish: mq.turkish,
+                                                items: done.map { ($0.id, $0.title, $0.date, $0.duration) }, range: range)
+            let cited = Set(lines.flatMap { $0.citations.map(\.meetingID) })
+            let refs = done.filter { cited.contains($0.id) }.map {
+                AskEngine.MeetingRef(ref: "", meetingID: $0.id, title: $0.title, date: $0.date, people: [])
+            }
+            return AskEngine.Result(lines: lines, sources: [], refs: refs, answeredByAI: true, note: nil,
+                                    usedPrivate: done.contains { privateIDs.contains($0.id) },
+                                    model: "Counted on this Mac",
+                                    searchedFor: searchQuestion == question ? nil : searchQuestion)
+        }
         let scope = AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
         // Rank wide, put the last answer's meetings first (follow-up
         // fallback), then cap below.

@@ -83,6 +83,7 @@ enum ProfileTest {
         testAskBroad()
         testAskFinalFixes()
         testAskRealTestFixes()
+        testAskMeetingQuestions()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1178,6 +1179,52 @@ enum ProfileTest {
         check("rewrite: SAME. with punctuation still counts", AskEngine.parseRewrite("Same.", original: "Q?") == "Q?")
         check("rewrite: lead-in line skipped",
               AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
+    }
+
+    @MainActor
+    static func testAskMeetingQuestions() {
+        typealias E = AskEngine
+        check("meeting q: how many", E.meetingQuestion("how many meetings did I do this week")?.kind == .count)
+        check("meeting q: Turkish count", E.meetingQuestion("bu hafta kaç toplantı yaptım?").map { $0.kind == .count && $0.turkish } == true)
+        check("meeting q: longest with a number", E.meetingQuestion("my top 3 longest meetings?")?.kind == .longest(3))
+        check("meeting q: longest defaults to 5", E.meetingQuestion("which were my longest calls")?.kind == .longest(5))
+        check("meeting q: Turkish longest", E.meetingQuestion("en uzun toplantılarım hangileri")?.kind == .longest(5))
+        check("meeting q: time spent", E.meetingQuestion("how much time did I spend in meetings last month")?.kind == .totalTime)
+        check("meeting q: with someone goes to the AI", E.meetingQuestion("how many meetings did I have with Revolut") == nil)
+        check("meeting q: other questions go to the AI", E.meetingQuestion("how many people were in the meeting?") == nil
+              && E.meetingQuestion("what did Acme push back on?") == nil)
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.firstWeekday = 2
+        let now = Date(timeIntervalSince1970: 1_790_348_400)   // Fri 25 Sep 2026
+        check("time words: Turkish this week", E.dateRange(in: "bu hafta kaç toplantı", now: now, calendar: cal)
+              == cal.dateInterval(of: .weekOfYear, for: now))
+        check("time words: Turkish yesterday", E.dateRange(in: "dün ne konuştuk", now: now, calendar: cal)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 24)))
+
+        let a = UUID(), b = UUID(), c = UUID()
+        let d = cal.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 11))!
+        let items: [(id: UUID, title: String, date: Date, duration: TimeInterval)] = [
+            (a, "Revolut", d, 22 * 60), (b, "Standup", d.addingTimeInterval(86_400), 30), (c, "Dietify", d.addingTimeInterval(-86_400 * 150), 103 * 60),
+        ]
+        let count = E.meetingAnswer(.count, turkish: false, items: items, range: nil)
+        check("meeting a: count and total", count.first?.text == "You had 3 meetings, 2 h 6 min in total.")
+        check("meeting a: newest listed first, as chips",
+              count.dropFirst().first?.citations == [E.Citation(meetingID: b, time: nil)] && count.count == 4)
+        let longest = E.meetingAnswer(.longest(2), turkish: false, items: items, range: nil)
+        check("meeting a: longest ranks by length", longest.map(\.text) == ["Your 2 longest meetings:",
+              "- Dietify: 1 h 43 min, 26 Apr 2026", "- Revolut: 22 min, 23 Sep 2026"])
+        check("meeting a: none", E.meetingAnswer(.count, turkish: false, items: [], range: nil).first?.text == "You had no meetings yet.")
+        check("meeting a: Turkish total time",
+              E.meetingAnswer(.totalTime, turkish: true, items: items, range: nil).first?.text == "3 toplantıda toplam 2 sa 6 dk geçirdin.")
+
+        let one = E.MeetingRef(ref: "M1", meetingID: a, title: "Acme", date: .now, people: [])
+        let two = E.MeetingRef(ref: "M2", meetingID: b, title: "Globex", date: .now, people: [])
+        let paren = E.parse("The contract comes by Friday (M1, M2).", refs: [one, two]) { _, _ in true }
+        check("parens: (M1, M2) become chips", paren.first?.citations.count == 2 && paren.first?.text == "The contract comes by Friday.")
+        let prose = E.parse("We meet at noon (10:59 am) (see above).", refs: [one, two]) { _, _ in true }
+        check("parens: ordinary brackets stay", prose.first?.text == "We meet at noon (10:59 am) (see above)." && prose.first?.citations.isEmpty == true)
     }
 
     static func testAskRealTestFixes() {
