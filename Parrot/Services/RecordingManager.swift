@@ -108,6 +108,11 @@ final class RecordingManager {
         isRecording = true
     }
 
+    /// Dev-harness only (--ask-chat-test): a store to ask against, no recording.
+    func attachForHarness(modelContext: ModelContext) {
+        self.modelContext = modelContext
+    }
+
     /// Initialize and load the default WhisperKit model
     func prepare(modelContext: ModelContext) async {
         self.modelContext = modelContext

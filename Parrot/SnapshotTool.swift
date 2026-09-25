@@ -812,6 +812,77 @@ enum AnalyzeTest {
     }
 }
 
+/// Ask Parrot end to end on a real AI: two made-up meetings, a question,
+/// then a follow-up that only makes sense with the first. Prints what was
+/// searched, the answers and their citations. Nothing is saved.
+///   Parrot --ask-chat-test [claude|ollama] [model]
+@MainActor
+enum AskChatTest {
+    static func run(provider: String?, model: String?) {
+        if let provider {
+            UserDefaults.standard.register(defaults: ["askProvider": provider, "copilotProvider": provider])
+        }
+        if let model {
+            UserDefaults.standard.register(defaults: ["copilotOllamaModel": model, "copilotCustomModel": model])
+        }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { print("ask-chat-test: container failed"); exit(1) }
+        let context = container.mainContext
+        let rm = RecordingManager()
+        rm.attachForHarness(modelContext: context)
+
+        func meeting(_ title: String, daysAgo: Double, _ lines: [(TimeInterval, String, String)], summary: String) -> Meeting {
+            let m = Meeting(title: title, date: Date.now.addingTimeInterval(-daysAgo * 86_400))
+            context.insert(m)
+            for (start, speaker, text) in lines {
+                let seg = TranscriptSegment(startTime: start, endTime: start + 5, text: text, speakerLabel: speaker, confidence: nil)
+                context.insert(seg)
+                seg.meeting = m
+            }
+            m.status = .done
+            m.summary = summary
+            return m
+        }
+        let acme = meeting("Acme renewal", daysAgo: 2, [
+            (12, "Sam", "Our main worry is pricing. The Enterprise plan went up twenty percent."),
+            (20, "Me", "If you sign for two years, we can hold this year's price."),
+            (30, "Sam", "Can you put that in writing?"),
+            (36, "Me", "Yes, I'll send the revised contract by Friday."),
+        ], summary: "Acme pushed back on the 20% Enterprise price rise. We offered a two-year price lock.")
+        let globex = meeting("Globex hiring sync", daysAgo: 1, [
+            (8, "Ana", "We need two backend engineers before March."),
+            (15, "Me", "I'll share the job description on Monday."),
+        ], summary: "Globex needs two backend engineers by March.")
+        try? context.save()
+
+        Task { @MainActor in
+            for m in [acme, globex] { await rm.memory.index(m) }
+            var chat = AskChat(title: "Harness", scope: nil, scopeTitle: nil)
+            for q in ["What did Acme push back on?", "And what did we offer them?", "What did I promise this week?"] {
+                let started = Date()
+                let result = await rm.ask(q, in: chat)
+                let secs = String(format: "%.1f", Date().timeIntervalSince(started))
+                print("\nQ: \(q)  [\(secs)s · \(result.model ?? "no AI")]")
+                if let s = result.searchedFor { print("   searched: \(s)") }
+                for line in result.lines {
+                    let cites = line.citations.map { c in
+                        (c.meetingID == acme.id ? "Acme" : "Globex") + (c.time.map { " " + Receipts.stamp($0) } ?? "")
+                    }
+                    print("   A: \(line.text)  \(cites)")
+                }
+                if let note = result.note { print("   note: \(note)") }
+                chat.messages.append(AskMessage(role: .me, text: q))
+                chat.messages.append(AskMessage(answer: result))
+            }
+            for m in [acme, globex] { rm.memory.remove(meetingID: m.id) }
+            exit(0)
+        }
+        RunLoop.main.run()
+    }
+}
+
 /// Offscreen renderer for the sidebar's waveform meeting rows. Run with:
 ///   Parrot --sidebar-snapshot /tmp/sidebar.png
 /// Seeds an in-memory store with meetings whose transcripts have distinct talk

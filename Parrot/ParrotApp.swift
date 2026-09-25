@@ -71,6 +71,12 @@ struct ParrotMain {
             AnalyzeTest.run(provider: provider, model: model)
             return
         }
+        if let i = args.firstIndex(of: "--ask-chat-test") {
+            let provider = (i + 1 < args.count) ? args[i + 1] : nil
+            let model = (i + 2 < args.count) ? args[i + 2] : nil
+            MainActor.assumeIsolated { AskChatTest.run(provider: provider, model: model) }
+            return
+        }
         ParrotApp.main()
     }
 }
