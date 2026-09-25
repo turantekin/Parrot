@@ -77,6 +77,7 @@ enum ProfileTest {
         testPrivacyLedgerAndConsent()
         testLiveLabelStability()
         testAskRoute()
+        testAskChatStore()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -957,6 +958,56 @@ enum ProfileTest {
         check("ask label: local model", S.askLabel(kind: .ollama, model: "gemma3:4b") == "gemma3:4b · on this Mac")
         check("ask label: Claude", S.askLabel(kind: .claude, model: "claude-haiku-4-5") == "Claude Haiku · cloud")
         check("ask label: custom server", S.askLabel(kind: .custom, model: "llama") == "llama · your server")
+    }
+
+    @MainActor
+    static func testAskChatStore() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("askchats-\(UUID().uuidString)")
+        let now = Date(timeIntervalSince1970: 1_790_300_000)
+        let store = AskChatStore(directory: dir)
+        check("chats: new store is empty", store.chats.isEmpty)
+
+        var chat = AskChat(title: AskChatStore.title(for: "  What did Acme push back on?\nmore "), scope: nil, scopeTitle: nil, now: now)
+        chat.messages.append(AskMessage(role: .me, text: "What did Acme push back on?"))
+        let meeting = UUID()
+        var answer = AskMessage(role: .parrot, text: "Price.")
+        answer.lines = [AskEngine.Line(text: "Price.", citations: [AskEngine.Citation(meetingID: meeting, time: 30)])]
+        answer.refs = [AskEngine.MeetingRef(ref: "M1", meetingID: meeting, title: "Acme renewal", date: now, people: ["Sam"])]
+        chat.messages.append(answer)
+        store.upsert(chat, now: now)
+        check("chats: title is the first line", chat.title == "What did Acme push back on?")
+
+        let reloaded = AskChatStore(directory: dir)
+        check("chats: saved and loaded", reloaded.chats == store.chats && reloaded.chats.count == 1)
+        check("chats: citations survive a reload", reloaded.chats.first?.messages.last?.lines.first?.citations.first?.time == 30)
+
+        var older = AskChat(title: "Old", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-40 * 86_400))
+        older.messages.append(AskMessage(role: .me, text: "Old"))
+        store.upsert(older, now: now.addingTimeInterval(-40 * 86_400))
+        check("chats: newest first", store.chats.first?.id == chat.id)
+        store.rename(chat.id, to: "Acme pricing")
+        check("chats: rename", store.chat(chat.id)?.title == "Acme pricing")
+        check("chats: stale sweep removes old chats", store.removeStale(olderThanDays: 30, now: now) == 1 && store.chats.count == 1)
+        store.delete(chat.id)
+        check("chats: delete", store.chats.isEmpty && AskChatStore(directory: dir).chats.isEmpty)
+
+        let long = AskChatStore.title(for: String(repeating: "a", count: 90))
+        check("chats: long titles are cut", long.count == 60 && long.hasSuffix("…"))
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let groups = AskChatStore.grouped([
+            AskChat(title: "a", scope: nil, scopeTitle: nil, now: now),
+            AskChat(title: "b", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-86_400)),
+            AskChat(title: "c", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-20 * 86_400)),
+        ], now: now, calendar: cal)
+        check("chats: day groups", groups.map(\.label).prefix(2) == ["Today", "Yesterday"] && groups.count == 3)
+
+        try? "not json".write(to: dir.appendingPathComponent("chats.json"), atomically: true, encoding: .utf8)
+        let broken = AskChatStore(directory: dir)
+        check("chats: a broken file starts empty and is kept aside",
+              broken.chats.isEmpty && FileManager.default.fileExists(atPath: dir.appendingPathComponent("chats.json.bad").path))
+        try? FileManager.default.removeItem(at: dir)
     }
 
     static func testDiarizedLabel() {

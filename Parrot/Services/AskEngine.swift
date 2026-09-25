@@ -7,7 +7,7 @@ import Foundation
 enum AskEngine {
 
     /// A meeting as the prompt names it.
-    struct MeetingRef: Equatable {
+    struct MeetingRef: Equatable, Codable {
         let ref: String          // "M1"
         let meetingID: UUID
         let title: String
@@ -16,14 +16,14 @@ enum AskEngine {
     }
 
     /// A checked citation in the answer.
-    struct Citation: Equatable, Hashable {
+    struct Citation: Equatable, Hashable, Codable {
         let meetingID: UUID
         /// nil when the model cited the meeting without a moment.
         let time: TimeInterval?
     }
 
     /// One line of the answer with its citations lifted out.
-    struct Line: Equatable {
+    struct Line: Equatable, Codable {
         let text: String
         let citations: [Citation]
     }
@@ -37,6 +37,14 @@ enum AskEngine {
         /// sources are the answer.
         var answeredByAI: Bool
         var note: String?
+        /// True when a local AI answered from an on-device-only meeting:
+        /// this exchange must never ride along to a cloud AI later.
+        var usedPrivate = false
+        /// "Claude Haiku · cloud" etc.; nil when no AI answered.
+        var model: String? = nil
+        /// The standalone question actually searched, when a follow-up
+        /// was rewritten (harness and debugging).
+        var searchedFor: String? = nil
     }
 
     // MARK: Prompt

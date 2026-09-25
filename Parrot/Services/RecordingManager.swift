@@ -33,6 +33,8 @@ final class RecordingManager {
     let callWatcher = CallWatcher()
     /// Every finished meeting, searchable on the Mac (Ask Parrot).
     let memory = MeetingMemory()
+    /// Ask Parrot's saved chats.
+    let chats = AskChatStore()
     /// Next steps → Apple Reminders (asks for access on first use).
     let reminders = RemindersService()
 
