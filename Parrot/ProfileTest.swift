@@ -83,6 +83,7 @@ enum ProfileTest {
         testProgressStall()
         testOllamaService()
         testOllamaInstaller()
+        testOnboardingModel()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2474,5 +2475,43 @@ enum ProfileTest {
         if let path = ProcessInfo.processInfo.environment["PARROT_OLLAMA_APP"] {
             check("installer: the real download passes", OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: path)))
         }
+    }
+
+    @MainActor
+    static func testOnboardingModel() {
+        let suite = "parrot.test.onboardingModel"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        let m = OnboardingModel(defaults: d)
+        check("sheet: fresh starts at welcome", m.step == .welcome && m.mode == .full && m.path == nil && m.isFirst)
+        m.move(1); m.move(1)
+        check("sheet: welcome → permissions → meet copilot", m.step == .meetCopilot)
+        m.move(1)
+        check("sheet: then the path choice", m.step == .copilotPath)
+        m.move(1)
+        check("sheet: continue without a pick stays put",
+              m.step == .copilotPath && m.pathError == "Pick one to continue")
+        m.path = .balanced
+        check("sheet: picking clears the error and saves the path",
+              m.pathError == nil && d.string(forKey: CopilotPath.defaultsKey) == "balanced")
+        m.move(1); m.move(1)
+        check("sheet: balanced goes speech → setup", m.step == .copilotSetup)
+        m.claudeCheck = .works
+        m.move(1)
+        check("sheet: leaving setup writes the settings",
+              m.step == .automatic && d.bool(forKey: "copilotEnabled") && d.string(forKey: "copilotProvider") == "claude")
+        let resumed = OnboardingModel(defaults: d)
+        check("sheet: a relaunch resumes step and path", resumed.step == .automatic && resumed.path == .balanced)
+        resumed.go(to: .copilotPath)
+        resumed.decideLater()
+        check("sheet: decide later moves on with Copilot off",
+              resumed.step == .speechModel && resumed.path == .later && !d.bool(forKey: "copilotEnabled"))
+        resumed.finish()
+        check("sheet: finish clears the step and resets the mode",
+              d.string(forKey: OnboardingFlow.stepKey) == nil && d.string(forKey: OnboardingMode.defaultsKey) == "full")
+        d.set(OnboardingMode.copilot.rawValue, forKey: OnboardingMode.defaultsKey)
+        let short = OnboardingModel(defaults: d)
+        check("sheet: the short tour asks again after decide later", short.path == nil && short.step == .meetCopilot)
+        d.removePersistentDomain(forName: suite)
     }
 }
