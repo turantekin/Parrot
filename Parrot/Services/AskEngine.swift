@@ -346,9 +346,10 @@ enum AskEngine {
     /// The citations in one bracket group, or nil when the group isn't a
     /// citation ("[sic]"). Stamps attach to the most recent meeting ref:
     /// "[M2 12:34, 15:02, M3 01:10]". With only one meeting, a bare
-    /// "[03:52]" means that meeting.
-    static func parseGroup(_ content: String, refs: [String: UUID]) -> [(UUID, TimeInterval?)]? {
-        let tokens = content.components(separatedBy: CharacterSet(charactersIn: ",; ")).filter { !$0.isEmpty }
+    /// "[03:52]" means that meeting. A meeting's title stands in for its
+    /// label: "[Acme renewal, 00:12]".
+    static func parseGroup(_ content: String, refs: [String: UUID], titles: [(title: String, label: String)] = []) -> [(UUID, TimeInterval?)]? {
+        let tokens = labelTitles(content.trimmingCharacters(in: .whitespaces), titles).components(separatedBy: CharacterSet(charactersIn: ",; ")).filter { !$0.isEmpty }
         guard !tokens.isEmpty else { return nil }
         var out: [(UUID, TimeInterval?)] = []
         var current: UUID?
@@ -376,12 +377,33 @@ enum AskEngine {
         return out.isEmpty ? nil : out
     }
 
+    /// Whole meeting titles (longest first, case-insensitive, between
+    /// separators) swapped for their "M1" labels, as local models cite by
+    /// title. Whole titles first: they can hold commas and digits.
+    static func labelTitles(_ content: String, _ titles: [(title: String, label: String)]) -> String {
+        var s = content
+        let separators = Set(",; ")
+        for t in titles.sorted(by: { $0.title.count > $1.title.count }) where !t.title.isEmpty {
+            var from = s.startIndex
+            while let r = s.range(of: t.title, options: .caseInsensitive, range: from..<s.endIndex) {
+                let before = r.lowerBound == s.startIndex || separators.contains(s[s.index(before: r.lowerBound)])
+                let after = r.upperBound == s.endIndex || separators.contains(s[r.upperBound])
+                guard before && after else { from = r.upperBound; continue }
+                let offset = s.distance(from: s.startIndex, to: r.lowerBound) + t.label.count
+                s.replaceSubrange(r, with: t.label)
+                from = s.index(s.startIndex, offsetBy: offset)
+            }
+        }
+        return s
+    }
+
     /// The answer as lines with checked citations. `isReal` says whether a
     /// meeting has a spoken line at that moment (report receipts' ±3 s
     /// rule); unreal citations are dropped, never shown.
     static func parse(_ answer: String, refs: [MeetingRef],
                       isReal: (UUID, TimeInterval) -> Bool) -> [Line] {
         let table = Dictionary(refs.map { ($0.ref, $0.meetingID) }, uniquingKeysWith: { a, _ in a })
+        let titles = refs.map { (title: $0.title, label: $0.ref) }
         var lines: [Line] = []
         for raw in answer.components(separatedBy: .newlines) {
             let ns = raw as NSString
@@ -390,7 +412,7 @@ enum AskEngine {
             var cites: [Citation] = []
             for m in group.matches(in: raw, range: NSRange(location: 0, length: ns.length)) {
                 let content = ns.substring(with: m.range(at: 1))
-                let parsed = parseGroup(content, refs: table)
+                let parsed = parseGroup(content, refs: table, titles: titles)
                 // A broken citation ("[Report - Various timestamps]") is
                 // removed; a real bracket ("[sic]") stays.
                 guard parsed != nil || looksLikeCitation(content) else { continue }
@@ -404,6 +426,8 @@ enum AskEngine {
                 }
             }
             kept += ns.substring(from: cursor)
+            // Brackets gone: no "X and." or a bare "-" left behind.
+            if cursor > 0 { kept = tidy(kept) }
             let text = unlabel(kept, refs: refs).replacingOccurrences(of: "  ", with: " ")
                 .replacingOccurrences(of: " .", with: ".")
                 .replacingOccurrences(of: " ,", with: ",")
@@ -416,8 +440,24 @@ enum AskEngine {
 
     private static let citationish: NSRegularExpression = {
         // swiftlint:disable:next force_try
-        try! NSRegularExpression(pattern: #"\d{1,2}:\d{2}|\bM\d+\b|(?i:report|timestamp)"#)
+        try! NSRegularExpression(pattern: #"\d{1,2}:\d{2}|\bM\d+\b|(?i:\breports?\b|\btimestamps?\b)"#)
     }()
+
+    private static let danglingJoiner: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"(?:\s+(?i:and|or)|\s+[&•–-]|\s*[,;])+\s*([.!?]?)\s*$"#)
+    }()
+
+    /// A line with its citation brackets removed, minus the joiner or
+    /// bullet they leave behind: "Sam said X and." → "Sam said X.",
+    /// "-" → "".
+    static func tidy(_ line: String) -> String {
+        var s = danglingJoiner.stringByReplacingMatches(in: line, range: NSRange(location: 0, length: (line as NSString).length),
+                                                        withTemplate: "$1")
+        // "this week. and." → "this week.."
+        if let last = s.last, ".!?".contains(last), s.dropLast().last.map({ ".!?".contains($0) }) == true { s.removeLast() }
+        return ["-", "•", "–", "*"].contains(s.trimmingCharacters(in: .whitespaces)) ? "" : s
+    }
 
     /// A bracket group the model meant as a citation but got wrong.
     static func looksLikeCitation(_ content: String) -> Bool {

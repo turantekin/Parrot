@@ -1227,6 +1227,35 @@ enum ProfileTest {
         check("parse: junk citation-like bracket removed", gemma.first.map { !$0.text.contains("Report") } == true)
         check("parse: other brackets kept", gemma.first?.text == "Pricing came up. See. They said [sic] it.")
 
+        // 3b. Titles as labels, tidy leftovers, whole-word junk rule.
+        let acmeID = UUID(), followID = UUID()
+        let titled = [AskEngine.MeetingRef(ref: "M1", meetingID: acmeID, title: "Acme renewal", date: .now, people: []),
+                      AskEngine.MeetingRef(ref: "M2", meetingID: followID, title: "Acme renewal follow-up", date: .now, people: [])]
+        let titleTable = ["M1": acmeID, "M2": followID]
+        let titles = titled.map { (title: $0.title, label: $0.ref) }
+        check("title: [Acme renewal, 00:12] cites Acme at 12 s",
+              AskEngine.parseGroup("Acme renewal, 00:12", refs: titleTable, titles: titles).map { $0.map { "\($0.0)\($0.1 ?? -1)" } }
+                == ["\(acmeID)12.0"])
+        check("title: the longest matching title wins",
+              AskEngine.parseGroup("Acme renewal follow-up 00:12, 00:36", refs: titleTable, titles: titles)?.map(\.0) == [followID, followID])
+        check("title: a title with commas and digits matches whole",
+              AskEngine.parseGroup("Meeting Sep 23, 2026 at 10:59 am, 01:05", refs: ["M1": acmeID],
+                                   titles: [("Meeting Sep 23, 2026 at 10:59 am", "M1")])?.map(\.1) == [65])
+        let gemmaRaw = AskEngine.parse("You had two meetings this week. [Acme renewal, 00:12; Acme renewal, 00:20] and [Acme renewal, 00:36].",
+                                       refs: titled) { _, _ in true }
+        check("title: gemma's title citations parse, no dangling and",
+              gemmaRaw.first?.text == "You had two meetings this week." && gemmaRaw.first?.citations.count == 3)
+        let unknownTitle = AskEngine.parse("See [Globex notes] [Globex sync, 00:12].", refs: titled) { _, _ in true }
+        check("title: an unknown title falls to the junk and keep rules",
+              unknownTitle.first?.text == "See [Globex notes]." && unknownTitle.first?.citations.isEmpty == true)
+        let joined = AskEngine.parse("Sam said X [M1 00:12] and [M1 00:36].\n- [M9 01:00]\nKeep this or that.", refs: titled) { _, _ in true }
+        check("tidy: no dangling joiner after removed citations", joined.first?.text == "Sam said X.")
+        check("tidy: a bullet emptied of content is dropped", joined.count == 2 && joined.last?.text == "Keep this or that.")
+        check("tidy: dangling comma dropped",
+              AskEngine.parse("Pricing and terms, [Report - notes].", refs: titled) { _, _ in true }.first?.text == "Pricing and terms.")
+        check("junk: whole words only, [unreported] kept",
+              AskEngine.parse("It was [unreported] then.", refs: titled) { _, _ in true }.first?.text == "It was [unreported] then.")
+
         // 4. "That meeting" is the one just discussed.
         check("rewrite: that call means the last one discussed",
               AskEngine.rewriteSystemPrompt.contains("\"what did we decide in that call?\" -> What did we decide in the Acme pricing call?"))
