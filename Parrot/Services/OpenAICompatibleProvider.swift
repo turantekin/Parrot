@@ -325,7 +325,10 @@ final class OpenAICompatibleProvider: AnalysisProvider {
                 ["role": "system", "content": system],
                 ["role": "user", "content": user],
             ],
-            "options": ["num_ctx": numCtx, "num_predict": maxTokens],
+            // Low temperature: reports and Ask answers are factual, and a
+            // small model at Ollama's default of 1 drifts (miscounts, mixes
+            // up speakers).
+            "options": ["num_ctx": numCtx, "num_predict": maxTokens, "temperature": 0.2],
         ]
         if let schema { body["format"] = schema }
 

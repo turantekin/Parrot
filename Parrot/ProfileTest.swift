@@ -1213,6 +1213,17 @@ enum ProfileTest {
               AskEngine.meetingList(items, limit: 1).hasSuffix("(2 older meetings not listed)"))
         check("list: full list has no cut line", !AskEngine.meetingList(items, limit: 3).contains("not listed"))
         check("list: empty input gives nothing", AskEngine.meetingList([], limit: 5) == "")
+        let facts = AskEngine.meetingFacts(items, longest: 2).components(separatedBy: "\n")
+        check("facts: total counted on the Mac",
+              facts.first == "In total: 3 meetings, 1 h 23 min recorded (21 Sep 2026 to 23 Sep 2026).")
+        check("facts: longest first, by length not date",
+              facts.last == "Longest: \"Old one\" (1 h 0 min, 21 Sep 2026); \"Meeting ‹Revolut›\" (22 min, 23 Sep 2026)")
+        check("facts: one meeting is singular", AskEngine.meetingFacts([items[0]]).hasPrefix("In total: 1 meeting, under 1 min"))
+        check("facts: nothing for no meetings", AskEngine.meetingFacts([]) == "")
+        check("facts: system prompt says use them as they are", AskEngine.systemPrompt.contains("don't count again"))
+        let factsReq = AskEngine.answerUser(question: "how many?", context: "c", history: "", meetingList: "- m", facts: "In total: 2 meetings")
+        check("facts: sit right before the question",
+              factsReq.hasSuffix("Counted by Parrot from every meeting (exact):\nIn total: 2 meetings\n\nQuestion: how many?"))
         let withList = AskEngine.answerUser(question: "q", context: "c", history: "", meetingList: "- a meeting")
         check("list: request carries the list between excerpts and question",
               withList.contains("</meeting_excerpts>\n\n<meeting_list>\n- a meeting\n</meeting_list>\n\nQuestion: q"))

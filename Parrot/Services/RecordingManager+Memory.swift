@@ -85,12 +85,15 @@ extension RecordingManager {
         // along and the last answer's meetings are tried first.
         var searchQuestion = question
         var citedFirst: Set<UUID> = []
+        // The AI said the follow-up stands on its own (SAME): a new topic.
+        var newTopic = false
         if !history.isEmpty {
             if aiUsable,
                let reply = try? await complete(AskEngine.rewriteSystemPrompt,
                                                AskEngine.rewriteUser(history: history, question: question), 120),
                let standalone = AskEngine.parseRewrite(reply, original: question) {
                 searchQuestion = standalone
+                newTopic = standalone == question
             } else {
                 let previous = chat.messages.last { $0.role == .me }?.text
                 searchQuestion = AskEngine.localFollowUp(question: question, previousQuestion: previous)
@@ -124,7 +127,9 @@ extension RecordingManager {
         }
 
         func people(_ m: Meeting) -> [String] {
-            m.attendees.map(\.displayName).filter { !$0.isEmpty } + m.speakerNames.values.filter { !$0.isEmpty }
+            var seen = Set<String>()
+            return (m.attendees.map(\.displayName) + m.speakerNames.values)
+                .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
         }
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
             byID[id].map { m in (id, (title: m.title, date: m.date, people: people(m))) }
@@ -135,8 +140,9 @@ extension RecordingManager {
         let listed = chat.scope != nil ? [] : meetings.filter {
             $0.status == .done && !excluded.contains($0.id) && (range?.contains($0.date) ?? true)
         }
-        let meetingList = AskEngine.meetingList(listed.map { ($0.title, $0.date, $0.duration, people($0)) },
-                                                limit: local ? 60 : 150)
+        let listItems = listed.map { ($0.title, $0.date, $0.duration, people($0)) }
+        let meetingList = AskEngine.meetingList(listItems, limit: local ? 60 : 150)
+        let meetingFacts = AskEngine.meetingFacts(listItems)
         let privateNote = AskEngine.privateNote(skipsPrivate: !excluded.isEmpty, messages: chat.messages)
         let searchedFor = searchQuestion == question ? nil : searchQuestion
         // ponytail: any private meeting in a local AI's list marks the answer
@@ -160,7 +166,10 @@ extension RecordingManager {
         do {
             let answer = try await complete(AskEngine.systemPrompt,
                                             AskEngine.answerUser(question: question, context: context,
-                                                                 history: history, meetingList: meetingList), 700)
+                                                                 // A new topic gets no old answers to copy from.
+                                                                 history: newTopic ? "" : history,
+                                                                 meetingList: meetingList,
+                                                                 facts: meetingFacts), 700)
             let lines = AskEngine.parse(answer, refs: refs) { id, time in
                 byID[id]?.receiptIndex.resolve(time) != nil
             }
