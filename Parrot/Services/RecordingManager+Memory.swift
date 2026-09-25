@@ -63,6 +63,16 @@ extension RecordingManager {
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
         let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
 
+        // Ollama counts as set up whenever it's picked; check it's really
+        // there before sending anything, so the user gets the fix, not a
+        // connection error.
+        var ollamaProblem: String?
+        if aiReady, switching?.askUsesOllama == true {
+            ollamaProblem = AskEngine.ollamaNote(installed: await OllamaProbe.installedModels(),
+                                                 model: OpenAICompatibleProvider.ollamaModel)
+        }
+        let aiUsable = aiReady && ollamaProblem == nil
+
         progress("Reading your meetings…")
         let hits = await memory.search(question, within: scope.map { [$0] }, excluding: excluded, topK: 8)
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
@@ -80,10 +90,10 @@ extension RecordingManager {
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
                                     sources: [], refs: [], answeredByAI: false, note: privateNote)
         }
-        guard aiReady else {
+        guard aiUsable else {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,
-                                    note: "Set up the Copilot's AI in Settings for written answers. These are the closest moments.")
+                                    note: ollamaProblem ?? "Pick an AI at the top of this chat for written answers. These are the closest moments.")
         }
 
         progress("Writing…")

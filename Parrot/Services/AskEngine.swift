@@ -203,6 +203,18 @@ enum AskEngine {
                                              time: chunk.kind == .transcript ? chunk.start : nil)])
         }
     }
+
+    /// What to tell the user when Ask's AI is Ollama and it can't answer:
+    /// nil when the model is installed and the server is up.
+    static func ollamaNote(installed: [String]?, model: String) -> String? {
+        guard let installed else {
+            return "Ollama isn't open. Get it free at ollama.com, open it, then ask again. These are the closest moments."
+        }
+        guard installed.contains(model) else {
+            return "\(model) isn't downloaded yet. Download it at the top of this chat. These are the closest moments."
+        }
+        return nil
+    }
 }
 
 /// "From your last call": the open items from the previous meeting with the

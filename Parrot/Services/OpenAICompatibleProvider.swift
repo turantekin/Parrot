@@ -74,6 +74,23 @@ enum OllamaCatalog {
     }
 }
 
+/// The local Ollama server (loopback only): which models are installed, or
+/// nil when it isn't running. Shared by Settings and Ask Parrot.
+enum OllamaProbe {
+    static func installedModels() async -> [String]? {
+        struct Tags: Decodable {
+            struct Entry: Decodable { let name: String }
+            let models: [Entry]
+        }
+        var request = URLRequest(url: URL(string: "http://localhost:11434/api/tags")!)
+        request.timeoutInterval = 3
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let tags = try? JSONDecoder().decode(Tags.self, from: data) else { return nil }
+        return tags.models.map(\.name)
+    }
+}
+
 // MARK: - OpenAI-compatible provider
 
 /// Talks to any OpenAI-compatible chat-completions server: Ollama on this Mac
@@ -590,6 +607,8 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     }
 
     var askRunsLocally: Bool { askEffectiveKind == .ollama }
+    /// Ask's calls go to Ollama (so Ollama must be open with the model).
+    var askUsesOllama: Bool { askEffectiveKind == .ollama }
     var askConfigured: Bool { askProvider.isConfigured }
     var askModelLabel: String {
         Self.askLabel(kind: askEffectiveKind, model: CopilotProviderKind.modelName(for: askEffectiveKind))

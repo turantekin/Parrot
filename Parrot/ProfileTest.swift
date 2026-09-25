@@ -78,6 +78,7 @@ enum ProfileTest {
         testLiveLabelStability()
         testAskRoute()
         testAskChatStore()
+        testAskNoAI()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1008,6 +1009,15 @@ enum ProfileTest {
         check("chats: a broken file starts empty and is kept aside",
               broken.chats.isEmpty && FileManager.default.fileExists(atPath: dir.appendingPathComponent("chats.json.bad").path))
         try? FileManager.default.removeItem(at: dir)
+    }
+
+    @MainActor
+    static func testAskNoAI() {
+        check("no AI: Ollama closed", AskEngine.ollamaNote(installed: nil, model: "gemma3:4b")
+              == "Ollama isn't open. Get it free at ollama.com, open it, then ask again. These are the closest moments.")
+        check("no AI: model missing", AskEngine.ollamaNote(installed: ["llama3.2:3b"], model: "gemma3:4b")
+              == "gemma3:4b isn't downloaded yet. Download it at the top of this chat. These are the closest moments.")
+        check("no AI: ready means no note", AskEngine.ollamaNote(installed: ["gemma3:4b"], model: "gemma3:4b") == nil)
     }
 
     static func testDiarizedLabel() {

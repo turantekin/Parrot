@@ -7,6 +7,7 @@ import SwiftUI
 /// /api/pull. Never touches the network beyond loopback.
 struct OllamaModelStatusView: View {
     let model: String
+    var hideWhenReady = false
 
     private enum Status: Equatable {
         case checking
@@ -31,7 +32,7 @@ struct OllamaModelStatusView: View {
             case .serverDown:
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
-                Text("Ollama isn't running — install it from ollama.com, then open it.")
+                Text("Ollama isn't open. Get it free at ollama.com, open it, then check again.")
                     .foregroundStyle(Theme.Colors.ink2)
                 Button("Check Again") { Task { await refresh() } }
                     .buttonStyle(.link)
@@ -54,10 +55,12 @@ struct OllamaModelStatusView: View {
                     .font(Theme.Typography.mono(11))
 
             case .ready:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.Colors.good)
-                Text("Ready — runs on this Mac.")
-                    .foregroundStyle(Theme.Colors.ink2)
+                if !hideWhenReady {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.good)
+                    Text("Ready. Runs on this Mac.")
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
 
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -78,24 +81,11 @@ struct OllamaModelStatusView: View {
 
     private func refresh() async {
         status = .checking
-        guard let installed = await Self.installedModels() else {
+        guard let installed = await OllamaProbe.installedModels() else {
             status = .serverDown
             return
         }
         status = installed.contains(model) ? .ready : .missing
-    }
-
-    private static func installedModels() async -> [String]? {
-        struct Tags: Decodable {
-            struct Entry: Decodable { let name: String }
-            let models: [Entry]
-        }
-        var request = URLRequest(url: URL(string: "http://localhost:11434/api/tags")!)
-        request.timeoutInterval = 3
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let tags = try? JSONDecoder().decode(Tags.self, from: data) else { return nil }
-        return tags.models.map(\.name)
     }
 
     private func pull() async {

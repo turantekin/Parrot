@@ -117,10 +117,19 @@ struct AskPageView: View {
             VStack(spacing: 0) {
                 header(chat)
                 Divider()
+                if switching?.askUsesOllama == true, switching?.askConfigured == true {
+                    OllamaModelStatusView(model: OpenAICompatibleProvider.ollamaModel, hideWhenReady: true)
+                        .id(askProvider)   // re-check when the AI choice changes
+                        .padding(.horizontal, Theme.Metrics.pad)
+                        .padding(.vertical, Theme.Metrics.bannerInsetV)
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap / 2) {
-                            if chat.messages.isEmpty { examples }
+                            if chat.messages.isEmpty {
+                                if switching?.askConfigured != true { chooseAI }
+                                examples
+                            }
                             ForEach(chat.messages) { message($0).id($0.id) }
                             if let stage {
                                 HStack(spacing: Theme.Metrics.chipInsetH * 1.5) {
@@ -212,6 +221,25 @@ struct AskPageView: View {
                 AskAnswerView(message: m, existing: Set(meetings.map(\.id)), open: open)
             }
         }
+    }
+
+    /// No AI yet: the two ways to get written answers.
+    private var chooseAI: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Get written answers")
+                .font(Theme.Typography.sectionLabel)
+                .foregroundStyle(Theme.Colors.label)
+            Text("Without an AI, Parrot shows the closest moments from your meetings. Pick one to get answers:")
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Theme.Metrics.controlGap) {
+                Button("Use Claude (needs a key)") { SettingsView.open(.apiKeys, with: openSettings) }
+                Button("Use a free AI on this Mac") { askProvider = CopilotProviderKind.ollama.rawValue }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.bottom, Theme.Metrics.sectionGap / 2)
     }
 
     private var examples: some View {
