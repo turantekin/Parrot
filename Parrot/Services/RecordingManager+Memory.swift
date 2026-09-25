@@ -44,7 +44,9 @@ extension RecordingManager {
     /// meeting. Excerpts are found on the Mac; only when a reports brain is
     /// set up do the few best go to it for a written, cited answer. Private
     /// (on-device-only) meetings never go to a cloud brain.
-    func ask(_ question: String, scope: UUID? = nil) async -> AskEngine.Result {
+    func ask(_ question: String, in chat: AskChat,
+             progress: @MainActor (String) -> Void = { _ in }) async -> AskEngine.Result {
+        let scope = chat.scope
         guard let modelContext else {
             return AskEngine.Result(lines: [], sources: [], refs: [], answeredByAI: false, note: nil)
         }
@@ -61,6 +63,7 @@ extension RecordingManager {
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
         let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
 
+        progress("Reading your meetings…")
         let hits = await memory.search(question, within: scope.map { [$0] }, excluding: excluded, topK: 8)
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
             byID[id].map { m in
@@ -83,6 +86,7 @@ extension RecordingManager {
                                     note: "Set up the Copilot's AI in Settings for written answers. These are the closest moments.")
         }
 
+        progress("Writing…")
         do {
             let provider = callAnalysisEngine.provider
             let answer = try await CloudGate.$scopeLocal.withValue(local) {
@@ -96,7 +100,8 @@ extension RecordingManager {
             let lines = AskEngine.parse(answer, refs: refs) { id, time in
                 byID[id]?.receiptIndex.resolve(time) != nil
             }
-            return AskEngine.Result(lines: lines, sources: hits, refs: refs, answeredByAI: true, note: privateNote)
+            return AskEngine.Result(lines: lines, sources: hits, refs: refs, answeredByAI: true, note: privateNote,
+                                    model: switching?.askModelLabel)
         } catch {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,

@@ -73,7 +73,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Views/ContentView.swift` | 190 | Root split view + empty state + corner bug button |
+| `Views/ContentView.swift` | 190 | Root split view (`MainPage`: dashboard/settings/ask/meeting) + empty state + corner bug button |
 | `Views/SidebarView.swift` | 361 | Meeting list, rows, talk-ratio strip |
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
 | `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
@@ -94,8 +94,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
-| `Views/AskView.swift` | 250 | Ask Parrot sheet: question, cited answer chips, sources, privacy line |
-| `Views/AskAnswerView.swift` | ~30 | Ask Parrot: ParrotAvatar (app icon + ✦ badge); answer rendering from Task 4 |
+| `Views/AskPageView.swift` | ~330 | Ask Parrot page: saved-chat list, conversation, AI menu, Stop |
+| `Views/AskAnswerView.swift` | ~130 | ParrotAvatar + AskAnswerView (answer lines, citation chips, sources) |
 | `Views/ConnectionsPrivacySettings.swift` | 260 | Settings → Connections (folder, email, webhook, MCP) and → Privacy (lock, redaction, consent, clean-up) |
 
 ## Build & non-source

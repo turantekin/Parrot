@@ -298,8 +298,19 @@ enum HelpShots {
         shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
         shot("settings-connections.png", size: .init(width: 780, height: 620), settings(.connections))
         shot("settings-privacy.png", size: .init(width: 780, height: 620), settings(.privacy))
-        shot("ask.png", size: .init(width: 580, height: 540),
-             AskView(request: AppSession.AskRequest(scope: nil, scopeTitle: nil))
+        let acmeRef = AskEngine.MeetingRef(ref: "M1", meetingID: meeting.id, title: meeting.title,
+                                           date: meeting.date, people: ["Sam"])
+        var demo = AskChat(title: "What did Acme push back on?", scope: nil, scopeTitle: nil)
+        demo.messages = [AskMessage(role: .me, text: "What did Acme push back on?")]
+        var reply = AskMessage(role: .parrot, text: "")
+        reply.lines = [AskEngine.Line(text: "The annual price for ten seats; they want it before they commit.",
+                                      citations: [AskEngine.Citation(meetingID: meeting.id, time: 81)])]
+        reply.refs = [acmeRef]
+        reply.answeredByAI = true
+        demo.messages.append(reply)
+        rm.chats.seedForSnapshot([demo])
+        shot("ask.png", size: .init(width: 1000, height: 620),
+             AskPageView()
                 .environment(rm).environment(AppSession()).modelContainer(container))
 
         shot("settings-profiles.png", size: .init(width: 860, height: 640),
@@ -319,7 +330,7 @@ enum HelpShots {
                 .modelContainer(container))
 
         shot("dashboard.png", size: .init(width: 1000, height: 620),
-             DashboardView(selectedMeeting: .constant(nil), showDashboard: .constant(true))
+             DashboardView(selectedMeeting: .constant(nil), page: .constant(.dashboard))
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
 
