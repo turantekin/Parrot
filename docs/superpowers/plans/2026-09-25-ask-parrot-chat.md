@@ -1230,7 +1230,191 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: Follow-ups (rewrite + history + privacy)
+### Task 5: When the AI isn't there (Ollama missing, no AI at all)
+
+**Files:**
+- Modify: `Parrot/Services/OpenAICompatibleProvider.swift` (new `OllamaProbe` after `OllamaCatalog`)
+- Modify: `Parrot/Views/OllamaModelStatusView.swift` (use `OllamaProbe`, `hideWhenReady`, plain copy)
+- Modify: `Parrot/Services/AskEngine.swift` (`ollamaNote`)
+- Modify: `Parrot/Services/RecordingManager+Memory.swift` (`ask(_:in:progress:)` checks Ollama before calling it)
+- Modify: `Parrot/Services/OpenAICompatibleProvider.swift` (`SwitchingAnalysisProvider.askUsesOllama`)
+- Modify: `Parrot/Views/AskPageView.swift` (banner + "no AI yet" choices)
+- Test: `Parrot/ProfileTest.swift` (`testAskNoAI`)
+
+**Interfaces:**
+- Consumes: `AskPageView`, `ask(_:in:progress:)` (Task 4); `askConfigured`, `askModelLabel` (Task 1).
+- Produces: `enum OllamaProbe { static func installedModels() async -> [String]? }`; `OllamaModelStatusView(model: String, hideWhenReady: Bool = false)`; `AskEngine.ollamaNote(installed: [String]?, model: String) -> String?`; `SwitchingAnalysisProvider.askUsesOllama: Bool`.
+
+Why: Ollama counts as "set up" whenever it is selected (`OpenAICompatibleProvider.currentConfig` never checks the server), so today a missing Ollama or model surfaces as "The AI didn't answer (Could not connect to the server)". Settings already checks the local server; this task reuses that check in Ask.
+
+- [ ] **Step 1: Write the failing test**
+
+Add and register `testAskNoAI()` after `testAskChatStore()`:
+
+```swift
+    @MainActor
+    static func testAskNoAI() {
+        check("no AI: Ollama closed", AskEngine.ollamaNote(installed: nil, model: "gemma3:4b")
+              == "Ollama isn't open. Get it free at ollama.com, open it, then ask again. These are the closest moments.")
+        check("no AI: model missing", AskEngine.ollamaNote(installed: ["llama3.2:3b"], model: "gemma3:4b")
+              == "gemma3:4b isn't downloaded yet. Download it at the top of this chat. These are the closest moments.")
+        check("no AI: ready means no note", AskEngine.ollamaNote(installed: ["gemma3:4b"], model: "gemma3:4b") == nil)
+    }
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `make test 2>&1 | tail -3` → compile error `type 'AskEngine' has no member 'ollamaNote'`.
+
+- [ ] **Step 3: Shared probe and the note**
+
+In `OpenAICompatibleProvider.swift`, after `enum OllamaCatalog { … }`:
+
+```swift
+/// The local Ollama server (loopback only): which models are installed, or
+/// nil when it isn't running. Shared by Settings and Ask Parrot.
+enum OllamaProbe {
+    static func installedModels() async -> [String]? {
+        struct Tags: Decodable {
+            struct Entry: Decodable { let name: String }
+            let models: [Entry]
+        }
+        var request = URLRequest(url: URL(string: "http://localhost:11434/api/tags")!)
+        request.timeoutInterval = 3
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let tags = try? JSONDecoder().decode(Tags.self, from: data) else { return nil }
+        return tags.models.map(\.name)
+    }
+}
+```
+
+In `SwitchingAnalysisProvider`, next to `askRunsLocally`:
+
+```swift
+    /// Ask's calls go to Ollama (so Ollama must be open with the model).
+    var askUsesOllama: Bool { askEffectiveKind == .ollama }
+```
+
+In `AskEngine.swift`, after `excerptLines`:
+
+```swift
+    /// What to tell the user when Ask's AI is Ollama and it can't answer:
+    /// nil when the model is installed and the server is up.
+    static func ollamaNote(installed: [String]?, model: String) -> String? {
+        guard let installed else {
+            return "Ollama isn't open. Get it free at ollama.com, open it, then ask again. These are the closest moments."
+        }
+        guard installed.contains(model) else {
+            return "\(model) isn't downloaded yet. Download it at the top of this chat. These are the closest moments."
+        }
+        return nil
+    }
+```
+
+- [ ] **Step 4: Check before calling it**
+
+In `ask(_:in:progress:)`, right after `let history = AskEngine.history(chat.messages, cloud: !local)`:
+
+```swift
+        // Ollama counts as set up whenever it's picked; check it's really
+        // there before sending anything, so the user gets the fix, not a
+        // connection error.
+        var ollamaProblem: String?
+        if aiReady, switching?.askUsesOllama == true {
+            ollamaProblem = AskEngine.ollamaNote(installed: await OllamaProbe.installedModels(),
+                                                 model: OpenAICompatibleProvider.ollamaModel)
+        }
+        let aiUsable = aiReady && ollamaProblem == nil
+```
+
+Then in the rest of the function replace `aiReady` with `aiUsable` (the rewrite condition and the `guard aiReady else` before answering), and in that guard's `Result` use `note: ollamaProblem ?? "Pick an AI at the top of this chat for written answers. These are the closest moments."`.
+
+- [ ] **Step 5: Status view reuse and copy**
+
+In `OllamaModelStatusView.swift`:
+- Add `var hideWhenReady = false` under `let model: String`.
+- Replace `private static func installedModels() async -> [String]? { … }` with nothing, and in `refresh()` call `await OllamaProbe.installedModels()`.
+- `.serverDown` text → `"Ollama isn't open. Get it free at ollama.com, open it, then check again."`
+- `.ready` case → render nothing when `hideWhenReady`:
+
+```swift
+            case .ready:
+                if !hideWhenReady {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.good)
+                    Text("Ready. Runs on this Mac.")
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+```
+
+- [ ] **Step 6: The Ask page shows the fix**
+
+In `AskPageView.conversation`, between `Divider()` and `ScrollViewReader`:
+
+```swift
+                if switching?.askUsesOllama == true, switching?.askConfigured == true {
+                    OllamaModelStatusView(model: OpenAICompatibleProvider.ollamaModel, hideWhenReady: true)
+                        .id(askProvider)   // re-check when the AI choice changes
+                        .padding(.horizontal, Theme.Metrics.pad)
+                        .padding(.vertical, Theme.Metrics.bannerInsetV)
+                }
+```
+
+In the empty state, before `examples`, offer the two choices when no AI is set up. Replace `if chat.messages.isEmpty { examples }` with:
+
+```swift
+                            if chat.messages.isEmpty {
+                                if switching?.askConfigured != true { chooseAI }
+                                examples
+                            }
+```
+
+and add:
+
+```swift
+    /// No AI yet: the two ways to get written answers.
+    private var chooseAI: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Get written answers")
+                .font(Theme.Typography.sectionLabel)
+                .foregroundStyle(Theme.Colors.label)
+            Text("Without an AI, Parrot shows the closest moments from your meetings. Pick one to get answers:")
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Theme.Metrics.controlGap) {
+                Button("Use Claude (needs a key)") { SettingsView.open(.apiKeys, with: openSettings) }
+                Button("Use a free AI on this Mac") { askProvider = CopilotProviderKind.ollama.rawValue }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.bottom, Theme.Metrics.sectionGap / 2)
+    }
+```
+
+Picking the free AI sets Ask's AI to Ollama, and the banner from above then walks the user through installing Ollama and downloading the model. Check that `SettingsSection` has an `.apiKeys` case (`SettingsView.swift` uses `section = .apiKeys`); if the case is named differently, use that name.
+
+- [ ] **Step 7: Run the tests and try it**
+
+Run: `make test 2>&1 | grep -E "no AI:|ALL PASS|FAIL"` → 3 `PASS no AI:` lines, `ALL PASS`.
+Run: `make run`, then:
+1. Quit Ollama (menu bar llama → Quit). Set Ask's AI to Ollama in the chat's AI menu. Expected: the banner says Ollama isn't open, with **Check Again**; asking gives the closest moments with the "Ollama isn't open" note, no connection error.
+2. Open Ollama, pick a model you don't have in Settings → Copilot. Expected: the banner offers **Download (size)**.
+3. With Claude chosen and no key saved (or on a test account): a new chat shows "Get written answers" with the two buttons.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add Parrot/Services/OpenAICompatibleProvider.swift Parrot/Views/OllamaModelStatusView.swift Parrot/Services/AskEngine.swift Parrot/Services/RecordingManager+Memory.swift Parrot/Views/AskPageView.swift Parrot/ProfileTest.swift
+git commit -m "Ask Parrot: plain help when Ollama or its model is missing, and a first-AI choice
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 6: Follow-ups (rewrite + history + privacy)
 
 **Files:**
 - Modify: `Parrot/Services/AskEngine.swift` (new statics; `systemPrompt` gains one sentence)
@@ -1238,7 +1422,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `Parrot/ProfileTest.swift` (`testAskFollowUps`)
 
 **Interfaces:**
-- Consumes: `AskMessage` (Task 3), `ask(_:in:progress:)` (Task 4).
+- Consumes: `AskMessage` (Task 3), `ask(_:in:progress:)` (Task 4), `OllamaProbe`, `AskEngine.ollamaNote`, `askUsesOllama` (Task 5). The full `ask` body below already includes Task 5's Ollama check; keep it.
 - Produces: `AskEngine.history(_ messages: [AskMessage], cloud: Bool, limit: Int = 3) -> String`; `AskEngine.rewriteSystemPrompt: String`; `AskEngine.rewriteUser(history:question:) -> String`; `AskEngine.parseRewrite(_ reply: String) -> String?`; `AskEngine.localFollowUp(question:previousQuestion:) -> String`; `AskEngine.lastCited(_ messages: [AskMessage]) -> Set<UUID>`; `AskEngine.answerUser(question:context:history:) -> String`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1406,6 +1590,14 @@ Rewrite the body of `ask(_:in:progress:)` in `RecordingManager+Memory.swift` as:
         let local = CloudGate.forcesLocal || (switching?.askRunsLocally ?? false)
         let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
         let history = AskEngine.history(chat.messages, cloud: !local)
+        // Ollama counts as set up whenever it's picked; check it's really
+        // there before sending anything (Task 5).
+        var ollamaProblem: String?
+        if aiReady, switching?.askUsesOllama == true {
+            ollamaProblem = AskEngine.ollamaNote(installed: await OllamaProbe.installedModels(),
+                                                 model: OpenAICompatibleProvider.ollamaModel)
+        }
+        let aiUsable = aiReady && ollamaProblem == nil
 
         func complete(_ system: String, _ user: String, _ maxTokens: Int) async throws -> String {
             try await CloudGate.$scopeLocal.withValue(local) {
@@ -1421,7 +1613,7 @@ Rewrite the body of `ask(_:in:progress:)` in `RecordingManager+Memory.swift` as:
         var searchQuestion = question
         var citedFirst: Set<UUID> = []
         if !history.isEmpty {
-            if aiReady,
+            if aiUsable,
                let reply = try? await complete(AskEngine.rewriteSystemPrompt,
                                                AskEngine.rewriteUser(history: history, question: question), 120),
                let standalone = AskEngine.parseRewrite(reply) {
@@ -1460,10 +1652,10 @@ Rewrite the body of `ask(_:in:progress:)` in `RecordingManager+Memory.swift` as:
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
                                     sources: [], refs: [], answeredByAI: false, note: privateNote, searchedFor: searchedFor)
         }
-        guard aiReady else {
+        guard aiUsable else {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,
-                                    note: "Set up the Copilot's AI in Settings for written answers. These are the closest moments.",
+                                    note: ollamaProblem ?? "Pick an AI at the top of this chat for written answers. These are the closest moments.",
                                     usedPrivate: usedPrivate, searchedFor: searchedFor)
         }
 
@@ -1506,15 +1698,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Broad questions (per-meeting cap and time words)
+### Task 7: Broad questions (per-meeting cap and time words)
 
 **Files:**
 - Modify: `Parrot/Services/AskEngine.swift` (two statics)
-- Modify: `Parrot/Services/RecordingManager+Memory.swift` (the search block from Task 5)
+- Modify: `Parrot/Services/RecordingManager+Memory.swift` (the search block from Task 6)
 - Test: `Parrot/ProfileTest.swift` (`testAskBroad`)
 
 **Interfaces:**
-- Consumes: `ask(_:in:progress:)` from Task 5.
+- Consumes: `ask(_:in:progress:)` from Task 6.
 - Produces: `AskEngine.dateRange(in question: String, now: Date, calendar: Calendar = .current) -> DateInterval?`; `AskEngine.capped(_ hits: [MemoryChunk], perMeeting: Int = 3, total: Int = 12) -> [MemoryChunk]`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1637,7 +1829,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: Real-AI harness run (Claude and Ollama)
+### Task 8: Real-AI harness run (Claude and Ollama)
 
 **Files:**
 - Modify: `Parrot/SnapshotTool.swift` (new `AskChatTest` after `AnalyzeTest`)
@@ -1772,7 +1964,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 8: Help pages
+### Task 9: Help pages
 
 **Files:**
 - Modify: `docs/help/ask.html`, `docs/help/settings.html`, `docs/help/img/ask.png`
@@ -1821,5 +2013,5 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Self-Review Notes
 
-- Spec §3 page/conversation/entry/AI label/Stop → Task 4; §4 steps 1+4 → Task 5, steps 2+3 → Task 6, step 5 unchanged; §5 → Task 1 (+ header menu in Task 4); §6 → Task 3; §7 → Task 5 (`usedPrivate`, `history(cloud:)`); §9 errors → Tasks 3 (bad file), 4 (Stop), 5 (fallbacks); §10 → tests in Tasks 1, 3, 5, 6, harness Task 7, help-shot Task 4; §11 order kept.
+- Spec §3 page/conversation/entry/AI label/Stop → Task 4; §4 steps 1+4 → Task 6, steps 2+3 → Task 7, step 5 unchanged; §5 → Task 1 (+ header menu in Task 4); §6 → Task 3; §7 → Task 6 (`usedPrivate`, `history(cloud:)`); §9 errors → Tasks 3 (bad file), 4 (Stop), 5 (fallbacks); §10 → tests in Tasks 1, 3, 5, 6, harness Task 8, help-shot Task 4; §11 order kept.
 - Type names used across tasks: `AskChat`, `AskMessage`, `AskChatStore`, `MainPage`, `ParrotAvatar`, `AskAnswerView`, `AskPageView`, `ask(_:in:progress:)`, `completeAsk`, `askKind`, `askLabel`, `askModelLabel`, `askConfigured`, `askRunsLocally`, `history(_:cloud:limit:)`, `rewriteSystemPrompt`, `rewriteUser`, `parseRewrite`, `localFollowUp`, `lastCited`, `answerUser`, `dateRange(in:now:calendar:)`, `capped(_:perMeeting:total:)`, `attachForHarness`.
