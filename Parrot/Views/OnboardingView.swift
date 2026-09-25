@@ -1,106 +1,60 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @Environment(RecordingManager.self) private var recordingManager
     @Binding var isPresented: Bool
-    // Persisted so the flow survives the quit-and-reopen macOS may require
-    // after granting Screen Recording — the user lands back on this step.
-    @AppStorage("onboardingStep") private var currentStep = 0
-    static let stepCount = 5
+    /// Rebuilt each time the sheet is presented, so it reads the current
+    /// mode (full tour or Set up Copilot) and saved step.
+    @State private var model = OnboardingModel()
 
     var body: some View {
         VStack(spacing: 0) {
-            // Content
             Group {
-                switch currentStep {
-                case 0: WelcomeStep()
-                case 1: PermissionsStep()
-                case 2: SpeechModelStep()
-                case 3: AutomaticStep()
-                case 4: readyStep
-                default: WelcomeStep()
+                switch model.step {
+                case .welcome: WelcomeStep()
+                case .permissions: PermissionsStep()
+                case .meetCopilot: MeetCopilotStep()
+                case .copilotPath: CopilotPathStep()
+                case .speechModel: SpeechModelStep()
+                case .copilotSetup: CopilotSetupStep()
+                case .automatic: AutomaticStep()
+                case .ready: ReadyStep()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(model)
 
             Divider()
 
-            // Navigation
             HStack {
-                if currentStep > 0 {
-                    Button("Back") {
-                        withAnimation { currentStep -= 1 }
-                    }
-                    .buttonStyle(.plain)
+                if !model.isFirst {
+                    Button("Back") { withAnimation { model.move(-1) } }
+                        .buttonStyle(.plain)
                 }
-
                 Spacer()
-
-                // Step indicators
                 HStack(spacing: 6) {
-                    ForEach(0..<Self.stepCount, id: \.self) { step in
+                    ForEach(model.steps, id: \.self) { step in
                         Circle()
-                            .fill(step == currentStep ? Theme.Colors.accent : Theme.Colors.chip)
+                            .fill(step == model.step ? Theme.Colors.accent : Theme.Colors.chip)
                             .frame(width: 8, height: 8)
                     }
                 }
-
                 Spacer()
-
-                if currentStep < Self.stepCount - 1 {
-                    Button("Continue") {
-                        withAnimation { currentStep += 1 }
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
+                if model.isLast {
                     // Dismissal marks completion: the app-side binding writes
                     // hasCompletedOnboarding when this flips to false.
-                    Button("Let's start") {
+                    Button(model.mode == .copilot ? "Done" : "Let's start") {
+                        model.finish()
                         isPresented = false
                     }
                     .buttonStyle(.borderedProminent)
+                } else {
+                    Button("Continue") { withAnimation { model.move(1) } }
+                        .buttonStyle(.borderedProminent)
                 }
             }
             .padding(Theme.Metrics.pad)
         }
-        // 600, not 540: the model step lists five models now, and at 540 the
-        // intro line truncated and the Back/Continue row was clipped.
-        .frame(width: 500, height: 600)
-    }
-
-    // MARK: - Step 5: Ready
-
-    @State private var celebrate = false
-
-    private var readyStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Text("🎉")
-                .font(.system(size: 72))
-                .scaleEffect(celebrate ? 1.0 : 0.4)
-                .opacity(celebrate ? 1 : 0)
-
-            Text("Ready to go!")
-                .font(.appLargeTitle)
-                .fontWeight(.bold)
-
-            Text("Parrot is set up. Open your next call, hit record, and the transcript stays right here on your Mac.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 360)
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.55).delay(0.05)) {
-                celebrate = true
-            }
-        }
-        .onDisappear { celebrate = false }
+        .frame(width: 600, height: 680)
     }
 }
 

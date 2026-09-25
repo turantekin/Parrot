@@ -221,12 +221,12 @@ enum HelpShots {
             "copilotEnabled": true,
             "copilotProvider": "claude",
             "whisperModel": "large-v3-turbo",
-            // Onboarding renders whichever step this points at; the onboarding
-            // shots below re-register it per step (1 permissions, 2 models).
-            "onboardingStep": 2,
+            "onboardingStillFrame": true,
             // SpeechModelStep starts a real WhisperKit download on appear;
             // this keeps a screenshot from kicking one off.
             "onboardingNoAutoDownload": true,
+            // Help shots never read the Keychain or call a cloud service.
+            "onboardingNoKeyPrefill": true,
         ])
 
         // A live-looking meeting for the call screen.
@@ -326,41 +326,29 @@ enum HelpShots {
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
 
-        // Onboarding, real sheet geometry (500x600): if a step ever outgrows
+        // Onboarding, real sheet geometry (600x680): if a step ever outgrows
         // it, these shots show the clipping before a user does. Repeated
-        // register(defaults:) calls replace the key, picking the step.
-        UserDefaults.standard.register(defaults: ["onboardingStep": 1])
-        shot("onboarding-permissions.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
-
-        UserDefaults.standard.register(defaults: ["onboardingStep": 2])
-        shot("onboarding-model.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
-
-        UserDefaults.standard.register(defaults: ["onboardingStep": 3])
-        shot("onboarding-automatic.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
-
-        UserDefaults.standard.register(defaults: ["onboardingStillFrame": true])
-        shot("onboarding-meet-copilot.png", size: .init(width: 600, height: 620),
-             MeetCopilotStep().environment(rm).environment(rm.profileStore))
-
-        UserDefaults.standard.register(defaults: [CopilotPath.defaultsKey: "balanced"])
-        shot("onboarding-path.png", size: .init(width: 600, height: 620),
-             CopilotPathStep().environment(OnboardingModel()))
-
-        UserDefaults.standard.register(defaults: ["onboardingNoKeyPrefill": true])
-        for variant in ["private", "balanced", "cloud"] {
-            UserDefaults.standard.register(defaults: [CopilotPath.defaultsKey: variant])
-            shot("onboarding-setup-\(variant).png", size: .init(width: 600, height: 620),
-                 CopilotSetupStep().environment(OnboardingModel()).environment(rm))
+        // register(defaults:) calls replace the keys, picking step and path.
+        func onboarding(_ file: String, _ step: OnboardingStep, path: CopilotPath? = nil) {
+            UserDefaults.standard.register(defaults: [
+                OnboardingMode.defaultsKey: OnboardingMode.full.rawValue,
+                OnboardingFlow.stepKey: step.rawValue,
+                CopilotPath.defaultsKey: path?.rawValue ?? "",
+            ])
+            shot(file, size: .init(width: 600, height: 680),
+                 OnboardingView(isPresented: .constant(true))
+                    .environment(rm).environment(rm.profileStore)
+                    .modelContainer(container))
         }
+        onboarding("onboarding-permissions.png", .permissions)
+        onboarding("onboarding-meet-copilot.png", .meetCopilot)
+        onboarding("onboarding-path.png", .copilotPath, path: .balanced)
+        onboarding("onboarding-model.png", .speechModel, path: .balanced)
+        onboarding("onboarding-setup-private.png", .copilotSetup, path: .private)
+        onboarding("onboarding-setup-balanced.png", .copilotSetup, path: .balanced)
+        onboarding("onboarding-setup-cloud.png", .copilotSetup, path: .cloud)
+        onboarding("onboarding-automatic.png", .automatic)
+        onboarding("onboarding-ready.png", .ready, path: .balanced)
 
         // Reuses the dashboard shot just written as the attached screenshot, so
         // the guide shows the sheet the way a user meets it.
