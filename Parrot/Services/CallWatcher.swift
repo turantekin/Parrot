@@ -322,6 +322,9 @@ enum NotificationAccess {
     enum State: Equatable { case on, off, notAsked }
 
     static func state() async -> State {
+        // A bare binary (CI's `.build/debug/Parrot --help-shots`) has no bundle,
+        // and UNUserNotificationCenter.current() throws there, killing the run.
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return .on }
         switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
         case .authorized, .provisional, .ephemeral: return .on
         case .notDetermined: return .notAsked
