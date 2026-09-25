@@ -1113,6 +1113,16 @@ enum ProfileTest {
         check("cap: other meetings get their turn", capped.filter { $0.meetingID == b }.count == 2)
         check("cap: rank order kept", capped.map(\.text) == ["a0", "a1", "a2", "b0", "b1"])
         check("cap: total limit", AskEngine.capped(chunks, perMeeting: 5, total: 4).count == 4)
+
+        // a's meeting is outside the range below; b's is inside.
+        let meetingDates: [(id: UUID, date: Date)] = [(a, day(2026, 9, 10)), (b, day(2026, 9, 22))]
+        let aRange = DateInterval(start: day(2026, 9, 20), end: day(2026, 9, 25))
+        check("scope: one-meeting chat ignores the date range",
+              AskEngine.searchScope(chatScope: a, range: aRange, meetings: meetingDates) == [a])
+        check("scope: all-meetings chat is narrowed to in-range meetings",
+              AskEngine.searchScope(chatScope: nil, range: aRange, meetings: meetingDates) == [b])
+        check("scope: no chat scope and no range gives nil",
+              AskEngine.searchScope(chatScope: nil, range: nil, meetings: meetingDates) == nil)
     }
 
     static func testDiarizedLabel() {

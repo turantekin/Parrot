@@ -97,11 +97,11 @@ extension RecordingManager {
             }
         }
 
-        var scope: Set<UUID>? = chat.scope.map { [$0] }
-        if let range = AskEngine.dateRange(in: searchQuestion, now: .now) {
-            let inRange = Set(meetings.filter { range.contains($0.date) }.map(\.id))
-            scope = scope.map { $0.intersection(inRange) } ?? inRange
-        }
+        // Date words only narrow a chat that searches everything — a chat
+        // scoped to one meeting always searches that meeting, regardless of
+        // what the question says about when.
+        let range = AskEngine.dateRange(in: searchQuestion, now: .now)
+        let scope = AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
         // Rank wide, put the last answer's meetings first (follow-up
         // fallback), then cap: 12 passages, at most 3 from one meeting.
         func search(_ within: Set<UUID>?) async -> [MemoryChunk] {

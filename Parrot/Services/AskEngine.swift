@@ -206,6 +206,8 @@ enum AskEngine {
 
     /// "today", "yesterday", "this/last week", "this/last month" (English,
     /// whole words) as a date range; nil when the question names no time.
+    /// Order is deliberate: when a question names two phrases, the more
+    /// specific one (day over week over month) wins.
     static func dateRange(in question: String, now: Date, calendar: Calendar = .current) -> DateInterval? {
         let q = " " + question.lowercased()
             .components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
@@ -214,15 +216,26 @@ enum AskEngine {
             guard let interval, let start = calendar.date(byAdding: unit, value: -1, to: interval.start) else { return nil }
             return DateInterval(start: start, end: interval.start)
         }
-        if q.contains(" last week ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
-        if q.contains(" this week ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
-        if q.contains(" last month ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
-        if q.contains(" this month ") { return calendar.dateInterval(of: .month, for: now) }
         if q.contains(" yesterday ") {
             return calendar.date(byAdding: .day, value: -1, to: now).flatMap { calendar.dateInterval(of: .day, for: $0) }
         }
         if q.contains(" today ") { return calendar.dateInterval(of: .day, for: now) }
+        if q.contains(" last week ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
+        if q.contains(" this week ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
+        if q.contains(" last month ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
+        if q.contains(" this month ") { return calendar.dateInterval(of: .month, for: now) }
         return nil
+    }
+
+    /// The meeting IDs to search: a chat scoped to one meeting always
+    /// searches only that meeting (date words in the question are ignored —
+    /// "what's the agenda for today?" about a meeting from three days ago
+    /// must still search it, not come back empty). Date words only narrow a
+    /// chat that searches everything.
+    static func searchScope(chatScope: UUID?, range: DateInterval?, meetings: [(id: UUID, date: Date)]) -> Set<UUID>? {
+        if let chatScope { return [chatScope] }
+        guard let range else { return nil }
+        return Set(meetings.filter { range.contains($0.date) }.map(\.id))
     }
 
     /// Best-first hits with at most `perMeeting` from any one meeting, so a
