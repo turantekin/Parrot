@@ -980,7 +980,8 @@ struct MeetingDetailView: View {
                         .frame(width: 70, alignment: .leading)
                     if rememberVoices,
                        let embedding = meeting.speakerEmbeddings[label],
-                       let match = SpeakerProfileStore.match(embedding, in: modelContext) {
+                       let match = SpeakerProfileStore.match(embedding, in: modelContext,
+                                                             invited: meeting.attendees.map(\.displayName)) {
                         Text("sounds like \(match.name)?")
                             .font(Theme.Typography.caption)
                             .foregroundStyle(Theme.Colors.accent)
@@ -1138,7 +1139,8 @@ struct SpeakerNamePopover: View {
         guard rememberVoices, meeting.speakerNames[label] == nil,
               let embedding = meeting.speakerEmbeddings[label], !embedding.isEmpty
         else { return nil }
-        return SpeakerProfileStore.match(embedding, in: modelContext)
+        return SpeakerProfileStore.match(embedding, in: modelContext,
+                                         invited: meeting.attendees.map(\.displayName))
     }
 
     private func assign(_ finalName: String) {

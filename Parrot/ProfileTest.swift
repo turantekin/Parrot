@@ -790,6 +790,12 @@ enum ProfileTest {
         SpeakerProfileStore.remember(name: "Gürkan", embedding: [1, 0, 0], in: ctx)
         check("match after remember", SpeakerProfileStore.match([0.9, 0.1, 0], in: ctx)?.name == "Gürkan")
         check("below threshold no match", SpeakerProfileStore.match([0, 0, 1], in: ctx) == nil)
+        check("invite narrows: invited voice still matches",
+              SpeakerProfileStore.match([0.9, 0.1, 0], in: ctx, invited: ["Gurkan Yilmaz"])?.name == "Gürkan")
+        check("invite narrows: uninvited voice is not suggested",
+              SpeakerProfileStore.match([0.9, 0.1, 0], in: ctx, invited: ["Jeremy Smith", "ana@acme.com"]) == nil)
+        check("invite name from an email address", SpeakerProfileStore.isInvited("Gürkan", ["gurkan@acme.com"]))
+        check("invite needs a real shared word", !SpeakerProfileStore.isInvited("Al", ["Alice Brown"]))
         SpeakerProfileStore.remember(name: "Gürkan", embedding: [0, 1, 0], in: ctx)
         let profile = SpeakerProfileStore.profiles(in: ctx).first
         check("running mean", profile.map { abs($0.embedding[0] - 0.5) < 0.001 && abs($0.embedding[1] - 0.5) < 0.001 } ?? false)

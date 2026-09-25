@@ -914,7 +914,8 @@ final class RecordingManager {
             if UserDefaults.standard.bool(forKey: "rememberVoices"), let context = modelContext {
                 var suggestions: [String: String] = [:]
                 for (label, embedding) in liveAnchors {
-                    if let match = SpeakerProfileStore.match(embedding, in: context) {
+                    if let match = SpeakerProfileStore.match(embedding, in: context,
+                                                               invited: meeting.attendees.map(\.displayName)) {
                         suggestions[label] = match.name
                     }
                 }
