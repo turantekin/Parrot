@@ -61,6 +61,9 @@ final class RemindersService {
 enum ExportFolder {
     static let bookmarkKey = "exportFolderBookmark"
     static let autoKey = "exportFolderAuto"
+    /// Meeting id → the note's filename at its last save, so a renamed
+    /// meeting moves its note instead of leaving the old one behind.
+    static let namesKey = "exportFolderNames"
 
     static func set(_ url: URL) throws {
         let data = try url.bookmarkData(options: .withSecurityScope,
@@ -70,6 +73,7 @@ enum ExportFolder {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        UserDefaults.standard.removeObject(forKey: namesKey)
         UserDefaults.standard.set(false, forKey: autoKey)
     }
 
@@ -91,13 +95,32 @@ enum ExportFolder {
         }
         let scoped = folder.startAccessingSecurityScopedResource()
         defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
-        let url = folder.appendingPathComponent(ExportService.markdownFilename(for: meeting))
+        let name = ExportService.markdownFilename(for: meeting)
+        let url = folder.appendingPathComponent(name)
+        var names = UserDefaults.standard.dictionary(forKey: namesKey) as? [String: String] ?? [:]
+        let key = meeting.id.uuidString
+        if let old = names[key], old != name {
+            let oldURL = folder.appendingPathComponent(old)
+            let fm = FileManager.default
+            if fm.fileExists(atPath: oldURL.path), !fm.fileExists(atPath: url.path) {
+                try? fm.moveItem(at: oldURL, to: url)
+            }
+        }
         try ExportService.exportToMarkdown(meeting: meeting).write(to: url, atomically: true, encoding: .utf8)
+        names[key] = name
+        UserDefaults.standard.set(names, forKey: namesKey)
         return url
     }
 }
 
 // MARK: - Webhook (Zapier, Make, n8n…)
+
+/// Refuses every redirect for the one request it's attached to.
+private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? { nil }
+}
 
 /// After a call, POST the meeting as JSON to a URL the user pasted — the
 /// bridge to Slack, Notion or a CRM through Zapier/Make/n8n. HTTPS only
@@ -190,7 +213,10 @@ enum Webhook {
             request.setValue(signature(body: body, secret: secret), forHTTPHeaderField: "X-Parrot-Signature")
         }
         request.httpBody = body
-        let (_, response) = try await URLSession.shared.data(for: request)
+        // No redirects: a 307/308 would re-send the whole meeting to wherever
+        // it points, plain http or another host, past `validate`. The 3xx
+        // shows up as a failure instead.
+        let (_, response) = try await URLSession.shared.data(for: request, delegate: NoRedirects())
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         let result = (200..<300).contains(code) ? "Sent (\(code))" : "Failed (HTTP \(code))"
         UserDefaults.standard.set("\(result), \(Date.now.formatted(date: .abbreviated, time: .shortened))",

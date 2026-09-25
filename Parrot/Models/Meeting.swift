@@ -82,6 +82,11 @@ final class Meeting {
     /// Drafted follow-up email (subject line + body), nil until drafted.
     /// Defaulted → old rows migrate.
     var followUpEmail: String? = nil
+    /// When an imported file became this meeting (`date` is the file's own
+    /// date, for the timeline). Clean-up counts from here, or a year-old
+    /// recording imported today would be deleted within the hour.
+    /// Defaulted → old rows migrate.
+    var importedAt: Date? = nil
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
@@ -271,8 +276,9 @@ final class Meeting {
 
     /// Marks a moment unless one already sits within `Bookmark.mergeWindow`.
     @discardableResult
-    func addBookmark(at time: TimeInterval, label: String = "") -> Bookmark? {
-        guard let result = Bookmark.adding(time, label: label, to: bookmarks) else { return nil }
+    func addBookmark(at time: TimeInterval, label: String = "",
+                     window: TimeInterval = Bookmark.mergeWindow) -> Bookmark? {
+        guard let result = Bookmark.adding(time, label: label, window: window, to: bookmarks) else { return nil }
         bookmarks = result.all
         return result.added
     }

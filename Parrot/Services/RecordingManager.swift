@@ -489,11 +489,15 @@ final class RecordingManager {
             // whatever transcript survived, and the report is generated from
             // the FINAL text — never from a transcript that's about to change.
             let meetingRef = meeting
+            // This call's live identities go with it: the next recording may
+            // start (and fill liveAnchors) before this chain reaches diarization.
+            let anchors = liveAnchors
+            liveAnchors = [:]
             Task {
                 // A private meeting's report and after-call actions stay on
                 // this Mac; a call recording meanwhile is unaffected.
                 await CloudGate.$scopeLocal.withValue(meetingRef.onDeviceOnly) {
-                    await self.runPostCallChain(meetingRef)
+                    await self.runPostCallChain(meetingRef, anchors: anchors)
                 }
             }
         }
@@ -503,9 +507,9 @@ final class RecordingManager {
         recordingStartTime = nil
     }
 
-    private func runPostCallChain(_ meetingRef: Meeting) async {
+    private func runPostCallChain(_ meetingRef: Meeting, anchors: [String: [Float]]) async {
         let polishSeconds = await polishTranscript(meeting: meetingRef)
-        await postProcess(meeting: meetingRef)
+        await postProcess(meeting: meetingRef, anchors: anchors)
         if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
             await generateSummary(meeting: meetingRef)
         }
@@ -551,6 +555,7 @@ final class RecordingManager {
             .contentModificationDate ?? .now
 
         let meeting = Meeting(title: name, date: fileDate, systemAudioPath: dest.path)
+        meeting.importedAt = .now
         meeting.status = .processing
         let profile = profileStore.activeProfile
         meeting.profile = profile
@@ -902,6 +907,9 @@ final class RecordingManager {
             let output = windowed
                 ? try await diarizationEngine.diarize(audioURL: url, lastSeconds: Self.liveWindow)
                 : try await diarizationEngine.diarize(audioURL: url)
+            // Stopped (or a new call started) while this ran: its labels and
+            // identities belong to a meeting whose final pass now owns them.
+            guard isRecording, currentMeeting === meeting else { return }
             let mapping: [String: String]
             if windowed {
                 var speech: [String: TimeInterval] = [:]
@@ -959,7 +967,10 @@ final class RecordingManager {
         await postProcess(meeting: meeting)
     }
 
-    private func postProcess(meeting: Meeting) async {
+    /// `anchors`: the live sweeps' identities for this meeting (empty for
+    /// imports, recovery and re-detection), so the final labels keep the
+    /// ones the user watched during the call.
+    private func postProcess(meeting: Meeting, anchors: [String: [Float]] = [:]) async {
         // Status stays .processing here — the calling chain flips .done after
         // the post-call REPORT finishes, so the UI can say "writing report…"
         // instead of the misleading "no report was generated".
@@ -973,8 +984,7 @@ final class RecordingManager {
             // Continuity with any live sweeps: keep the identities the user
             // watched during the call. Empty anchors → identity mapping, so
             // non-live meetings and redetect are untouched.
-            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
-            liveAnchors = [:]
+            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: anchors)
             let turns = output.segments.map {
                 DiarizationEngine.SpeakerSegmentResult(
                     speakerLabel: mapping[$0.speakerLabel] ?? $0.speakerLabel,
@@ -1004,11 +1014,6 @@ final class RecordingManager {
         }
     }
 
-    /// Maps a diarization run's labels onto the previous run's identities, so
-    /// live sweeps can't flip Speaker 1 and Speaker 2 mid-call when talk-time
-    /// order changes. Greedy in label order: best unused anchor with cosine
-    /// ≥ 0.7 (calibrated same-voice ≈ 0.96) wins that anchor's label;
-    /// unmatched clusters take the next unused index. Empty anchors → identity.
     /// What the live sweeps may spend right now.
     struct PowerState: Equatable {
         var onBattery = false
@@ -1069,6 +1074,11 @@ final class RecordingManager {
         return mapping
     }
 
+    /// Maps a diarization run's labels onto the previous run's identities, so
+    /// live sweeps can't flip Speaker 1 and Speaker 2 mid-call when talk-time
+    /// order changes. Greedy in label order: best unused anchor with cosine
+    /// ≥ 0.7 (calibrated same-voice ≈ 0.96) wins that anchor's label;
+    /// unmatched clusters take the next unused index. Empty anchors → identity.
     nonisolated static func stableMapping(
         newEmbeddings: [String: [Float]],
         anchors: [String: [Float]]

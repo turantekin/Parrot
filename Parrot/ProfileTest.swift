@@ -1483,6 +1483,14 @@ enum ProfileTest {
         m.bookmarksData = Data("not json".utf8)
         check("corrupt bookmark data reads as empty", m.bookmarks.isEmpty)
 
+        // After the call, "Bookmark This Line" on two lines under 2 s apart.
+        let lines = Meeting(title: "lines")
+        ctx.insert(lines)
+        lines.addBookmark(at: 27.0, window: 0.05)
+        check("a nearby line can still be marked after the call",
+              lines.addBookmark(at: 27.4, window: 0.05) != nil && lines.bookmarks.count == 2)
+        check("the same line isn't marked twice", lines.addBookmark(at: 27.4, window: 0.05) == nil)
+
         // Export carries the marks.
         m.bookmarksData = nil
         m.addBookmark(at: 754, label: "pricing")

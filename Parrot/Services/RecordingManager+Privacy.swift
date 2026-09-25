@@ -31,7 +31,7 @@ extension RecordingManager {
         guard audioDays > 0 || meetingDays > 0, let modelContext else { return (0, 0) }
         let meetings = (try? modelContext.fetch(FetchDescriptor<Meeting>())) ?? []
         let items = meetings.map {
-            Retention.Item(id: $0.id, date: $0.date,
+            Retention.Item(id: $0.id, date: $0.importedAt ?? $0.date,
                            hasAudio: $0.systemAudioPath.nilIfEmpty != nil || $0.micAudioPath?.nilIfEmpty != nil,
                            finished: $0.status == .done || $0.status == .failed)
         }

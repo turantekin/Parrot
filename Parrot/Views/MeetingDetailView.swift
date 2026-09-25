@@ -856,7 +856,7 @@ struct MeetingDetailView: View {
                                     ? { truncateAnchor = segment } : nil,
                                 isLastLine: segment.id == ordered.last?.id,
                                 onBookmark: {
-                                    meeting.addBookmark(at: segment.startTime)
+                                    meeting.addBookmark(at: segment.startTime, window: 0.05)
                                     try? modelContext.save()
                                 }
                             )

@@ -48,11 +48,21 @@ enum MCPServer {
             exit(1)
         }
         let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
-        guard let container = try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema)]) else {
-            FileHandle.standardError.write(Data("Parrot: couldn't open the meetings store.\n".utf8))
+        // Read-only: this process never writes, and a store it can't save to
+        // can't be migrated by a Parrot binary of another version either.
+        guard let container = try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, allowsSave: false)]) else {
+            // Most likely a Parrot update the app hasn't opened yet: the app
+            // upgrades the store on launch, this read-only reader never does.
+            FileHandle.standardError.write(Data("Parrot: couldn't open your meetings. If Parrot was just updated, open it once, then try again.\n".utf8))
             exit(1)
         }
         while let line = readLine(strippingNewline: true) {
+            // The AI app keeps this process for its whole session: switching
+            // the connection off in Settings has to end it, not wait for a relaunch.
+            guard UserDefaults.standard.bool(forKey: enabledKey) else {
+                FileHandle.standardError.write(Data("Parrot: the AI-app connection was turned off.\n".utf8))
+                exit(0)
+            }
             guard let data = line.data(using: .utf8),
                   let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 respond(["jsonrpc": "2.0", "id": NSNull(),
