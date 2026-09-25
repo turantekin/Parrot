@@ -89,7 +89,7 @@ extension RecordingManager {
             if aiUsable,
                let reply = try? await complete(AskEngine.rewriteSystemPrompt,
                                                AskEngine.rewriteUser(history: history, question: question), 120),
-               let standalone = AskEngine.parseRewrite(reply) {
+               let standalone = AskEngine.parseRewrite(reply, original: question) {
                 searchQuestion = standalone
             } else {
                 let previous = chat.messages.last { $0.role == .me }?.text

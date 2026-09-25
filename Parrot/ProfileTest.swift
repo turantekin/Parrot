@@ -1166,7 +1166,12 @@ enum ProfileTest {
 
         // 4. Rewrite: topic changes pass through; lead-in lines are skipped.
         check("rewrite: prompt keeps unrelated follow-ups unchanged",
-              AskEngine.rewriteSystemPrompt.contains("If the follow-up doesn't refer back to the conversation, return it unchanged."))
+              AskEngine.rewriteSystemPrompt.contains("If not, it stands on its own: reply with exactly SAME"))
+        check("rewrite: prompt shows a new-topic question kept as is",
+              AskEngine.rewriteSystemPrompt.contains("\"What did I promise this week?\" -> SAME"))
+        check("rewrite: SAME keeps the user's question",
+              AskEngine.parseRewrite("SAME", original: "What did I promise this week?") == "What did I promise this week?")
+        check("rewrite: SAME. with punctuation still counts", AskEngine.parseRewrite("Same.", original: "Q?") == "Q?")
         check("rewrite: lead-in line skipped",
               AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
     }
