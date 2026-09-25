@@ -196,6 +196,13 @@ final class OpenAICompatibleProvider: AnalysisProvider {
             maxTokens: 1400, config: config)
     }
 
+    func complete(system: String, user: String, maxTokens: Int) async throws -> String {
+        guard let config = currentConfig() else {
+            throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
+        }
+        return try await plainChat(system: system, user: user, maxTokens: maxTokens, config: config)
+    }
+
     // MARK: - Chat plumbing
 
     /// Structured-output call — stays on the OpenAI-compat endpoint for EVERY
@@ -432,14 +439,17 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 /// note in RecordingManager.writeAIUsage).
 final class SwitchingAnalysisProvider: AnalysisProvider {
     private let claude = ClaudeAnalysisProvider()
-    private let liveCompat = OpenAICompatibleProvider { CopilotProviderKind.selected }
+    private let liveCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.liveKind }
     private let reportsCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.reportsKind }
 
-    static var liveKind: CopilotProviderKind { CopilotProviderKind.selected }
+    /// On-device only (CloudGate) routes both roles to Ollama.
+    static var liveKind: CopilotProviderKind {
+        CloudGate.forcesLocal ? .ollama : CopilotProviderKind.selected
+    }
 
     /// Reports kind; "same as live" resolves to the live kind.
     static var reportsKind: CopilotProviderKind {
-        CopilotProviderKind.reportsSelected ?? liveKind
+        CloudGate.forcesLocal ? .ollama : (CopilotProviderKind.reportsSelected ?? liveKind)
     }
 
     private var liveProvider: AnalysisProvider {
@@ -463,22 +473,66 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
 
     var isConfigured: Bool { liveProvider.isConfigured }
 
+    // Every call below that goes to a cloud brain passes through the
+    // Redactor when "Hide personal details from cloud AI" is on: details out
+    // as placeholders, real values back in the answer. Ollama gets the text
+    // as is — it never leaves the Mac.
+
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
-        try await liveProvider.analyze(request)
+        guard Self.liveKind != .ollama, Redactor.isEnabled else {
+            return try await liveProvider.analyze(request)
+        }
+        var redactor = Redactor()
+        let result = try await liveProvider.analyze(redactor.redact(request))
+        return redactor.restore(result)
     }
 
     func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
                    instructions: String, counterpart: String) async throws -> String {
-        try await reportsProvider.summarize(transcript: transcript, insightTitles: insightTitles,
-                                            bookmarks: bookmarks, instructions: instructions,
-                                            counterpart: counterpart)
+        var r = reportsRedactor
+        let out = try await reportsProvider.summarize(
+            transcript: r?.redact(transcript) ?? transcript,
+            insightTitles: insightTitles.map { r?.redact($0) ?? $0 },
+            bookmarks: bookmarks.map { r?.redact($0) ?? $0 },
+            instructions: instructions, counterpart: counterpart)
+        return r?.restore(out) ?? out
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String) async throws -> String {
-        try await reportsProvider.coachingReport(transcript: transcript, talkPercentMe: talkPercentMe,
-                                                 instructions: instructions, counterpart: counterpart)
+        var r = reportsRedactor
+        let out = try await reportsProvider.coachingReport(
+            transcript: r?.redact(transcript) ?? transcript, talkPercentMe: talkPercentMe,
+            instructions: instructions, counterpart: counterpart)
+        return r?.restore(out) ?? out
     }
+
+    func complete(system: String, user: String, maxTokens: Int) async throws -> String {
+        var r = reportsRedactor
+        let out = try await reportsProvider.complete(system: system, user: r?.redact(user) ?? user,
+                                                     maxTokens: maxTokens)
+        return r?.restore(out) ?? out
+    }
+
+    /// A fresh Redactor when report-side calls go to a cloud brain and the
+    /// user asked for redaction; nil otherwise.
+    private var reportsRedactor: Redactor? {
+        (reportsEffectiveKind != .ollama && Redactor.isEnabled) ? Redactor() : nil
+    }
+
+    /// The brain that actually answers report-side calls (the reports choice,
+    /// or live when that one isn't set up).
+    private var reportsEffectiveKind: CopilotProviderKind {
+        let kind = Self.reportsKind
+        let candidate: AnalysisProvider = kind == .claude ? claude : reportsCompat
+        return candidate.isConfigured ? kind : Self.liveKind
+    }
+
+    /// Whether the brain answering `complete` runs on this Mac (Ollama) —
+    /// what Ask Parrot tells the user about where excerpts go.
+    var reportsRunLocally: Bool { reportsEffectiveKind == .ollama }
+
+    var reportsConfigured: Bool { reportsProvider.isConfigured }
 
     // MARK: Role-split metering for the cost row
 

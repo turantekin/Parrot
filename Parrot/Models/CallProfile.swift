@@ -45,6 +45,9 @@ final class CallProfile {
     /// counterpart, kinds, gauges). The preset refresh skips modified built-ins —
     /// a presetVersion bump must never silently wipe a user's tuning.
     var isUserModified: Bool = false
+    /// Calls under this profile never touch a cloud service (see CloudGate):
+    /// e.g. therapy or legal calls. Defaulted → old rows migrate.
+    var onDeviceOnly: Bool = false
     /// JSON-encoded [ProfileKind] / [SentimentGauge] — config, not queried entities.
     var kindsData: Data
     var gaugesData: Data

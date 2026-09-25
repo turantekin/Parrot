@@ -30,6 +30,8 @@
 	<string>Parrot records your meeting's audio (what you hear) to transcribe it on-device. It never sees your screen.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Parrot reads your calendar to name your meetings and know who's on the call. It never changes your calendar, and nothing leaves your Mac.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Parrot adds a call's next steps to a Parrot list in Reminders when you ask it to.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Parrot records your microphone so it can transcribe your side of the meeting on-device.</string>
 	<key>NSScreenCaptureUsageDescription</key>

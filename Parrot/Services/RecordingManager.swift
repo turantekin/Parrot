@@ -22,6 +22,10 @@ final class RecordingManager {
     let calendar = CalendarService()
     /// Notices calls in other apps and offers to record them.
     let callWatcher = CallWatcher()
+    /// Every finished meeting, searchable on the Mac (Ask Parrot).
+    let memory = MeetingMemory()
+    /// Next steps → Apple Reminders (asks for access on first use).
+    let reminders = RemindersService()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -49,7 +53,7 @@ final class RecordingManager {
     /// so the live view can show a "Finalizing…" state.
     private(set) var isStopping = false
     private var timer: Timer?
-    private var modelContext: ModelContext?
+    private(set) var modelContext: ModelContext?
 
     /// "Still recording?" for the forgot-to-stop case (#50: a call left
     /// running for two idle hours). A transcript line is the voice signal;
@@ -102,6 +106,9 @@ final class RecordingManager {
         // recording until the model below is ready.
         callWatcher.recordingManager = self
         callWatcher.start()
+        // Catch the memory up with meetings finished before it existed (or
+        // changed since): background, low priority, local only.
+        Task { await syncMemory() }
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
@@ -143,6 +150,9 @@ final class RecordingManager {
     }
 
     private func finishRecovery(meeting: Meeting) async {
+        // A private call stays private through its salvaged report.
+        if meeting.onDeviceOnly { CloudGate.hold(meeting.id) }
+        defer { CloudGate.release(meeting.id) }
         // Audio is best-effort: a crash leaves the .caf header unfinalized, so it may
         // not open. If it doesn't, drop the paths so no dead player shows and
         // diarization is skipped cleanly (segments keep their live "Me"/"Them" labels).
@@ -165,6 +175,7 @@ final class RecordingManager {
         writeAIUsage(meeting: meeting, polishSeconds: 0)
         meeting.status = .done
         try? modelContext?.save()
+        await meetingFinished(meeting)
     }
 
     // MARK: - Bookmarks
@@ -297,15 +308,32 @@ final class RecordingManager {
         meeting.profile = profile
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
 
+        // On-device only (globally, or for this profile): held from here —
+        // before transcription and the copilot pick their engines — until the
+        // report and after-call actions are done (released in stopRecording's
+        // chain, or right away if the start fails).
+        meeting.onDeviceOnly = UserDefaults.standard.bool(forKey: CloudGate.globalKey)
+            || profile?.onDeviceOnly == true
+        if meeting.onDeviceOnly { CloudGate.hold(meeting.id) }
+
         // The calendar event this call belongs to names the meeting and
         // lists who's on it. The invite's text reaches the copilot only if
         // the user turned that on (it's someone else's writing, and the
         // copilot may be a cloud model), and never as the user's own brief.
         var calendarContext = ""
+        var lastCall = ""
         if calendar.isConnected, let event = calendar.currentEvent() {
             meeting.apply(event)
             if UserDefaults.standard.bool(forKey: CalendarService.useDetailsKey) {
                 calendarContext = CalendarService.inviteContext(for: event)
+            }
+            // "From your last call": open items from the previous meeting
+            // with these people. Parrot's own notes, read locally.
+            if let previous = previousMeeting(for: meeting, in: modelContext) {
+                meeting.previousMeetingID = previous.id
+                lastCall = LastCallBrief.context(
+                    title: previous.title, date: previous.date,
+                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching))
             }
         }
         meeting.brief = nextCallBrief.nilIfEmpty
@@ -316,6 +344,7 @@ final class RecordingManager {
         do {
             try await audioCaptureManager.startCapture()
         } catch {
+            CloudGate.release(meeting.id)
             modelContext.delete(meeting)
             try? modelContext.save()
             throw error
@@ -352,7 +381,8 @@ final class RecordingManager {
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
         callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
         docMatcher.resetUsage()
-        callAnalysisEngine.start(profile: profile, brief: nextCallBrief, calendarContext: calendarContext)
+        callAnalysisEngine.start(profile: profile, brief: nextCallBrief, calendarContext: calendarContext,
+                                 previousCall: lastCall)
 
         currentMeeting = meeting
         recordingStartTime = .now
@@ -426,6 +456,7 @@ final class RecordingManager {
             // the FINAL text — never from a transcript that's about to change.
             let meetingRef = meeting
             Task {
+                defer { CloudGate.release(meetingRef.id) }
                 let polishSeconds = await self.polishTranscript(meeting: meetingRef)
                 await self.postProcess(meeting: meetingRef)
                 if self.callAnalysisEngine.isEnabled, self.callAnalysisEngine.provider.isConfigured {
@@ -435,6 +466,7 @@ final class RecordingManager {
                 self.writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
                 meetingRef.status = .done
                 try? self.modelContext?.save()
+                await self.meetingFinished(meetingRef)
             }
         }
 
@@ -482,6 +514,8 @@ final class RecordingManager {
         let profile = profileStore.activeProfile
         meeting.profile = profile
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
+        meeting.onDeviceOnly = UserDefaults.standard.bool(forKey: CloudGate.globalKey)
+            || profile?.onDeviceOnly == true
         modelContext.insert(meeting)
         try? modelContext.save()
 
@@ -492,6 +526,8 @@ final class RecordingManager {
     }
 
     private func runImport(meeting: Meeting, audioURL: URL) async {
+        if meeting.onDeviceOnly { CloudGate.hold(meeting.id) }
+        defer { CloudGate.release(meeting.id) }
         defer { importProgress = nil }
 
         // 1. Whole-file, on-device transcription. Every segment is "Them" (one
@@ -538,6 +574,7 @@ final class RecordingManager {
         writeAIUsage(meeting: meeting, polishSeconds: 0, backendOverride: .local)
         meeting.status = .done
         try? modelContext?.save()
+        await meetingFinished(meeting)
     }
 
     // MARK: - Deletion
@@ -550,6 +587,7 @@ final class RecordingManager {
             try? FileManager.default.removeItem(atPath: path)
         }
         if currentMeeting?.id == meeting.id { currentMeeting = nil }
+        memory.remove(meetingID: meeting.id)
         modelContext?.delete(meeting)
         try? modelContext?.save()
     }
@@ -714,6 +752,7 @@ final class RecordingManager {
     @discardableResult
     private func polishTranscript(meeting: Meeting) async -> Double {
         guard UserDefaults.standard.bool(forKey: "polishAfterCall"),
+              !meeting.onDeviceOnly, !CloudGate.forcesLocal,
               let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
               !key.isEmpty,
               let modelContext else { return 0 }

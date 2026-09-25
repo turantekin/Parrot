@@ -51,6 +51,7 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private var detector = CallDetector()
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastReminderCheck = Date.distantPast
+    @ObservationIgnored private var lastRetentionCheck = Date.distantPast
     @ObservationIgnored private var remindedEventIDs = Set<String>()
     /// The current recording was started by auto mode, so auto mode may
     /// stop it too. A recording the user started is only ever offered a stop.
@@ -130,6 +131,11 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         if Date.now.timeIntervalSince(lastReminderCheck) >= 30 {
             lastReminderCheck = .now
             checkCalendarReminders()
+        }
+        // Automatic clean-up (Settings → Privacy), at start and hourly.
+        if Date.now.timeIntervalSince(lastRetentionCheck) >= 3600, !isRecording {
+            lastRetentionCheck = .now
+            manager.applyRetention()
         }
     }
 

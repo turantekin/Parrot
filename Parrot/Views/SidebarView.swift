@@ -10,6 +10,7 @@ struct SidebarView: View {
     @Binding var searchText: String
 
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSession.self) private var appSession
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
     /// Edit → Find (⌘F) lands here.
     @FocusState private var searchFocused: Bool
@@ -45,6 +46,10 @@ struct SidebarView: View {
                     selectedMeeting = nil
                     showSettings = false
                 }
+                NavRow(title: "Ask Parrot", icon: "text.magnifyingglass", selected: false) {
+                    appSession.askRequest = AppSession.AskRequest(scope: nil, scopeTitle: nil)
+                }
+                .help("Ask anything about your past calls (⌘K)")
             }
             .padding(.horizontal, 8)
 

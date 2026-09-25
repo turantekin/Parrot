@@ -483,7 +483,7 @@ final class KnowledgeBaseService {
         return windows
     }
 
-    private nonisolated static func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
+    nonisolated static func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot = 0.0, normA = 0.0, normB = 0.0
         for i in a.indices {

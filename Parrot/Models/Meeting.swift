@@ -71,6 +71,17 @@ final class Meeting {
     var attendeesData: Data? = nil
     /// EventKit identifier of the matched calendar event, nil if none.
     var calendarEventID: String? = nil
+    /// The earlier meeting whose open items briefed this call, nil if none.
+    var previousMeetingID: UUID? = nil
+    /// Recorded under "On-device only": nothing about this meeting may go to
+    /// a cloud service, now or later (see CloudGate). Defaulted → old rows migrate.
+    var onDeviceOnly: Bool = false
+    /// How the other side was told about the recording (JSON Consent), nil if
+    /// not recorded. Defaulted → old rows migrate.
+    var consentData: Data? = nil
+    /// Drafted follow-up email (subject line + body), nil until drafted.
+    /// Defaulted → old rows migrate.
+    var followUpEmail: String? = nil
 
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
@@ -221,6 +232,12 @@ final class Meeting {
                 ? nil
                 : try? JSONEncoder().encode(newValue.sorted { $0.time < $1.time })
         }
+    }
+
+    /// How the other side was told about the recording (see `consentData`).
+    var consent: Consent? {
+        get { consentData.flatMap { try? JSONDecoder().decode(Consent.self, from: $0) } }
+        set { consentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
     }
 
     /// Invitees from the matched calendar event (the user excluded).

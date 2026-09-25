@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// page on the right. Content rules: controls at body size, hints one line at
 /// secondary size — long explanations live in the control's own label instead.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, recording, transcription, copilot, apiKeys, knowledge, profiles
+    case general, recording, transcription, copilot, apiKeys, knowledge, profiles, connections, privacy
 
     var id: String { rawValue }
 
@@ -19,6 +19,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .apiKeys: "API Keys"
         case .knowledge: "Knowledge"
         case .profiles: "Profiles"
+        case .connections: "Connections"
+        case .privacy: "Privacy"
         }
     }
 
@@ -31,6 +33,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .apiKeys: "key"
         case .knowledge: "books.vertical"
         case .profiles: "person.2"
+        case .connections: "arrow.triangle.branch"
+        case .privacy: "lock.shield"
         }
     }
 }
@@ -167,6 +171,8 @@ struct SettingsView: View {
                 case .apiKeys: apiKeysPage
                 case .knowledge: knowledgePage
                 case .profiles: ProfilesSettingsView()
+                case .connections: ConnectionsSettingsPage()
+                case .privacy: PrivacySettingsPage()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

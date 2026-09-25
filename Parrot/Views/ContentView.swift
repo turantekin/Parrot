@@ -89,6 +89,24 @@ struct ContentView: View {
         .sheet(isPresented: $showBugReport) {
             BugReportSheet(screenshot: reportScreenshot)
         }
+        .sheet(item: Binding(get: { appSession.askRequest }, set: { appSession.askRequest = $0 })) { request in
+            AskView(request: request)
+                .environment(recordingManager)
+                .environment(appSession)
+        }
+        // Ask Parrot's citations: open that meeting (the detail view seeks).
+        .onChange(of: appSession.pendingJump) { _, jump in
+            guard let jump else { return }
+            let id = jump.meetingID
+            let found = try? modelContext.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
+            guard let meeting = found else {
+                appSession.pendingJump = nil
+                return
+            }
+            selectedMeeting = meeting
+            showDashboard = false
+            showSettings = false
+        }
         .onReceive(NotificationCenter.default.publisher(for: .parrotReportBug)) { _ in
             presentBugReport()
         }

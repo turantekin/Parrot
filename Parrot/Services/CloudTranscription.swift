@@ -15,7 +15,9 @@ enum TranscriptionBackend: String, CaseIterable {
     static let defaultsKey = "transcriptionBackend"
 
     static var selected: TranscriptionBackend {
-        TranscriptionBackend(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .local
+        // On-device only: never a cloud engine, whatever Settings says.
+        guard !CloudGate.forcesLocal else { return .local }
+        return TranscriptionBackend(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .local
     }
 
     var label: String {

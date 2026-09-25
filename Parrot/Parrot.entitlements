@@ -14,6 +14,8 @@
 	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<!-- Sparkle talks to its installer XPC service, which lives outside the

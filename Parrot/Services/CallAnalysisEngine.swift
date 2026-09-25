@@ -120,6 +120,8 @@ final class CallAnalysisEngine {
     /// The matched calendar invite, when the user shares it with the copilot
     /// (see AnalysisRequest.calendarContext).
     private(set) var calendarContext = ""
+    /// "From your last call" open items (see LastCallBrief).
+    private(set) var previousCallContext = ""
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
     private var meCharacters = 0
     private var themCharacters = 0
@@ -152,7 +154,8 @@ final class CallAnalysisEngine {
         UserDefaults.standard.bool(forKey: "copilotEnabled")
     }
 
-    func start(profile: CallProfile?, brief: String = "", calendarContext: String = "") {
+    func start(profile: CallProfile?, brief: String = "", calendarContext: String = "",
+               previousCall: String = "") {
         guard isEnabled else {
             status = .off
             return
@@ -177,6 +180,7 @@ final class CallAnalysisEngine {
         activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         self.calendarContext = calendarContext
+        previousCallContext = previousCall
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
         // Open the TLS connection now so the first excerpt does not pay it.
@@ -390,7 +394,8 @@ final class CallAnalysisEngine {
             counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
             gauges: profile?.gauges ?? [],
-            calendarContext: calendarContext
+            calendarContext: calendarContext,
+            previousCallContext: previousCallContext
         )
 
         do {
@@ -583,6 +588,7 @@ final class CallAnalysisEngine {
     /// cool-down. Ollama and custom stay local.
     private var fastPathAvailable: Bool {
         docMatcher?.isConfigured == true
+            && !CloudGate.forcesLocal
             && CopilotProviderKind.selected == .claude
             && knowledgeBase.map { !$0.isEmpty } == true
             && Date.now >= fastPathPausedUntil

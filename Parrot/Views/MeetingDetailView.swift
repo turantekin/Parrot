@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AppKit
 
 /// Which pane of the post-meeting report is showing.
 enum ReportTab: String, CaseIterable, Identifiable {
@@ -21,6 +22,7 @@ enum ReportTab: String, CaseIterable, Identifiable {
 struct MeetingDetailView: View {
     let meeting: Meeting
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSession.self) private var appSession
     @Environment(\.modelContext) private var modelContext
     @AppStorage("rememberVoices") private var rememberVoices = false
     /// Parent clears the selection and performs the actual delete — this view
@@ -44,6 +46,10 @@ struct MeetingDetailView: View {
     @State private var clipStopTask: Task<Void, Never>?
     /// The line a pending "delete everything after this" is anchored to.
     @State private var truncateAnchor: TranscriptSegment?
+    /// Share-menu actions: one at a time, with an outcome message.
+    @State private var actionRunning = false
+    @State private var actionMessage: String?
+    @State private var showPrivacyLedger = false
     /// The transcript as a receipts index — cached, not rebuilt on every
     /// playback tick (the timer re-renders this view ten times a second).
     @State private var receiptIndex = ReceiptIndex.empty
@@ -108,7 +114,9 @@ struct MeetingDetailView: View {
             titleText = meeting.title
             themNameText = meeting.themName ?? ""
             prepareAudioPlayer()
+            consumeJump()
         }
+        .onChange(of: appSession.pendingJump) { consumeJump() }
         // Lines land while a meeting processes, and naming a voice changes
         // the speaker the receipts quote — rebuild on either.
         .task(id: receiptIndexKey) {
@@ -133,12 +141,50 @@ struct MeetingDetailView: View {
         }
         .toolbar {
             ToolbarItemGroup {
+                Button {
+                    appSession.askRequest = AppSession.AskRequest(scope: meeting.id, scopeTitle: meeting.title)
+                } label: {
+                    Label("Ask", systemImage: "text.magnifyingglass")
+                }
+                .help("Ask about this call, or all of them")
+                .disabled(meeting.status != .done)
+
                 Menu {
                     Button("Export as TXT") { MeetingActions.exportTXT(meeting) }
+                    Button("Export as Markdown") { MeetingActions.exportMarkdown(meeting) }
                     Button("Export as SRT") { MeetingActions.exportSRT(meeting) }
+                    if ExportFolder.resolve() != nil {
+                        Button("Save to My Folder") {
+                            runAction { _ = try ExportFolder.write(meeting); return "Saved to your folder." }
+                        }
+                    }
+                    Divider()
+                    Button(meeting.followUpEmail == nil ? "Draft Follow-up Email" : "Redraft Follow-up Email") {
+                        runAction {
+                            try await recordingManager.draftFollowUp(meeting)
+                            tab = .report
+                            return nil
+                        }
+                    }
+                    .disabled(meeting.status != .done)
+                    Button("Add Next Steps to Reminders") {
+                        runAction {
+                            let n = try await recordingManager.addNextStepsToReminders(meeting)
+                            return n == 0 ? "No next steps found in this report."
+                                : "Added \(n) reminder\(n == 1 ? "" : "s") to the Parrot list."
+                        }
+                    }
+                    .disabled(meeting.summary == nil && meeting.coaching == nil)
+                    if Webhook.validate(UserDefaults.standard.string(forKey: Webhook.urlKey) ?? "") != nil {
+                        Button("Send to Webhook") {
+                            runAction { try await Webhook.send(meeting); return "Sent to your webhook." }
+                        }
+                        .disabled(!CloudGate.mayLeaveMac(meeting))
+                    }
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    Label(actionRunning ? "Working…" : "Share", systemImage: "square.and.arrow.up")
                 }
+                .disabled(actionRunning)
 
                 Button(role: .destructive) {
                     confirmingDelete = true
@@ -146,6 +192,12 @@ struct MeetingDetailView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+        .alert(actionMessage ?? "", isPresented: Binding(
+            get: { actionMessage != nil },
+            set: { if !$0 { actionMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionMessage = nil }
         }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { onDelete?() }
@@ -190,6 +242,8 @@ struct MeetingDetailView: View {
                 aiCostRow(usage)
             }
 
+            privacyRow
+
             // Name the other party so the transcript/report read naturally.
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle")
@@ -204,6 +258,93 @@ struct MeetingDetailView: View {
         }
         .padding(Theme.Metrics.pad)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "What left this Mac" (from the meeting's own usage record) and the
+    /// consent record. Silent for old meetings with neither.
+    @ViewBuilder
+    private var privacyRow: some View {
+        let lines = PrivacyLedger.lines(onDeviceOnly: meeting.onDeviceOnly, usage: meeting.aiUsage)
+        if !lines.isEmpty || meeting.consent != nil {
+            HStack(spacing: 12) {
+                if !lines.isEmpty {
+                    Button {
+                        showPrivacyLedger.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: meeting.onDeviceOnly ? "lock.shield.fill" : "lock.shield")
+                                .foregroundStyle(meeting.onDeviceOnly ? Theme.Colors.good : Theme.Colors.ink2)
+                            Text(lines.count == 1 ? lines[0] : "What left this Mac: \(lines.count) things")
+                                .foregroundStyle(Theme.Colors.ink2)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showPrivacyLedger, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("What left this Mac")
+                                .font(Theme.Typography.sectionLabel)
+                            ForEach(lines, id: \.self) { Text("• \($0)").font(Theme.Typography.secondary) }
+                            Text("Audio stays on your Mac unless a cloud transcription engine was used.")
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.ink3)
+                        }
+                        .padding(12)
+                        .frame(width: 340, alignment: .leading)
+                    }
+                }
+                if let consent = meeting.consent {
+                    Label(consent.summary.capitalizedFirst, systemImage: "checkmark.shield")
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+            }
+            .font(Theme.Typography.caption)
+        }
+    }
+
+    /// Runs a Share-menu action, then says how it went (or why it didn't).
+    private func runAction(_ work: @escaping () async throws -> String?) {
+        actionRunning = true
+        Task {
+            do {
+                actionMessage = try await work()
+            } catch {
+                actionMessage = error.localizedDescription
+            }
+            actionRunning = false
+        }
+    }
+
+    /// The drafted follow-up email with Copy and Open in Mail.
+    private func followUpCard(_ draft: String) -> some View {
+        let parts = FollowUpEmail.split(draft, fallbackSubject: "Following up: \(meeting.title)")
+        return ReportSectionCard(title: "Follow-up email", icon: "envelope", tint: Theme.Colors.accent) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(parts.subject)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .textSelection(.enabled)
+                Text(parts.body)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("Subject: \(parts.subject)\n\n\(parts.body)", forType: .string)
+                    }
+                    Button("Open in Mail") { FollowUpEmail.openInMail(draft, meeting: meeting) }
+                    Spacer()
+                    Button("Redraft") {
+                        runAction { try await recordingManager.draftFollowUp(meeting); return nil }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Colors.accent)
+                }
+                .controlSize(.small)
+            }
+        }
     }
 
     /// One-line estimated AI cost; click for the per-line breakdown.
@@ -386,6 +527,9 @@ struct MeetingDetailView: View {
                         if !meeting.bookmarks.isEmpty {
                             bookmarksCard
                         }
+                        if let draft = meeting.followUpEmail, !draft.isEmpty {
+                            followUpCard(draft)
+                        }
                         // Summary is in; the coaching pass is still running.
                         if meeting.status == .processing, meeting.coaching == nil {
                             reportGeneratingRow("Analyzing your coaching report…")
@@ -447,6 +591,17 @@ struct MeetingDetailView: View {
         // line can still be shown, just not played.
         ReceiptActions(play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil,
                        showInTranscript: showInTranscript)
+    }
+
+    /// Ask Parrot sent us here: go to the moment (or the report).
+    private func consumeJump() {
+        guard let jump = appSession.pendingJump, jump.meetingID == meeting.id else { return }
+        appSession.pendingJump = nil
+        if let time = jump.time {
+            showInTranscript(time)
+        } else {
+            tab = .report
+        }
     }
 
     private func playFrom(_ time: TimeInterval) {
@@ -1236,6 +1391,11 @@ extension String {
     /// traps). Used for stable speaker/sidebar colors.
     var stableHash: Int {
         unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
+    }
+
+    /// "everyone agreed…" → "Everyone agreed…".
+    var capitalizedFirst: String {
+        prefix(1).uppercased() + dropFirst()
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SwiftData
 
 /// Which pane the live side panel shows.
@@ -92,6 +93,9 @@ struct LiveRecordingView: View {
 
             Spacer()
 
+            consentButton
+                .padding(.trailing, 12)
+
             markButton
                 .padding(.trailing, 12)
 
@@ -128,6 +132,36 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Theme.Metrics.pad)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Consent
+
+    @AppStorage(Consent.remindKey) private var remindConsent = true
+
+    private var consent: Consent? { recordingManager.currentMeeting?.consent }
+
+    /// Copies the recording notice for the call chat, or notes a spoken
+    /// OK. Orange until used when the reminder is on.
+    private var consentButton: some View {
+        Menu {
+            Button("Copy Recording Notice for the Chat") {
+                recordingManager.recordConsent(.noticeShared)
+            }
+            Button("Everyone Agreed Out Loud") {
+                recordingManager.recordConsent(.verbal)
+            }
+            Divider()
+            Text(Consent.currentNotice)
+        } label: {
+            Label(consent == nil ? "Consent" : "Consent noted",
+                  systemImage: consent == nil ? "person.wave.2" : "checkmark.shield")
+                .font(.appHeadline)
+                .foregroundStyle(consent == nil && remindConsent ? Theme.Colors.warn : Theme.Colors.ink2)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(consent?.summary.capitalizedFirst ?? "Tell everyone the call is recorded, and keep a record of it")
     }
 
     // MARK: - Mark moment

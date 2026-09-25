@@ -232,6 +232,11 @@ private struct ProfileDetailView: View {
                     title: "Answer from general knowledge when documents don't cover it",
                     isOn: $profile.allowGeneralKnowledge
                 )
+                SettingsToggleRow(
+                    title: "On-device only",
+                    detail: "Calls under this profile never touch a cloud service: Whisper transcribes, Ollama runs the copilot and report, and the meeting stays out of cloud Ask, the webhook and AI apps. For therapy, legal or HR calls.",
+                    isOn: $profile.onDeviceOnly
+                )
             }
 
             // MARK: Knowledge Documents section
