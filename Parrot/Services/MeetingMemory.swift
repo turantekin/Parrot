@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NaturalLanguage
 import Observation
@@ -80,6 +81,9 @@ final class MeetingMemory {
     /// meetingID → fingerprint of what was indexed (see `fingerprint`).
     @ObservationIgnored private var fingerprints: [UUID: Int] = [:]
     @ObservationIgnored private var tokenCache: [UUID: [String]] = [:]
+    /// Meetings removed while an index pass was embedding them: the pass
+    /// must not write them back.
+    @ObservationIgnored private var removed = Set<UUID>()
     @ObservationIgnored private let directory: URL?
 
     /// `directory` nil = in-memory only (harness).
@@ -102,16 +106,23 @@ final class MeetingMemory {
 
     /// Changes whenever what we'd index changes: lines landing, a speaker
     /// renamed, a line reassigned or trimmed, the report (re)written.
+    /// SHA-256 based, NOT `Hasher`: it's saved to disk and compared on later
+    /// launches, and `Hasher` is seeded per process.
     nonisolated static func fingerprint(lines: [ReceiptIndex.Line], summary: String?, coaching: String?) -> Int {
-        var hasher = Hasher()
-        for line in lines {
-            hasher.combine(line.start)
-            hasher.combine(line.speaker)
-            hasher.combine(line.text)
+        var sha = SHA256()
+        func add(_ s: String) {
+            sha.update(data: Data(s.utf8))
+            sha.update(data: Data([0x1F]))   // field separator
         }
-        hasher.combine(summary)
-        hasher.combine(coaching)
-        return hasher.finalize()
+        for line in lines {
+            add(String(line.start))
+            add(line.speaker)
+            add(line.text)
+        }
+        add(summary ?? "\u{0}")
+        add(coaching ?? "\u{0}")
+        let digest = Array(sha.finalize())
+        return digest.prefix(8).reduce(0) { ($0 << 8) | Int($1) }
     }
 
     /// Transcript lines grouped into chunks of up to `maxChars`, each line
@@ -185,7 +196,10 @@ final class MeetingMemory {
 
     /// (Re)indexes one finished meeting when its content changed.
     func index(_ meeting: Meeting) async {
-        guard meeting.status == .done else { return }
+        // A meeting deleted before this ran (the page's onDisappear races
+        // its own delete): its properties are gone, don't touch them.
+        guard !meeting.isDeleted, meeting.modelContext != nil, !removed.contains(meeting.id),
+              meeting.status == .done else { return }
         let lines = meeting.receiptIndex.lines
         let fp = Self.fingerprint(lines: lines, summary: meeting.summary, coaching: meeting.coaching)
         guard fingerprints[meeting.id] != fp else { return }
@@ -195,6 +209,8 @@ final class MeetingMemory {
         isIndexing = true
         let embedded = await Task.detached(priority: .utility) { Self.embed(built) }.value
         isIndexing = false
+        // Deleted while we embedded: don't bring its text back.
+        guard !removed.contains(id), !meeting.isDeleted else { return }
         replace(meetingID: id, with: embedded, fingerprint: fp)
     }
 
@@ -209,6 +225,7 @@ final class MeetingMemory {
     }
 
     func remove(meetingID: UUID) {
+        removed.insert(meetingID)
         for chunk in chunks where chunk.meetingID == meetingID { tokenCache[chunk.id] = nil }
         chunks.removeAll { $0.meetingID == meetingID }
         fingerprints[meetingID] = nil

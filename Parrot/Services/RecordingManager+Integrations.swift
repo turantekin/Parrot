@@ -25,21 +25,6 @@ extension RecordingManager {
         }
     }
 
-    /// The transcript as the report prompts see it: "[mm:ss] Name: words".
-    func promptTranscript(_ meeting: Meeting) -> String {
-        meeting.sortedSegments
-            .map { "[\($0.formattedTimestamp)] \(meeting.displayName(forSpeaker: $0.speakerLabel)): \($0.text)" }
-            .joined(separator: "\n")
-    }
-
-    /// Whether this meeting may be sent to the reports brain as it's set up
-    /// now: always when that brain is local, never for a private meeting on
-    /// a cloud one.
-    func reportsBrainAllowed(for meeting: Meeting) -> Bool {
-        let switching = callAnalysisEngine.provider as? SwitchingAnalysisProvider
-        return CloudGate.mayLeaveMac(meeting) || (switching?.reportsRunLocally ?? false)
-    }
-
     /// Drafts (or redrafts) the follow-up email and stores it on the meeting.
     func draftFollowUp(_ meeting: Meeting) async throws {
         guard !meeting.segments.isEmpty else {
@@ -48,19 +33,18 @@ extension RecordingManager {
         guard callAnalysisEngine.provider.isConfigured else {
             throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "Set up the Copilot's AI in Settings first."])
         }
-        guard reportsBrainAllowed(for: meeting) else {
-            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey:
-                "This meeting is on-device only. Draft its email with a local model (Ollama)."])
-        }
         let people = meeting.attendees.map(\.displayName) + meeting.otherSpeakerLabels.compactMap { meeting.speakerNames[$0] }
-        let draft = try await callAnalysisEngine.provider.complete(
-            system: FollowUpEmail.systemPrompt,
-            user: FollowUpEmail.userContent(
-                transcript: promptTranscript(meeting),
-                counterpart: meeting.profile?.counterpart ?? "the other person",
-                people: Array(Set(people)).sorted(),
-                nextSteps: LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 12)),
-            maxTokens: 900)
+        let user = FollowUpEmail.userContent(
+            transcript: meeting.promptTranscript,
+            counterpart: meeting.profile?.counterpart ?? "the other person",
+            people: Array(Set(people)).sorted(),
+            nextSteps: LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 12))
+        // A private meeting's email is written by the local model, whatever
+        // the reports brain is set to.
+        let provider = callAnalysisEngine.provider
+        let draft = try await CloudGate.$scopeLocal.withValue(!CloudGate.mayLeaveMac(meeting) || CloudGate.forcesLocal) {
+            try await provider.complete(system: FollowUpEmail.systemPrompt, user: user, maxTokens: 900)
+        }
         meeting.followUpEmail = draft
         try? modelContext?.save()
     }

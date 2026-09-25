@@ -49,6 +49,11 @@ struct AnalysisRequest {
     /// Open items from the previous meeting with the same people (Parrot's
     /// own report, AI-written from a transcript — delimited as data too).
     var previousCallContext: String = ""
+    /// `previousCallContext` came from an on-device-only meeting: dropped
+    /// before any cloud brain sees the request.
+    var previousCallIsPrivate: Bool = false
+    /// This call is on-device only: the request must stay on the Mac.
+    var forceLocal: Bool = false
 }
 
 /// Combined result from one analysis pass: structured insights plus a sentiment reading.

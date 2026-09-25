@@ -94,10 +94,10 @@ struct LiveRecordingView: View {
             Spacer()
 
             consentButton
-                .padding(.trailing, 12)
+                .padding(.trailing, Theme.Metrics.controlGap)
 
             markButton
-                .padding(.trailing, 12)
+                .padding(.trailing, Theme.Metrics.controlGap)
 
             // Copilot panel toggle
             if copilotEnabled {
@@ -216,7 +216,7 @@ struct LiveRecordingView: View {
                 .frame(width: 260)
                 .onSubmit { labelingMark = nil }
         }
-        .padding(12)
+        .padding(Theme.Metrics.popoverPad)
         .onDisappear {
             let label = markLabel.trimmingCharacters(in: .whitespacesAndNewlines)
             if !label.isEmpty { recordingManager.labelMoment(mark.id, label: label) }

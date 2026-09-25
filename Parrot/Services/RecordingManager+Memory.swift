@@ -48,14 +48,18 @@ extension RecordingManager {
         guard let modelContext else {
             return AskEngine.Result(lines: [], sources: [], refs: [], answeredByAI: false, note: nil)
         }
-        await syncMemory()
+        // No full re-sync per question: meetings are indexed when they
+        // finish, when their page closes after an edit, and at launch.
         let meetings = (try? modelContext.fetch(FetchDescriptor<Meeting>())) ?? []
         let byID = Dictionary(meetings.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         let switching = callAnalysisEngine.provider as? SwitchingAnalysisProvider
         let aiReady = switching?.reportsConfigured ?? callAnalysisEngine.provider.isConfigured
+        // Decided once: whether the answer is written on this Mac. The same
+        // decision filters private meetings AND routes the request below, so
+        // the two can't disagree.
         let local = CloudGate.forcesLocal || (switching?.reportsRunLocally ?? false)
-        let excluded: Set<UUID> = local ? [] : Set(meetings.filter(\.onDeviceOnly).map(\.id))
+        let excluded: Set<UUID> = local ? [] : Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
 
         let hits = await memory.search(question, within: scope.map { [$0] }, excluding: excluded, topK: 8)
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
@@ -73,17 +77,20 @@ extension RecordingManager {
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
                                     sources: [], refs: [], answeredByAI: false, note: privateNote)
         }
-        guard aiReady, !(CloudGate.forcesLocal && !(switching?.reportsRunLocally ?? false)) else {
+        guard aiReady else {
             return AskEngine.Result(lines: AskEngine.excerptLines(hits), sources: hits, refs: refs,
                                     answeredByAI: false,
                                     note: "Set up the Copilot's AI in Settings for written answers. These are the closest moments.")
         }
 
         do {
-            let answer = try await callAnalysisEngine.provider.complete(
-                system: AskEngine.systemPrompt,
-                user: AskEngine.userContent(question: question, context: context),
-                maxTokens: 700)
+            let provider = callAnalysisEngine.provider
+            let answer = try await CloudGate.$scopeLocal.withValue(local) {
+                try await provider.complete(
+                    system: AskEngine.systemPrompt,
+                    user: AskEngine.userContent(question: question, context: context),
+                    maxTokens: 700)
+            }
             let lines = AskEngine.parse(answer, refs: refs) { id, time in
                 byID[id]?.receiptIndex.resolve(time) != nil
             }

@@ -288,6 +288,14 @@ final class Meeting {
         bookmarks = bookmarks.filter { $0.id != id }
     }
 
+    /// The transcript as every prompt and export writes it:
+    /// "[mm:ss] Name: words", one line per segment.
+    var transcriptLines: [String] {
+        sortedSegments.map { "[\($0.formattedTimestamp)] \(displayName(forSpeaker: $0.speakerLabel)): \($0.text)" }
+    }
+
+    var promptTranscript: String { transcriptLines.joined(separator: "\n") }
+
     /// The transcript as a receipts index (for checking report stamps).
     var receiptIndex: ReceiptIndex {
         ReceiptIndex(lines: segments.map {

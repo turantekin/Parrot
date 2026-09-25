@@ -207,8 +207,8 @@ struct CallPromptBanner: View {
             .fixedSize()
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Theme.Metrics.popoverPad)
+        .padding(.vertical, Theme.Metrics.bannerInsetV)
         .frame(maxWidth: 420, alignment: .leading)
         .background(Theme.Colors.panel, in: Capsule())
         .overlay(Capsule().strokeBorder(Theme.Colors.line))

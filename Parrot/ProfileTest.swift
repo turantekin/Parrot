@@ -1769,6 +1769,9 @@ enum ProfileTest {
         check("memory: fingerprint stable", a == MeetingMemory.fingerprint(lines: memLines(), summary: "s", coaching: nil))
         check("memory: rename changes fingerprint", a != MeetingMemory.fingerprint(lines: renamed, summary: "s", coaching: nil))
         check("memory: report change changes fingerprint", a != MeetingMemory.fingerprint(lines: memLines(), summary: "t", coaching: nil))
+        check("memory: fingerprint is the same in every launch",
+              MeetingMemory.fingerprint(lines: [.init(start: 1.5, end: 2, speaker: "Me", text: "hi")],
+                                        summary: "s", coaching: nil) == 5232196515355174444)
         check("memory: cosine of identical vectors", abs(MeetingMemory.cosine([1, 2, 3], [1, 2, 3]) - 1) < 1e-6)
         check("memory: cosine of mismatched sizes is 0", MeetingMemory.cosine([1, 2], [1, 2, 3]) == 0)
     }
@@ -1992,14 +1995,18 @@ enum ProfileTest {
         let meetings = [MCPServer.MeetingInfo(
             id: a, title: "Acme renewal", date: Date(timeIntervalSince1970: 1_790_000_000), durationMinutes: 30,
             people: ["Jeremy"], profile: "Sales", summary: "Renewal went well.", coaching: nil, notes: "",
-            bookmarks: ["00:30 pricing"], transcript: ["[00:30] Jeremy: Send the contract."])]
+            bookmarks: ["00:30 pricing"])]
         let chunks = MeetingMemory.buildChunks(meetingID: a, lines: [.init(start: 30, end: 33, speaker: "Jeremy",
                                                                            text: "Send the contract.")],
                                                summary: nil, coaching: nil)
         func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
             var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
             if let id { msg["id"] = id }
-            return MCPServer.handle(msg, meetings: meetings, chunks: chunks)
+            let source = MCPServer.DataSource(
+                meetings: { meetings },
+                transcript: { $0 == a ? ["[00:30] Jeremy: Send the contract."] : [] },
+                chunks: { chunks })
+            return MCPServer.handle(msg, source: source)
         }
         let initResult = call("initialize", ["protocolVersion": "2025-03-26"])?["result"] as? [String: Any]
         check("mcp: initialize echoes the client's version", initResult?["protocolVersion"] as? String == "2025-03-26")

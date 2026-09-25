@@ -441,6 +441,9 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     private let claude = ClaudeAnalysisProvider()
     private let liveCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.liveKind }
     private let reportsCompat = OpenAICompatibleProvider { SwitchingAnalysisProvider.reportsKind }
+    /// Ollama, for live passes of an on-device-only call whatever the
+    /// Settings choice.
+    private let localCompat = OpenAICompatibleProvider { .ollama }
 
     /// On-device only (CloudGate) routes both roles to Ollama.
     static var liveKind: CopilotProviderKind {
@@ -479,11 +482,16 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     // as is — it never leaves the Mac.
 
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
-        guard Self.liveKind != .ollama, Redactor.isEnabled else {
-            return try await liveProvider.analyze(request)
+        if request.forceLocal || CloudGate.forcesLocal {
+            return try await localCompat.analyze(request)
         }
+        guard Self.liveKind != .ollama else { return try await liveProvider.analyze(request) }
+        // Cloud from here on. A private meeting's notes never ride along.
+        var outgoing = request
+        if request.previousCallIsPrivate { outgoing.previousCallContext = "" }
+        guard Redactor.isEnabled else { return try await liveProvider.analyze(outgoing) }
         var redactor = Redactor()
-        let result = try await liveProvider.analyze(redactor.redact(request))
+        let result = try await liveProvider.analyze(redactor.redact(outgoing))
         return redactor.restore(result)
     }
 
@@ -554,7 +562,7 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     }
 
     var usageTotals: AITokenTotals {
-        [claude.usageTotals, liveCompat.usageTotals, reportsCompat.usageTotals]
+        [claude.usageTotals, liveCompat.usageTotals, reportsCompat.usageTotals, localCompat.usageTotals]
             .reduce(AITokenTotals()) { acc, u in
                 AITokenTotals(inputTokens: acc.inputTokens + u.inputTokens,
                               outputTokens: acc.outputTokens + u.outputTokens,
@@ -566,5 +574,6 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
         claude.resetUsage()
         liveCompat.resetUsage()
         reportsCompat.resetUsage()
+        localCompat.resetUsage()
     }
 }

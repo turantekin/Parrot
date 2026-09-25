@@ -28,7 +28,15 @@ enum MCPServer {
         var coaching: String?
         var notes: String
         var bookmarks: [String]
-        var transcript: [String]
+    }
+
+    /// Where the tools read from. Closures so a request only pays for what
+    /// its tool needs (a ping touches nothing; only get_meeting with
+    /// include_transcript builds a transcript).
+    struct DataSource {
+        var meetings: () -> [MeetingInfo]
+        var transcript: (UUID) -> [String]
+        var chunks: () -> [MemoryChunk]
     }
 
     // MARK: stdio loop
@@ -44,9 +52,6 @@ enum MCPServer {
             FileHandle.standardError.write(Data("Parrot: couldn't open the meetings store.\n".utf8))
             exit(1)
         }
-        let context = ModelContext(container)
-        let memory = MeetingMemory()
-
         while let line = readLine(strippingNewline: true) {
             guard let data = line.data(using: .utf8),
                   let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -54,11 +59,21 @@ enum MCPServer {
                          "error": ["code": -32700, "message": "Parse error"]])
                 continue
             }
-            // Fresh each request: meetings recorded while the AI app is open show up.
-            let meetings = snapshot(context)
-            let allowed = Set(meetings.map(\.id))
-            let chunks = memory.chunks.filter { allowed.contains($0.meetingID) }
-            if let reply = handle(message, meetings: meetings, chunks: chunks) { respond(reply) }
+            // A fresh context and memory per request: a call recorded (or a
+            // report finished) while the AI app is open shows up right away.
+            let context = ModelContext(container)
+            let source = DataSource(
+                meetings: { snapshot(context) },
+                transcript: { id in
+                    let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
+                    guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m) else { return [] }
+                    return m.transcriptLines
+                },
+                chunks: {
+                    let allowed = Set(snapshot(context).map(\.id))
+                    return MeetingMemory().chunks.filter { allowed.contains($0.meetingID) }
+                })
+            if let reply = handle(message, source: source) { respond(reply) }
         }
         exit(0)
     }
@@ -85,16 +100,13 @@ enum MCPServer {
             id: m.id, title: m.title, date: m.date, durationMinutes: Int((m.duration / 60).rounded()),
             people: people, profile: m.profile?.name, summary: m.summary, coaching: m.coaching,
             notes: m.notes,
-            bookmarks: m.bookmarks.map { "\(Receipts.stamp($0.time)) \($0.label.isEmpty ? "Marked moment" : $0.label)" },
-            transcript: m.sortedSegments.map {
-                "[\($0.formattedTimestamp)] \(m.displayName(forSpeaker: $0.speakerLabel)): \($0.text)"
-            })
+            bookmarks: m.bookmarks.map { "\(Receipts.stamp($0.time)) \($0.label.isEmpty ? "Marked moment" : $0.label)" })
     }
 
     // MARK: JSON-RPC
 
     /// One message in, at most one reply out (notifications get none).
-    static func handle(_ message: [String: Any], meetings: [MeetingInfo], chunks: [MemoryChunk]) -> [String: Any]? {
+    static func handle(_ message: [String: Any], source: DataSource) -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
         guard id != nil, !(id is NSNull) else { return nil }   // notification
@@ -121,7 +133,7 @@ enum MCPServer {
             let params = message["params"] as? [String: Any] ?? [:]
             let name = params["name"] as? String ?? ""
             let args = params["arguments"] as? [String: Any] ?? [:]
-            guard let text = call(name, args: args, meetings: meetings, chunks: chunks) else {
+            guard let text = call(name, args: args, source: source) else {
                 return error(-32602, "Unknown tool: \(name)")
             }
             let clipped = text.count > maxToolText ? String(text.prefix(maxToolText)) + "\n…(truncated)" : text
@@ -169,8 +181,10 @@ enum MCPServer {
         ],
     ]
 
-    static func call(_ name: String, args: [String: Any], meetings: [MeetingInfo], chunks: [MemoryChunk]) -> String? {
+    static func call(_ name: String, args: [String: Any], source: DataSource) -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        guard ["list_meetings", "get_meeting", "search_meetings"].contains(name) else { return nil }
+        let meetings = source.meetings()
         switch name {
         case "list_meetings":
             let query = (args["query"] as? String)?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
@@ -197,7 +211,7 @@ enum MCPServer {
             if !m.bookmarks.isEmpty { out += "\n\n## Moments the user marked\n" + m.bookmarks.map { "- \($0)" }.joined(separator: "\n") }
             if !m.notes.isEmpty { out += "\n\n## User's notes\n\(m.notes)" }
             if (args["include_transcript"] as? Bool) == true {
-                out += "\n\n## Transcript\n" + m.transcript.joined(separator: "\n")
+                out += "\n\n## Transcript\n" + source.transcript(m.id).joined(separator: "\n")
             }
             return out
 
@@ -205,7 +219,7 @@ enum MCPServer {
             let query = (args["query"] as? String) ?? ""
             let limit = min(max((args["limit"] as? Int) ?? 8, 1), 30)
             let byID = Dictionary(meetings.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let pool = chunks.filter { byID[$0.meetingID] != nil }
+            let pool = source.chunks().filter { byID[$0.meetingID] != nil }
             let order = MeetingMemory.rank(
                 queryTokens: KnowledgeBaseService.lexicalTokens(query),
                 chunkTokens: pool.map { KnowledgeBaseService.lexicalTokens($0.text) },

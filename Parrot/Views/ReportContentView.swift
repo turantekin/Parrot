@@ -64,8 +64,8 @@ struct ReceiptChip: View {
             Text(Receipts.stamp(line.start))
                 .font(Theme.Typography.receipt)
                 .foregroundStyle(Theme.Colors.accent)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
+                .padding(.horizontal, Theme.Metrics.chipInsetH)
+                .padding(.vertical, Theme.Metrics.chipInsetV)
                 .background(Theme.Colors.accent.opacity(0.12), in: Capsule())
         }
         .buttonStyle(.plain)
@@ -118,7 +118,7 @@ struct ReceiptPopover: View {
                 .padding(.top, 2)
             }
         }
-        .padding(12)
+        .padding(Theme.Metrics.popoverPad)
         .frame(width: 320, alignment: .leading)
     }
 }

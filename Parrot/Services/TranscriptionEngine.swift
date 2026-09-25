@@ -24,6 +24,8 @@ enum AudioSource: CaseIterable {
 /// every segment knows who was talking — no diarization model needed.
 @Observable
 final class TranscriptionEngine {
+    /// Set per recording: the call is on-device only (see CloudGate).
+    var forceLocal = false
     private var whisperKit: WhisperKit?
     /// Silero voice-activity model (FluidAudio, on-device), the last gate
     /// before every decode. Whisper narrates noise ("so", "What can I do?"
@@ -559,7 +561,8 @@ final class TranscriptionEngine {
         // need their key; anything missing falls back to on-device with a
         // visible notice. (Deepgram streaming lands separately; until then it
         // behaves as local.)
-        var backend = TranscriptionBackend.selected
+        // An on-device-only call never uses a cloud engine.
+        var backend = forceLocal ? .local : TranscriptionBackend.selected
         var groqKey: String?
         cloudNotice = nil
         self.meetingStartTime = meetingStartTime

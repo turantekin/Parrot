@@ -116,6 +116,15 @@ enum Theme {
         /// The one content inset: every pane starts at the same edge.
         static let pad: CGFloat = 20
         static let sectionGap: CGFloat = 24
+        /// Popovers, banners and small panels: the inner inset.
+        static let popoverPad: CGFloat = 12
+        /// Space between controls in a toolbar-like row (header buttons).
+        static let controlGap: CGFloat = 12
+        /// Inline pill chips (receipts, citations): horizontal / vertical inset.
+        static let chipInsetH: CGFloat = 6
+        static let chipInsetV: CGFloat = 1
+        /// Banner vertical inset.
+        static let bannerInsetV: CGFloat = 8
     }
 }
 

@@ -35,6 +35,9 @@ extension Notification.Name {
     static let parrotReportBug = Notification.Name("parrotReportBug")
     /// A view asks the Settings window to show one section (see SettingsView.open).
     static let parrotOpenSettingsSection = Notification.Name("parrotOpenSettingsSection")
+    /// Posted (object: the meeting's UUID) just before a meeting is deleted,
+    /// by any path — the UI drops its selection before the model is gone.
+    static let parrotMeetingWillDelete = Notification.Name("parrotMeetingWillDelete")
 }
 
 // MARK: - Shared meeting actions

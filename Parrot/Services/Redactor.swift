@@ -148,6 +148,8 @@ extension Redactor {
             gauges: r.gauges)
         copy.calendarContext = redact(r.calendarContext)
         copy.previousCallContext = redact(r.previousCallContext)
+        copy.previousCallIsPrivate = r.previousCallIsPrivate
+        copy.forceLocal = r.forceLocal
         return copy
     }
 

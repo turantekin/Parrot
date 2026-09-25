@@ -138,6 +138,13 @@ struct MeetingDetailView: View {
         }
         .onDisappear {
             stopPlayback()
+            // Renamed voices, moved or trimmed lines: refresh this meeting's
+            // Ask Parrot index (a no-op when nothing changed).
+            if meeting.status == .done, !meeting.isDeleted {
+                let memory = recordingManager.memory
+                let m = meeting
+                Task { await memory.index(m) }
+            }
         }
         .toolbar {
             ToolbarItemGroup {
@@ -289,7 +296,7 @@ struct MeetingDetailView: View {
                                 .font(Theme.Typography.caption)
                                 .foregroundStyle(Theme.Colors.ink3)
                         }
-                        .padding(12)
+                        .padding(Theme.Metrics.popoverPad)
                         .frame(width: 340, alignment: .leading)
                     }
                 }

@@ -94,6 +94,15 @@ struct ContentView: View {
                 .environment(recordingManager)
                 .environment(appSession)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotMeetingWillDelete)) { note in
+            guard let id = note.object as? UUID else { return }
+            if selectedMeeting?.id == id {
+                selectedMeeting = nil
+                showDashboard = true
+            }
+            if appSession.selectedMeeting?.id == id { appSession.selectedMeeting = nil }
+            if appSession.pendingJump?.meetingID == id { appSession.pendingJump = nil }
+        }
         // Ask Parrot's citations: open that meeting (the detail view seeks).
         .onChange(of: appSession.pendingJump) { _, jump in
             guard let jump else { return }

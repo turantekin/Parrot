@@ -122,6 +122,10 @@ final class CallAnalysisEngine {
     private(set) var calendarContext = ""
     /// "From your last call" open items (see LastCallBrief).
     private(set) var previousCallContext = ""
+    /// Those items came from an on-device-only meeting: never to a cloud brain.
+    private var previousCallIsPrivate = false
+    /// This call is on-device only (see CloudGate): Ollama, no TypeSafe.
+    private(set) var forceLocal = false
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
     private var meCharacters = 0
     private var themCharacters = 0
@@ -155,7 +159,7 @@ final class CallAnalysisEngine {
     }
 
     func start(profile: CallProfile?, brief: String = "", calendarContext: String = "",
-               previousCall: String = "") {
+               previousCall: String = "", previousCallIsPrivate: Bool = false, forceLocal: Bool = false) {
         guard isEnabled else {
             status = .off
             return
@@ -181,6 +185,8 @@ final class CallAnalysisEngine {
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         self.calendarContext = calendarContext
         previousCallContext = previousCall
+        self.previousCallIsPrivate = previousCallIsPrivate
+        self.forceLocal = forceLocal
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
         // Open the TLS connection now so the first excerpt does not pay it.
@@ -395,7 +401,9 @@ final class CallAnalysisEngine {
             kinds: profile?.kinds ?? [],
             gauges: profile?.gauges ?? [],
             calendarContext: calendarContext,
-            previousCallContext: previousCallContext
+            previousCallContext: previousCallContext,
+            previousCallIsPrivate: previousCallIsPrivate,
+            forceLocal: forceLocal
         )
 
         do {
@@ -588,7 +596,7 @@ final class CallAnalysisEngine {
     /// cool-down. Ollama and custom stay local.
     private var fastPathAvailable: Bool {
         docMatcher?.isConfigured == true
-            && !CloudGate.forcesLocal
+            && !CloudGate.forcesLocal && !forceLocal
             && CopilotProviderKind.selected == .claude
             && knowledgeBase.map { !$0.isEmpty } == true
             && Date.now >= fastPathPausedUntil

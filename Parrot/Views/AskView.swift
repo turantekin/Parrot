@@ -137,7 +137,7 @@ struct AskView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, Theme.Metrics.chipInsetH)
         }
     }
 
@@ -151,8 +151,8 @@ struct AskView: View {
                 .font(Theme.Typography.receipt)
                 .foregroundStyle(Theme.Colors.accent)
                 .lineLimit(1)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
+                .padding(.horizontal, Theme.Metrics.chipInsetH)
+                .padding(.vertical, Theme.Metrics.chipInsetV)
                 .background(Theme.Colors.accent.opacity(0.12), in: Capsule())
         }
         .buttonStyle(.plain)
