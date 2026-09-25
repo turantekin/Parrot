@@ -344,6 +344,10 @@ enum HelpShots {
                 .environment(rm).environment(rm.profileStore)
                 .modelContainer(container))
 
+        UserDefaults.standard.register(defaults: ["onboardingStillFrame": true])
+        shot("onboarding-meet-copilot.png", size: .init(width: 600, height: 620),
+             MeetCopilotStep().environment(rm).environment(rm.profileStore))
+
         // Reuses the dashboard shot just written as the attached screenshot, so
         // the guide shows the sheet the way a user meets it.
         shot("bug-report.png", size: .init(width: 460, height: 470),
