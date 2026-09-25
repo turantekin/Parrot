@@ -202,6 +202,43 @@ enum AskEngine {
         return history.isEmpty ? base : "<conversation>\n\(history)\n</conversation>\n\n" + base
     }
 
+    // MARK: Broad questions
+
+    /// "today", "yesterday", "this/last week", "this/last month" (English,
+    /// whole words) as a date range; nil when the question names no time.
+    static func dateRange(in question: String, now: Date, calendar: Calendar = .current) -> DateInterval? {
+        let q = " " + question.lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
+            .joined(separator: " ") + " "
+        func shifted(_ interval: DateInterval?, by unit: Calendar.Component) -> DateInterval? {
+            guard let interval, let start = calendar.date(byAdding: unit, value: -1, to: interval.start) else { return nil }
+            return DateInterval(start: start, end: interval.start)
+        }
+        if q.contains(" last week ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
+        if q.contains(" this week ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
+        if q.contains(" last month ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
+        if q.contains(" this month ") { return calendar.dateInterval(of: .month, for: now) }
+        if q.contains(" yesterday ") {
+            return calendar.date(byAdding: .day, value: -1, to: now).flatMap { calendar.dateInterval(of: .day, for: $0) }
+        }
+        if q.contains(" today ") { return calendar.dateInterval(of: .day, for: now) }
+        return nil
+    }
+
+    /// Best-first hits with at most `perMeeting` from any one meeting, so a
+    /// long call can't fill every slot of a broad question.
+    static func capped(_ hits: [MemoryChunk], perMeeting: Int = 3, total: Int = 12) -> [MemoryChunk] {
+        var counts: [UUID: Int] = [:]
+        var out: [MemoryChunk] = []
+        for hit in hits where out.count < total {
+            let n = counts[hit.meetingID, default: 0]
+            guard n < perMeeting else { continue }
+            counts[hit.meetingID] = n + 1
+            out.append(hit)
+        }
+        return out
+    }
+
     // MARK: Parsing the answer
 
     private static let group: NSRegularExpression = {

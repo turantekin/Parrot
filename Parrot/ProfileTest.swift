@@ -80,6 +80,7 @@ enum ProfileTest {
         testAskChatStore()
         testAskNoAI()
         testAskFollowUps()
+        testAskBroad()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1083,6 +1084,35 @@ enum ProfileTest {
         check("answer: history comes first",
               AskEngine.answerUser(question: "q", context: "c", history: "User: hi").hasPrefix("<conversation>\nUser: hi\n</conversation>"))
         check("answer: system prompt says history is context only", AskEngine.systemPrompt.contains("<conversation>"))
+    }
+
+    @MainActor
+    static func testAskBroad() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.firstWeekday = 2   // Monday
+        // Friday 25 Sep 2026, 15:00 UTC
+        let now = Date(timeIntervalSince1970: 1_790_348_400)
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date { cal.date(from: DateComponents(year: y, month: m, day: d))! }
+        func range(_ q: String) -> DateInterval? { AskEngine.dateRange(in: q, now: now, calendar: cal) }
+
+        check("time words: today", range("what happened today?")?.start == day(2026, 9, 25))
+        check("time words: yesterday", range("Yesterday's call")?.start == day(2026, 9, 24))
+        check("time words: this week", range("promises this week")?.start == day(2026, 9, 21))
+        check("time words: last week", range("what about last week") == DateInterval(start: day(2026, 9, 14), end: day(2026, 9, 21)))
+        check("time words: this month", range("this month's calls")?.start == day(2026, 9, 1))
+        check("time words: last month", range("last month") == DateInterval(start: day(2026, 8, 1), end: day(2026, 9, 1)))
+        check("time words: none", range("what about pricing") == nil)
+        check("time words: whole words only", range("todays numbers") == nil)
+
+        let a = UUID(), b = UUID()
+        let chunks = (0..<5).map { MemoryChunk(meetingID: a, kind: .transcript, start: Double($0), text: "a\($0)", languageRaw: "en") }
+            + (0..<2).map { MemoryChunk(meetingID: b, kind: .transcript, start: Double($0), text: "b\($0)", languageRaw: "en") }
+        let capped = AskEngine.capped(chunks, perMeeting: 3, total: 12)
+        check("cap: at most 3 per meeting", capped.filter { $0.meetingID == a }.count == 3)
+        check("cap: other meetings get their turn", capped.filter { $0.meetingID == b }.count == 2)
+        check("cap: rank order kept", capped.map(\.text) == ["a0", "a1", "a2", "b0", "b1"])
+        check("cap: total limit", AskEngine.capped(chunks, perMeeting: 5, total: 4).count == 4)
     }
 
     static func testDiarizedLabel() {

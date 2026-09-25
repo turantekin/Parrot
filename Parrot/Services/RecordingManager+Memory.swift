@@ -97,18 +97,20 @@ extension RecordingManager {
             }
         }
 
-        let scope: Set<UUID>? = chat.scope.map { [$0] }
-        let hits: [MemoryChunk]
-        if !citedFirst.isEmpty {
-            // Cited meetings first, not only: "and what about Globex?" must
-            // still reach Globex when it isn't among them.
-            let fromCited = await memory.search(searchQuestion, within: scope.map { $0.intersection(citedFirst) } ?? citedFirst,
-                                                excluding: excluded, topK: 8)
-            let fromAll = await memory.search(searchQuestion, within: scope, excluding: excluded, topK: 8)
-            hits = AskEngine.citedFirst(fromCited, fromAll, limit: 8)
-        } else {
-            hits = await memory.search(searchQuestion, within: scope, excluding: excluded, topK: 8)
+        var scope: Set<UUID>? = chat.scope.map { [$0] }
+        if let range = AskEngine.dateRange(in: searchQuestion, now: .now) {
+            let inRange = Set(meetings.filter { range.contains($0.date) }.map(\.id))
+            scope = scope.map { $0.intersection(inRange) } ?? inRange
         }
+        // Rank wide, put the last answer's meetings first (follow-up
+        // fallback), then cap: 12 passages, at most 3 from one meeting.
+        func search(_ within: Set<UUID>?) async -> [MemoryChunk] {
+            await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36)
+        }
+        let all = await search(scope)
+        let ranked = citedFirst.isEmpty ? all
+            : AskEngine.citedFirst(await search(scope.map { $0.intersection(citedFirst) } ?? citedFirst), all, limit: 72)
+        let hits = AskEngine.capped(ranked)
 
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
             byID[id].map { m in
