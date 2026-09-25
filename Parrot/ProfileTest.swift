@@ -76,6 +76,7 @@ enum ProfileTest {
         testRetention()
         testPrivacyLedgerAndConsent()
         testLiveLabelStability()
+        testOnboardingFlow()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2279,5 +2280,49 @@ enum ProfileTest {
         check("consent: round-trip", m.consent?.method == .noticeShared && m.consent?.at == 12)
         check("consent: in the TXT export", ExportService.exportToTXT(meeting: m).contains("Recording consent: recording notice shared at 00:12"))
         check("consent: in the Markdown export", ExportService.exportToMarkdown(meeting: m).contains("> Recording consent: recording notice shared at 00:12"))
+    }
+
+    static func testOnboardingFlow() {
+        let full = OnboardingFlow.steps(mode: .full, path: nil)
+        check("onboarding: full tour, no path yet",
+              full == [.welcome, .permissions, .meetCopilot, .copilotPath, .speechModel, .automatic, .ready])
+        let privatePath = OnboardingFlow.steps(mode: .full, path: .private)
+        check("onboarding: private adds setup after speech",
+              privatePath == [.welcome, .permissions, .meetCopilot, .copilotPath, .speechModel, .copilotSetup, .automatic, .ready])
+        check("onboarding: balanced matches private", OnboardingFlow.steps(mode: .full, path: .balanced) == privatePath)
+        check("onboarding: cloud skips the speech step",
+              OnboardingFlow.steps(mode: .full, path: .cloud) == [.welcome, .permissions, .meetCopilot, .copilotPath, .copilotSetup, .automatic, .ready])
+        check("onboarding: later has no setup step", OnboardingFlow.steps(mode: .full, path: .later) == full)
+        check("onboarding: short tour",
+              OnboardingFlow.steps(mode: .copilot, path: .balanced) == [.meetCopilot, .copilotPath, .copilotSetup, .ready])
+        check("onboarding: short tour before a pick",
+              OnboardingFlow.steps(mode: .copilot, path: nil) == [.meetCopilot, .copilotPath, .ready])
+
+        check("onboarding: next after the path choice", OnboardingFlow.step(1, from: .copilotPath, in: privatePath) == .speechModel)
+        check("onboarding: back from setup", OnboardingFlow.step(-1, from: .copilotSetup, in: privatePath) == .speechModel)
+        check("onboarding: clamps at the end", OnboardingFlow.step(1, from: .ready, in: privatePath) == .ready)
+        check("onboarding: clamps at the start", OnboardingFlow.step(-1, from: .welcome, in: privatePath) == .welcome)
+        check("onboarding: an orphan step lands on the path choice", OnboardingFlow.resolve(.copilotSetup, in: full) == .copilotPath)
+
+        let suite = "parrot.test.onboardingFlow"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        d.set(1, forKey: OnboardingFlow.legacyStepKey)
+        OnboardingFlow.migrateLegacyStep(in: d)
+        check("onboarding: legacy 1 → permissions",
+              d.string(forKey: OnboardingFlow.stepKey) == "permissions" && d.object(forKey: OnboardingFlow.legacyStepKey) == nil)
+        d.removePersistentDomain(forName: suite)
+        d.set(2, forKey: OnboardingFlow.legacyStepKey)
+        OnboardingFlow.migrateLegacyStep(in: d)
+        check("onboarding: legacy model step → meet copilot", d.string(forKey: OnboardingFlow.stepKey) == "meetCopilot")
+        d.set("ready", forKey: OnboardingFlow.stepKey)
+        d.set(0, forKey: OnboardingFlow.legacyStepKey)
+        OnboardingFlow.migrateLegacyStep(in: d)
+        check("onboarding: a saved name wins over the legacy index", d.string(forKey: OnboardingFlow.stepKey) == "ready")
+        d.removePersistentDomain(forName: suite)
+
+        check("fit: 8 GB → base + llama", MachineFit.whisperModel(memoryGB: 8) == "base" && MachineFit.ollamaModel(memoryGB: 8) == "llama3.2:3b")
+        check("fit: 16 GB → turbo + gemma", MachineFit.whisperModel(memoryGB: 16) == "large-v3-turbo" && MachineFit.ollamaModel(memoryGB: 16) == "gemma3:4b")
+        check("fit: bytes round to whole GB", MachineFit.memoryGB(17_179_869_184) == 16)
     }
 }
