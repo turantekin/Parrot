@@ -1795,7 +1795,7 @@ Note: "Yesterday's" becomes "yesterday s" after the letters split, so " yesterda
 
 - [ ] **Step 4: Use them in the search**
 
-In `ask(_:in:progress:)`, replace from `let scope: Set<UUID>? = chat.scope.map { [$0] }` through the second `memory.search` block with:
+In `ask(_:in:progress:)`, replace the search section: from the `let scope: Set<UUID>? = chat.scope.map { [$0] }` line through the line that assigns the final `hits` (Task 6's fix merges cited-meeting hits first with `AskEngine.citedFirst(_:_:limit:)`; keep that behaviour). New section:
 
 ```swift
         var scope: Set<UUID>? = chat.scope.map { [$0] }
@@ -1803,16 +1803,18 @@ In `ask(_:in:progress:)`, replace from `let scope: Set<UUID>? = chat.scope.map {
             let inRange = Set(meetings.filter { range.contains($0.date) }.map(\.id))
             scope = scope.map { $0.intersection(inRange) } ?? inRange
         }
-        // Rank wide, then cap: 12 passages, at most 3 from one meeting.
+        // Rank wide, put the last answer's meetings first (follow-up
+        // fallback), then cap: 12 passages, at most 3 from one meeting.
         func search(_ within: Set<UUID>?) async -> [MemoryChunk] {
-            AskEngine.capped(await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36))
+            await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36)
         }
-        var hits: [MemoryChunk] = []
-        if !citedFirst.isEmpty {
-            hits = await search(scope.map { $0.intersection(citedFirst) } ?? citedFirst)
-        }
-        if hits.isEmpty { hits = await search(scope) }
+        let all = await search(scope)
+        let ranked = citedFirst.isEmpty ? all
+            : AskEngine.citedFirst(await search(scope.map { $0.intersection(citedFirst) } ?? citedFirst), all, limit: 72)
+        let hits = AskEngine.capped(ranked)
 ```
+
+If the current code declares `hits` with `var`, the new `let hits` replaces it; nothing later mutates `hits`.
 
 - [ ] **Step 5: Run the tests**
 
