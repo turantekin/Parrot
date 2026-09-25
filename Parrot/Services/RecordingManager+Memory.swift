@@ -104,30 +104,47 @@ extension RecordingManager {
         let range = AskEngine.dateRange(in: searchQuestion, now: .now)
         let scope = AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
         // Rank wide, put the last answer's meetings first (follow-up
-        // fallback), then cap: 12 passages, at most 3 from one meeting.
+        // fallback), then cap below.
         func search(_ within: Set<UUID>?) async -> [MemoryChunk] {
             await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36)
         }
         let all = await search(scope)
         let ranked = citedFirst.isEmpty ? all
             : AskEngine.citedFirst(await search(scope.map { $0.intersection(citedFirst) } ?? citedFirst), all, limit: 72)
-        let hits = AskEngine.capped(ranked)
+        // A one-meeting chat gets that meeting's report plus up to 12
+        // passages of it; a broad one at most 3 passages per meeting.
+        let hits: [MemoryChunk]
+        if let one = chat.scope {
+            let report = excluded.contains(one) ? []
+                : memory.chunks.filter { $0.meetingID == one && $0.kind == .report }
+            hits = AskEngine.scopedHits(ranked, report: report)
+        } else {
+            hits = AskEngine.capped(ranked)
+        }
 
+        func people(_ m: Meeting) -> [String] {
+            m.attendees.map(\.displayName).filter { !$0.isEmpty } + m.speakerNames.values.filter { !$0.isEmpty }
+        }
         let meta = Dictionary(uniqueKeysWithValues: Set(hits.map(\.meetingID)).compactMap { id in
-            byID[id].map { m in
-                (id, (title: m.title, date: m.date,
-                      people: m.attendees.map(\.displayName).filter { !$0.isEmpty }
-                        + m.speakerNames.values.filter { !$0.isEmpty }))
-            }
+            byID[id].map { m in (id, (title: m.title, date: m.date, people: people(m))) }
         })
         let (context, refs) = AskEngine.context(for: hits, meetings: meta)
-        let privateNote = excluded.isEmpty ? nil
-            : "On-device-only meetings aren't searched when the answer comes from a cloud AI."
+        // A chat about all meetings also gets the list of them, for "how
+        // many / how long / with whom" questions passages can't answer.
+        let listed = chat.scope != nil ? [] : meetings.filter {
+            $0.status == .done && !excluded.contains($0.id) && (range?.contains($0.date) ?? true)
+        }
+        let meetingList = AskEngine.meetingList(listed.map { ($0.title, $0.date, $0.duration, people($0)) },
+                                                limit: local ? 60 : 150)
+        let privateNote = AskEngine.privateNote(skipsPrivate: !excluded.isEmpty, messages: chat.messages)
         let searchedFor = searchQuestion == question ? nil : searchQuestion
-        let usedPrivate = AskEngine.answerIsPrivate(hitMeetingIDs: Set(hits.map(\.meetingID)), messages: chat.messages,
-                                                    privateIDs: privateIDs, local: local)
+        // ponytail: any private meeting in a local AI's list marks the answer
+        // private (it could name it); per-line tracking if that over-marks.
+        let usedPrivate = AskEngine.answerIsPrivate(hitMeetingIDs: Set(hits.map(\.meetingID) + listed.map(\.id)),
+                                                    messages: chat.messages, privateIDs: privateIDs, local: local)
 
-        guard !hits.isEmpty else {
+        // A count question can find no passages yet still be answered from the list.
+        guard !hits.isEmpty || (aiUsable && !meetingList.isEmpty) else {
             return AskEngine.Result(lines: [AskEngine.Line(text: "Nothing in your meetings matches that yet.", citations: [])],
                                     sources: [], refs: [], answeredByAI: false, note: privateNote, searchedFor: searchedFor)
         }
@@ -141,7 +158,8 @@ extension RecordingManager {
         progress("Writing…")
         do {
             let answer = try await complete(AskEngine.systemPrompt,
-                                            AskEngine.answerUser(question: question, context: context, history: history), 700)
+                                            AskEngine.answerUser(question: question, context: context,
+                                                                 history: history, meetingList: meetingList), 700)
             let lines = AskEngine.parse(answer, refs: refs) { id, time in
                 byID[id]?.receiptIndex.resolve(time) != nil
             }

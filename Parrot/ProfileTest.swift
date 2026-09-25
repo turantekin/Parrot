@@ -82,6 +82,7 @@ enum ProfileTest {
         testAskFollowUps()
         testAskBroad()
         testAskFinalFixes()
+        testAskRealTestFixes()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -1174,6 +1175,70 @@ enum ProfileTest {
         check("rewrite: SAME. with punctuation still counts", AskEngine.parseRewrite("Same.", original: "Q?") == "Q?")
         check("rewrite: lead-in line skipped",
               AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
+    }
+
+    static func testAskRealTestFixes() {
+        // 1. A one-meeting chat: report first, no duplicates, limit on the rest.
+        let one = UUID()
+        let report = (0..<4).map { i in MemoryChunk(meetingID: one, kind: .report, start: 0, text: "r\(i)", languageRaw: "en") }
+        let ranked = [report[1]] + (0..<20).map { i in
+            MemoryChunk(meetingID: one, kind: .transcript, start: TimeInterval(i), text: "t\(i)", languageRaw: "en") }
+        let scoped = AskEngine.scopedHits(ranked, report: report, limit: 5)
+        check("scoped: report chunks come first", scoped.prefix(3).map(\.id) == report.prefix(3).map(\.id))
+        check("scoped: no duplicate ids", Set(scoped.map(\.id)).count == scoped.count)
+        check("scoped: limit counts only the passages after the report", scoped.count == 3 + 5)
+        check("scoped: no report gives the first ranked chunks",
+              AskEngine.scopedHits(ranked, report: []).map(\.id) == ranked.prefix(12).map(\.id))
+
+        // 2. The meeting list.
+        let cal = Calendar.current
+        let sep23 = cal.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 10, minute: 59))!
+        let sep22 = cal.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 9, minute: 5))!
+        let sep21 = cal.date(from: DateComponents(year: 2026, month: 9, day: 21, hour: 14, minute: 0))!
+        let items: [(title: String, date: Date, duration: TimeInterval, people: [String])] = [
+            ("Standup", sep22, 30, []),
+            ("Meeting <Revolut>", sep23, 22 * 60 + 20, ["Mac", "Uygar", "Mac"]),
+            ("Old one", sep21, 3600, ["Ana"]),
+        ]
+        let list = AskEngine.meetingList(items, limit: 2)
+        let rows = list.components(separatedBy: "\n")
+        check("list: newest first, line format",
+              rows.first == "- 23 Sep 2026 10:59, 22 min, \"Meeting ‹Revolut›\", with Mac, Uygar")
+        check("list: no people, under a minute", rows.dropFirst().first == "- 22 Sep 2026 09:05, under 1 min, \"Standup\"")
+        check("list: cut list says how many are left out", rows.count == 3 && rows.last == "(1 older meetings not listed)")
+        check("list: full list has no cut line", !AskEngine.meetingList(items, limit: 3).contains("not listed"))
+        check("list: empty input gives nothing", AskEngine.meetingList([], limit: 5) == "")
+        let withList = AskEngine.answerUser(question: "q", context: "c", history: "", meetingList: "- a meeting")
+        check("list: request carries the list between excerpts and question",
+              withList.contains("</meeting_excerpts>\n\n<meeting_list>\n- a meeting\n</meeting_list>\n\nQuestion: q"))
+        check("list: no list, no block", !AskEngine.answerUser(question: "q", context: "c", history: "").contains("<meeting_list>"))
+        check("list: system prompt explains the list", AskEngine.systemPrompt.contains("<meeting_list>"))
+
+        // 3. Local-model stamps and junk brackets.
+        let solo = UUID(), other = UUID()
+        let soloRefs = [AskEngine.MeetingRef(ref: "M1", meetingID: solo, title: "t", date: .now, people: [])]
+        check("parse: bare stamps attach to the only meeting",
+              AskEngine.parseGroup("03:52, 04:04", refs: ["M1": solo])?.map { $0.1 } == [232, 244])
+        check("parse: bare stamps with several meetings are not citations",
+              AskEngine.parseGroup("03:52", refs: ["M1": solo, "M2": other]) == nil)
+        let gemma = AskEngine.parse("Pricing came up [03:52, 04:04]. See [Report - Various timestamps]. They said [sic] it.",
+                                    refs: soloRefs) { _, _ in true }
+        check("parse: bare stamps become citations", gemma.first?.citations.count == 2)
+        check("parse: junk citation-like bracket removed", gemma.first.map { !$0.text.contains("Report") } == true)
+        check("parse: other brackets kept", gemma.first?.text == "Pricing came up. See. They said [sic] it.")
+
+        // 4. "That meeting" is the one just discussed.
+        check("rewrite: that call means the last one discussed",
+              AskEngine.rewriteSystemPrompt.contains("\"what did we decide in that call?\" -> What did we decide in the Acme pricing call?"))
+
+        // 5. The private-meeting note once per chat.
+        var noted = AskMessage(role: .parrot, text: "a")
+        noted.note = AskEngine.privateNoteText
+        check("note: first cloud answer gets the private note",
+              AskEngine.privateNote(skipsPrivate: true, messages: []) == AskEngine.privateNoteText)
+        check("note: not repeated in the same chat",
+              AskEngine.privateNote(skipsPrivate: true, messages: [AskMessage(role: .me, text: "q"), noted]) == nil)
+        check("note: none when nothing is skipped", AskEngine.privateNote(skipsPrivate: false, messages: []) == nil)
     }
 
     static func testDiarizedLabel() {

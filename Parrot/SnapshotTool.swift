@@ -871,7 +871,8 @@ enum AskChatTest {
         Task { @MainActor in
             for m in [acme, globex] { await rm.memory.index(m) }
             var chat = AskChat(title: "Harness", scope: nil, scopeTitle: nil)
-            for q in ["What did Acme push back on?", "And what did we offer them?", "What did I promise this week?"] {
+            for q in ["What did Acme push back on?", "And what did we offer them?", "What did I promise this week?",
+                      "How many meetings did I have this week?"] {
                 let started = Date()
                 let result = await rm.ask(q, in: chat)
                 let secs = String(format: "%.1f", Date().timeIntervalSince(started))
