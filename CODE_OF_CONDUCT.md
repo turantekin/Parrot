@@ -16,7 +16,7 @@ experience, background, identity or how good your Swift is.
 
 ## If something's wrong
 
-Email Uygar at uygar+parrot@turantekin.co.uk. Reports are kept private. The
+Email Uygar at uygar@openparrot.app. Reports are kept private. The
 maintainer may edit or remove comments, close threads, or ban people who
 don't follow this, and will explain why where it's safe to.
 
