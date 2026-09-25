@@ -151,6 +151,12 @@ struct CallDetector {
         "com.apple.speech",
         "com.apple.assistantd",
         "com.apple.corespeechd",
+        // corespeechd's bundle id: Siri joins whenever any app opens the mic,
+        // Parrot's own recording included, so a call could never "end".
+        "com.apple.CoreSpeech",
+        // ScreenCaptureKit's daemon: Parrot's own system-audio fallback
+        // (silent-tap rescue) shows up as an input user during recordings.
+        "com.apple.replayd",
         "com.apple.Siri",
         "com.apple.accessibility.heard",
         "com.apple.accessibility.AccessibilityUIServer",

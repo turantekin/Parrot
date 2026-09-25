@@ -49,7 +49,9 @@ enum AskEngine {
 
         Cite every fact with its meeting and the timestamp of the line that \
         supports it, in square brackets exactly like [M2 12:34] (two moments: \
-        [M2 12:34, M3 05:10]). Never invent a timestamp or a meeting. If the \
+        [M2 12:34, M3 05:10]). The M1, M2 labels go only inside those brackets; \
+        in your sentences, name a meeting by its title or date. Never invent a \
+        timestamp or a meeting. If the \
         excerpts don't answer the question, say you couldn't find it in their \
         meetings — don't guess. Be brief: one to five sentences, or a short \
         "-" bullet list for several items. Answer in the language of the question.
@@ -154,7 +156,7 @@ enum AskEngine {
                 }
             }
             kept += ns.substring(from: cursor)
-            let text = kept.replacingOccurrences(of: "  ", with: " ")
+            let text = unlabel(kept, refs: refs).replacingOccurrences(of: "  ", with: " ")
                 .replacingOccurrences(of: " .", with: ".")
                 .replacingOccurrences(of: " ,", with: ",")
                 .trimmingCharacters(in: .whitespaces)
@@ -162,6 +164,25 @@ enum AskEngine {
             lines.append(Line(text: text, citations: cites))
         }
         return lines
+    }
+
+    private static let bareRef: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: #"\bM\d+\b"#)
+    }()
+
+    /// "M1" is our label, not a word the user knows: a bare one left in
+    /// the prose (outside a citation) becomes "the 1 Aug call".
+    static func unlabel(_ text: String, refs: [MeetingRef]) -> String {
+        let ns = text as NSString
+        var out = text
+        for m in bareRef.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let label = ns.substring(with: m.range)
+            guard let ref = refs.first(where: { $0.ref == label }),
+                  let range = Range(m.range, in: out) else { continue }
+            out.replaceSubrange(range, with: "the \(ref.date.formatted(.dateTime.day().month(.abbreviated))) call")
+        }
+        return out
     }
 
     /// The fallback when no AI answers: the best moments themselves.

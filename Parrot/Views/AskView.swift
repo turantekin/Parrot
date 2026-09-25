@@ -117,7 +117,7 @@ struct AskView: View {
             }
         }
 
-        if result.answeredByAI, !result.sources.isEmpty {
+        if result.answeredByAI, !sourceMeetings(result).isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("From")
                     .font(Theme.Typography.sectionLabel)
@@ -142,8 +142,14 @@ struct AskView: View {
     }
 
     private func citationChip(_ cite: AskEngine.Citation, refs: [AskEngine.MeetingRef]) -> some View {
-        let title = refs.first { $0.meetingID == cite.meetingID }?.title ?? "Meeting"
-        let label = cite.time.map { "\(Self.short(title)) · \(Receipts.stamp($0))" } ?? Self.short(title)
+        let ref = refs.first { $0.meetingID == cite.meetingID }
+        let title = ref?.title ?? "Meeting"
+        // Auto titles all start "Meeting …": name those by when they happened.
+        let name = ref.map { $0.title == Meeting.defaultTitle(for: $0.date)
+            ? "\($0.date.formatted(.dateTime.day().month(.abbreviated))) \($0.date.formatted(date: .omitted, time: .shortened))"
+            : Self.short($0.title) } ?? title
+        // Stamp first: the chip truncates its tail.
+        let label = cite.time.map { "\(Receipts.stamp($0)) · \(name)" } ?? name
         return Button {
             open(cite.meetingID, at: cite.time)
         } label: {
@@ -195,8 +201,8 @@ struct AskView: View {
 
     private func sourceMeetings(_ result: AskEngine.Result) -> [AskEngine.MeetingRef] {
         let used = Set(result.lines.flatMap { $0.citations.map(\.meetingID) })
-        let cited = result.refs.filter { used.contains($0.meetingID) }
-        return cited.isEmpty ? result.refs : cited
+        // Only meetings the answer cites: a "couldn't find it" answer used none.
+        return result.refs.filter { used.contains($0.meetingID) }
     }
 
     private var privacyLine: String {

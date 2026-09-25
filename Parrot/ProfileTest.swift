@@ -1532,6 +1532,8 @@ enum ProfileTest {
         check("Parrot itself ignored", D.relevantApps(["com.uygar.parrot"], ignored: []).isEmpty)
         check("Siri/dictation ignored", D.relevantApps(["com.apple.SpeechRecognitionCore.speechrecognitiond",
                                                         "com.apple.assistantd"], ignored: []).isEmpty)
+        check("Parrot's own side processes ignored",
+              D.relevantApps(["com.apple.CoreSpeech", "com.apple.replayd"], ignored: []).isEmpty)
         check("user-ignored app dropped", D.relevantApps(["us.zoom.xos"], ignored: ["us.zoom.xos"]).isEmpty)
         check("ignoring Chrome covers its helper",
               D.relevantApps(["com.google.Chrome.helper"], ignored: ["com.google.Chrome"]).isEmpty)
@@ -1861,6 +1863,9 @@ enum ProfileTest {
         check("ask: both citations kept", lines.first?.citations.count == 2)
         check("ask: invented moment dropped", lines.dropFirst().first?.citations.isEmpty == true)
         check("ask: non-citation brackets kept", lines.last?.text.contains("[sic]") == true)
+        let leaked = AskEngine.parse("The prospect in M2 asked for it [M2 12:34].", refs: refs) { _, _ in true }
+        check("ask: bare meeting label becomes a date", leaked.first.map {
+            !$0.text.contains("M2") && $0.text.contains("call") && $0.citations.count == 1 } == true)
         let fallback = AskEngine.excerptLines(hits)
         check("ask: fallback lines cite their moment",
               fallback.first?.citations.first == AskEngine.Citation(meetingID: acme, time: 754))

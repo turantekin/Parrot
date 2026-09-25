@@ -158,7 +158,10 @@ struct LiveRecordingView: View {
                 .font(.appHeadline)
                 .foregroundStyle(consent == nil && remindConsent ? Theme.Colors.warn : Theme.Colors.ink2)
         }
-        .menuStyle(.borderlessButton)
+        // Not .borderlessButton: that style repaints the label in the
+        // control color, and the orange reminder never showed.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .help(consent?.summary.capitalizedFirst ?? "Tell everyone the call is recorded, and keep a record of it")
