@@ -41,6 +41,9 @@ struct KeyCheckField: View {
                 .font(Theme.Typography.secondary)
         }
         .task {
+            // The help-shot harness sets this so screenshots never read the
+            // Keychain or call a cloud service.
+            guard !UserDefaults.standard.bool(forKey: "onboardingNoKeyPrefill") else { return }
             let stored = service.keychainAccount.map { APIKeyStore.load(account: $0) } ?? APIKeyStore.load()
             if let stored, !stored.isEmpty, key.isEmpty {
                 key = stored

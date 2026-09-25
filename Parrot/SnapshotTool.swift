@@ -352,6 +352,7 @@ enum HelpShots {
         shot("onboarding-path.png", size: .init(width: 600, height: 620),
              CopilotPathStep().environment(OnboardingModel()))
 
+        UserDefaults.standard.register(defaults: ["onboardingNoKeyPrefill": true])
         for variant in ["private", "balanced", "cloud"] {
             UserDefaults.standard.register(defaults: [CopilotPath.defaultsKey: variant])
             shot("onboarding-setup-\(variant).png", size: .init(width: 600, height: 620),
