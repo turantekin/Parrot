@@ -38,6 +38,8 @@ final class RecordingManager {
     /// The local Ollama server and its one model pull, shared by onboarding,
     /// Settings and the Home card.
     let ollama = OllamaService()
+    /// Installs the Ollama app from inside Parrot (onboarding, private path).
+    let ollamaInstaller = OllamaInstaller()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""

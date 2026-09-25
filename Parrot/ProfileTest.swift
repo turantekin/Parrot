@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import Security
 
 /// Offscreen logic harness. Run: `.build/debug/Parrot --profile-test`
 /// Prints PASS/FAIL per check and exits non-zero on any failure.
@@ -81,6 +82,7 @@ enum ProfileTest {
         testProviderKeyCheck()
         testProgressStall()
         testOllamaService()
+        testOllamaInstaller()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2455,5 +2457,22 @@ enum ProfileTest {
         let service = OllamaService()
         check("ollama: starts checking, not pulling", service.status == .checking && !service.isPulling && service.pullProgress == nil)
         check("ollama: checking isn't a running server", !service.isServerUp)
+    }
+
+    static func testOllamaInstaller() {
+        let team = OllamaInstaller.teamID
+        check("installer: team id is a real one",
+              team.count == 10 && team.allSatisfy { $0.isNumber || ($0.isLetter && $0.isUppercase) })
+        check("installer: bundle id is filled in", OllamaInstaller.bundleID.contains("."))
+        var requirement: SecRequirement?
+        check("installer: requirement compiles",
+              SecRequirementCreateWithString(OllamaInstaller.requirement as CFString, [], &requirement) == errSecSuccess)
+        check("installer: an Apple app is not Ollama",
+              !OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
+        check("installer: a missing file is not Ollama",
+              !OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: "/nonexistent/Ollama.app")))
+        if let path = ProcessInfo.processInfo.environment["PARROT_OLLAMA_APP"] {
+            check("installer: the real download passes", OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: path)))
+        }
     }
 }
