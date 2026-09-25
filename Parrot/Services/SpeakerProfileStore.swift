@@ -32,13 +32,29 @@ enum SpeakerProfileStore {
         (try? context.fetch(FetchDescriptor<SpeakerProfile>(sortBy: [SortDescriptor(\.name)]))) ?? []
     }
 
-    /// Best remembered voice at/above the threshold, or nil.
-    static func match(_ embedding: [Float], in context: ModelContext) -> (name: String, similarity: Float)? {
+    /// Best remembered voice at/above the threshold, or nil. With a calendar
+    /// invite, only voices whose name is on it: a wrong name is worse than
+    /// "Speaker 2", and the invite says who can be on the call.
+    static func match(_ embedding: [Float], in context: ModelContext,
+                      invited: [String] = []) -> (name: String, similarity: Float)? {
         let best = profiles(in: context)
+            .filter { invited.isEmpty || isInvited($0.name, invited) }
             .map { (name: $0.name, similarity: cosine(embedding, $0.embedding)) }
             .max { $0.similarity < $1.similarity }
         guard let best, best.similarity >= suggestThreshold else { return nil }
         return best
+    }
+
+    /// "Gürkan" is on an invite listing "Gurkan Yilmaz" or gurkan@acme.com:
+    /// any shared name word, ignoring case and accents.
+    nonisolated static func isInvited(_ name: String, _ invited: [String]) -> Bool {
+        func words(_ s: String) -> Set<String> {
+            Set(s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+                .components(separatedBy: CharacterSet.letters.inverted)
+                .filter { $0.count >= 2 })
+        }
+        let mine = words(name)
+        return invited.contains { !words($0).isDisjoint(with: mine) }
     }
 
     /// Create or reinforce the profile named `name` with one more voice sample.

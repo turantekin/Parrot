@@ -117,6 +117,15 @@ final class CallAnalysisEngine {
     let provider: AnalysisProvider
     /// The user's one-liner for this call; the prompt carries it as "Brief for this specific call".
     private(set) var callBrief = ""
+    /// The matched calendar invite, when the user shares it with the copilot
+    /// (see AnalysisRequest.calendarContext).
+    private(set) var calendarContext = ""
+    /// "From your last call" open items (see LastCallBrief).
+    private(set) var previousCallContext = ""
+    /// Those items came from an on-device-only meeting: never to a cloud brain.
+    private var previousCallIsPrivate = false
+    /// This call is on-device only (see CloudGate): Ollama, no TypeSafe.
+    private(set) var forceLocal = false
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
     private var meCharacters = 0
     private var themCharacters = 0
@@ -149,7 +158,8 @@ final class CallAnalysisEngine {
         UserDefaults.standard.bool(forKey: "copilotEnabled")
     }
 
-    func start(profile: CallProfile?, brief: String = "") {
+    func start(profile: CallProfile?, brief: String = "", calendarContext: String = "",
+               previousCall: String = "", previousCallIsPrivate: Bool = false, forceLocal: Bool = false) {
         guard isEnabled else {
             status = .off
             return
@@ -173,6 +183,10 @@ final class CallAnalysisEngine {
         sentiment = [:]; sentimentRead = nil; coachLine = nil
         activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.calendarContext = calendarContext
+        previousCallContext = previousCall
+        self.previousCallIsPrivate = previousCallIsPrivate
+        self.forceLocal = forceLocal
         isActive = true
         status = provider.isConfigured ? .listening : .needsAPIKey
         // Open the TLS connection now so the first excerpt does not pay it.
@@ -385,7 +399,11 @@ final class CallAnalysisEngine {
             persona: profile?.persona ?? "",
             counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
-            gauges: profile?.gauges ?? []
+            gauges: profile?.gauges ?? [],
+            calendarContext: calendarContext,
+            previousCallContext: previousCallContext,
+            previousCallIsPrivate: previousCallIsPrivate,
+            forceLocal: forceLocal
         )
 
         do {
@@ -578,6 +596,7 @@ final class CallAnalysisEngine {
     /// cool-down. Ollama and custom stay local.
     private var fastPathAvailable: Bool {
         docMatcher?.isConfigured == true
+            && !CloudGate.forcesLocal && !forceLocal
             && CopilotProviderKind.selected == .claude
             && knowledgeBase.map { !$0.isEmpty } == true
             && Date.now >= fastPathPausedUntil
@@ -743,11 +762,11 @@ final class CallAnalysisEngine {
     /// buying-signal vs timeline-gap on the same launch = 0.66). Rewording that
     /// slips past this token check is handled model-side via the required
     /// "supersedes" field, which the engine filter above enforces.
-    nonisolated static func isNearDuplicate(_ a: String, _ b: String) -> Bool {
+    nonisolated static func isNearDuplicate(_ a: String, _ b: String, threshold: Double = 0.6) -> Bool {
         let ta = significantTokens(a), tb = significantTokens(b)
         guard !ta.isEmpty, !tb.isEmpty else { return false }
         let overlap = Double(ta.intersection(tb).count)
-        return overlap / Double(min(ta.count, tb.count)) >= 0.6
+        return overlap / Double(min(ta.count, tb.count)) >= threshold
     }
 
     private nonisolated static let stopWords: Set<String> = [

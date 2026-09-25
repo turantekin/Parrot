@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// page on the right. Content rules: controls at body size, hints one line at
 /// secondary size — long explanations live in the control's own label instead.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, recording, transcription, copilot, apiKeys, knowledge, profiles
+    case general, recording, transcription, copilot, apiKeys, knowledge, profiles, connections, privacy
 
     var id: String { rawValue }
 
@@ -19,6 +19,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .apiKeys: "API Keys"
         case .knowledge: "Knowledge"
         case .profiles: "Profiles"
+        case .connections: "Connections"
+        case .privacy: "Privacy"
         }
     }
 
@@ -31,6 +33,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .apiKeys: "key"
         case .knowledge: "books.vertical"
         case .profiles: "person.2"
+        case .connections: "arrow.triangle.branch"
+        case .privacy: "lock.shield"
         }
     }
 }
@@ -70,6 +74,8 @@ struct SettingsView: View {
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
     @AppStorage("rememberVoices") private var rememberVoices = false
+    @AppStorage(RecordingManager.globalMarkHotKeyDefaultsKey) private var globalMarkHotKey = true
+    @AppStorage("liveSpeakerLabels") private var liveSpeakerLabels = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
     @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
@@ -166,6 +172,8 @@ struct SettingsView: View {
                 case .apiKeys: apiKeysPage
                 case .knowledge: knowledgePage
                 case .profiles: ProfilesSettingsView()
+                case .connections: ConnectionsSettingsPage()
+                case .privacy: PrivacySettingsPage()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -200,6 +208,10 @@ struct SettingsView: View {
     private var generalPage: some View {
         let path = AudioCaptureManager.storageDirectory().path
         return SettingsPage {
+            SettingsCard(title: "Startup") {
+                LoginItemRow(first: true)
+            }
+
             SettingsCard(title: "Appearance") {
                 SettingsLabeledRow(title: "Appearance", first: true) {
                     Picker("", selection: $appearance) {
@@ -280,6 +292,20 @@ struct SettingsView: View {
                 SettingsRow(first: true) {
                     Hint("System audio comes straight from macOS (audio only, never the screen); the microphone uses your default input device.")
                 }
+            }
+
+            CallDetectionCard()
+
+            CalendarCard()
+
+            SettingsCard(title: "Bookmarks") {
+                SettingsToggleRow(
+                    title: "Mark moments from any app with \(GlobalHotKey.Combo.markMoment.display)",
+                    detail: "While a call records, \(GlobalHotKey.Combo.markMoment.display) marks the moment even when Zoom or your browser is in front. Parrot only hears that one shortcut, never other keys, and only during a recording.",
+                    first: true,
+                    isOn: $globalMarkHotKey
+                )
+                .onChange(of: globalMarkHotKey) { recordingManager.refreshMarkHotKey() }
             }
         }
     }
@@ -364,6 +390,11 @@ struct SettingsView: View {
                         .disabled(diarizerDownloading)
                     }
                 }
+                SettingsToggleRow(
+                    title: "Live speaker labels",
+                    detail: "Experimental. During a call, tells the other people apart every 30 seconds instead of waiting for the end. The final pass when the call ends is still the accurate one.",
+                    isOn: $liveSpeakerLabels
+                )
                 SettingsToggleRow(
                     title: "Remember voices",
                     detail: "When on, naming a speaker saves their voiceprint on this Mac so future calls can suggest who's talking. Never leaves your Mac; delete anytime.",

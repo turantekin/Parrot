@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SwiftData
 
 /// Which pane the live side panel shows.
@@ -23,6 +24,12 @@ struct LiveRecordingView: View {
     @AppStorage("copilotEnabled") private var copilotEnabled = false
     @AppStorage("liveSideTab") private var sideTabRaw = LiveSideTab.transcript.rawValue
     @AppStorage("liveSideCollapsed") private var sideCollapsed = false
+    /// The mark just made from the Mark button — drives the label popover.
+    @State private var labelingMark: Bookmark?
+    @State private var markLabel = ""
+    /// "Marked 12:34" confirmation, whichever path marked (button, menu,
+    /// the ⌃⌥M hotkey from another app).
+    @State private var markFlash: String?
 
     private var sideTab: LiveSideTab { LiveSideTab(rawValue: sideTabRaw) ?? .transcript }
 
@@ -86,6 +93,12 @@ struct LiveRecordingView: View {
 
             Spacer()
 
+            consentButton
+                .padding(.trailing, Theme.Metrics.controlGap)
+
+            markButton
+                .padding(.trailing, Theme.Metrics.controlGap)
+
             // Copilot panel toggle
             if copilotEnabled {
                 Button {
@@ -119,6 +132,98 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Theme.Metrics.pad)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Consent
+
+    @AppStorage(Consent.remindKey) private var remindConsent = true
+
+    private var consent: Consent? { recordingManager.currentMeeting?.consent }
+
+    /// Copies the recording notice for the call chat, or notes a spoken
+    /// OK. Orange until used when the reminder is on.
+    private var consentButton: some View {
+        Menu {
+            Button("Copy Recording Notice for the Chat") {
+                recordingManager.recordConsent(.noticeShared)
+            }
+            Button("Everyone Agreed Out Loud") {
+                recordingManager.recordConsent(.verbal)
+            }
+            Divider()
+            Text(Consent.currentNotice)
+        } label: {
+            Label(consent == nil ? "Consent" : "Consent noted",
+                  systemImage: consent == nil ? "person.wave.2" : "checkmark.shield")
+                .font(.appHeadline)
+                .foregroundStyle(consent == nil && remindConsent ? Theme.Colors.warn : Theme.Colors.ink2)
+        }
+        // Not .borderlessButton: that style repaints the label in the
+        // control color, and the orange reminder never showed.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(consent?.summary.capitalizedFirst ?? "Tell everyone the call is recorded, and keep a record of it")
+    }
+
+    // MARK: - Mark moment
+
+    private var markCount: Int { recordingManager.currentMeeting?.bookmarks.count ?? 0 }
+
+    private var markButton: some View {
+        HStack(spacing: 6) {
+            if let markFlash {
+                Text(markFlash)
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.accent)
+                    .transition(.opacity)
+            }
+            Button {
+                if let mark = recordingManager.markMoment() {
+                    markLabel = ""
+                    labelingMark = mark
+                }
+            } label: {
+                Label(markCount > 0 ? "Mark (\(markCount))" : "Mark",
+                      systemImage: markCount > 0 ? "bookmark.fill" : "bookmark")
+                    .font(.appHeadline)
+                    .foregroundStyle(Theme.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(recordingManager.isStopping)
+            .help("Mark this moment for the report (\(GlobalHotKey.Combo.markMoment.display) works from any app)")
+            .popover(item: $labelingMark, arrowEdge: .bottom) { mark in
+                markLabelPopover(mark)
+            }
+        }
+        .onChange(of: recordingManager.lastMarked) { _, mark in
+            guard let mark else { return }
+            withAnimation { markFlash = "Marked \(Receipts.stamp(mark.time))" }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { if markFlash == "Marked \(Receipts.stamp(mark.time))" { markFlash = nil } }
+            }
+        }
+    }
+
+    /// Optional label for a fresh mark. Return saves; clicking away keeps
+    /// whatever was typed (the mark itself already exists).
+    private func markLabelPopover(_ mark: Bookmark) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Marked \(Receipts.stamp(mark.time))")
+                .font(Theme.Typography.cardTitle)
+                .foregroundStyle(Theme.Colors.ink)
+            TextField("What's happening here? (optional)", text: $markLabel)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit { labelingMark = nil }
+        }
+        .padding(Theme.Metrics.popoverPad)
+        .onDisappear {
+            let label = markLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !label.isEmpty { recordingManager.labelMoment(mark.id, label: label) }
+        }
     }
 
     // MARK: - Device Bar
@@ -299,7 +404,9 @@ struct LiveRecordingView: View {
                             ChatBubbleRow(
                                 segment: segment,
                                 isFirstOfGroup: index == 0
-                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel
+                                    || displayedSegments[index - 1].speakerLabel != segment.speakerLabel,
+                                speakerSuggestions: recordingManager.liveSpeakerSuggestions,
+                                meeting: recordingManager.currentMeeting
                             )
                             .id(segment.id)
                         }
@@ -433,16 +540,46 @@ private struct BottomDistancePreferenceKey: PreferenceKey {
 struct ChatBubbleRow: View {
     let segment: TranscriptSegment
     let isFirstOfGroup: Bool
+    /// Live voiceprint suggestions (label → known name) from the sweep. The
+    /// "?" suffix keeps it a suggestion — the stored label stays neutral until
+    /// the user confirms (tap the label, or the post-call naming flow).
+    var speakerSuggestions: [String: String] = [:]
+    /// Set during live recording: makes non-Me labels tappable to name the
+    /// voice mid-call (popover without clips — the voice is audibly live).
+    var meeting: Meeting? = nil
+    @State private var naming = false
 
     private var isMe: Bool { segment.speakerLabel == "Me" }
+
+    private var displayLabel: String {
+        guard let label = segment.speakerLabel else { return "Speaker" }
+        if let assigned = meeting?.speakerNames[label] { return assigned }
+        if let known = speakerSuggestions[label] { return "\(known)?" }
+        return label
+    }
 
     var body: some View {
         VStack(alignment: isMe ? .trailing : .leading, spacing: 3) {
             if isFirstOfGroup {
                 HStack(spacing: 6) {
-                    Text(segment.speakerLabel ?? "Speaker")
-                        .font(.appCaption.weight(.medium))
-                        .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
+                    if let meeting, let label = segment.speakerLabel, !isMe,
+                       label != AudioSource.them.label {
+                        Button { naming = true } label: {
+                            Text(displayLabel)
+                                .font(.appCaption.weight(.medium))
+                                .foregroundStyle(Theme.Colors.ink2)
+                                .underline(meeting.speakerNames[label] == nil, pattern: .dot)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Name this voice")
+                        .popover(isPresented: $naming, arrowEdge: .bottom) {
+                            SpeakerNamePopover(meeting: meeting, label: label)
+                        }
+                    } else {
+                        Text(displayLabel)
+                            .font(.appCaption.weight(.medium))
+                            .foregroundStyle(isMe ? Theme.Colors.accent : Theme.Colors.ink2)
+                    }
                     Text(segment.formattedTimestamp)
                         .font(Theme.Typography.mono(11))
                         .foregroundStyle(Theme.Colors.ink3)

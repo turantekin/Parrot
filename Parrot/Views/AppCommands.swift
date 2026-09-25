@@ -8,6 +8,22 @@ import SwiftData
 @Observable @MainActor
 final class AppSession {
     var selectedMeeting: Meeting?
+
+    /// "Open this meeting at this moment" — from Ask Parrot's citations.
+    /// ContentView selects the meeting; MeetingDetailView seeks and clears it.
+    struct Jump: Equatable {
+        let meetingID: UUID
+        let time: TimeInterval?
+    }
+    var pendingJump: Jump?
+
+    /// Ask Parrot sheet request; `scope` nil = all meetings.
+    struct AskRequest: Identifiable, Equatable {
+        let id = UUID()
+        let scope: UUID?
+        let scopeTitle: String?
+    }
+    var askRequest: AskRequest?
 }
 
 extension Notification.Name {
@@ -19,6 +35,9 @@ extension Notification.Name {
     static let parrotReportBug = Notification.Name("parrotReportBug")
     /// A view asks the Settings window to show one section (see SettingsView.open).
     static let parrotOpenSettingsSection = Notification.Name("parrotOpenSettingsSection")
+    /// Posted (object: the meeting's UUID) just before a meeting is deleted,
+    /// by any path — the UI drops its selection before the model is gone.
+    static let parrotMeetingWillDelete = Notification.Name("parrotMeetingWillDelete")
 }
 
 // MARK: - Shared meeting actions
@@ -37,6 +56,10 @@ enum MeetingActions {
 
     static func exportSRT(_ meeting: Meeting) {
         write(ExportService.exportToSRT(meeting: meeting), for: meeting, ext: "srt")
+    }
+
+    static func exportMarkdown(_ meeting: Meeting) {
+        write(ExportService.exportToMarkdown(meeting: meeting), for: meeting, ext: "md")
     }
 
     private static func write(_ content: String, for meeting: Meeting, ext: String) {
@@ -116,18 +139,28 @@ struct ParrotCommands: Commands {
             .keyboardShortcut("e")
             .disabled(session.selectedMeeting == nil)
 
+            Button("Export Markdown (MD)") {
+                session.selectedMeeting.map { MeetingActions.exportMarkdown($0) }
+            }
+            .disabled(session.selectedMeeting == nil)
+
             Button("Export Subtitles (SRT)") {
                 session.selectedMeeting.map { MeetingActions.exportSRT($0) }
             }
             .disabled(session.selectedMeeting == nil)
         }
 
-        // Edit: ⌘F focuses the sidebar search.
+        // Edit: ⌘F focuses the sidebar search; ⌘K asks across meetings.
         CommandGroup(after: .textEditing) {
             Button("Find Meetings") {
                 NotificationCenter.default.post(name: .parrotFocusSearch, object: nil)
             }
             .keyboardShortcut("f")
+
+            Button("Ask Parrot…") {
+                session.askRequest = AppSession.AskRequest(scope: nil, scopeTitle: nil)
+            }
+            .keyboardShortcut("k")
         }
 
         CommandMenu("Recording") {
@@ -156,6 +189,18 @@ struct ParrotCommands: Commands {
                 }
             }
             .keyboardShortcut(".")
+            .disabled(!recordingManager.isRecording || recordingManager.isStopping)
+
+            Divider()
+
+            // Same combo as the global hotkey RecordingManager registers
+            // while recording; when Parrot is in front the hotkey handles the
+            // press first, and a second trigger within the merge window is
+            // one mark, not two.
+            Button("Mark Moment") {
+                recordingManager.markMoment()
+            }
+            .keyboardShortcut("m", modifiers: [.control, .option])
             .disabled(!recordingManager.isRecording || recordingManager.isStopping)
         }
 
@@ -217,6 +262,7 @@ struct MeetingContextMenu: ViewModifier {
 
                 Menu("Export") {
                     Button("Transcript (TXT)") { MeetingActions.exportTXT(meeting) }
+                    Button("Markdown (MD)") { MeetingActions.exportMarkdown(meeting) }
                     Button("Subtitles (SRT)") { MeetingActions.exportSRT(meeting) }
                 }
                 .disabled(meeting.segments.isEmpty)

@@ -34,12 +34,128 @@ truth for the post-test improvement effort. Update the status table as work land
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
 | — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
+| **N** | Next features (six phases) | 🟡 N1–N5 built + tested on a Mac, N6 built behind an off-by-default switch | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-09-25 (on-device test + N6)** — **N1–N5 tested on a real Mac, 14
+  bugs fixed; N6 live speaker labels built (switch off by default).**
+  - **Fixed from testing**: call detection never saw a call end (Siri's
+    `com.apple.CoreSpeech` and Parrot's own `com.apple.replayd` hold the mic
+    during every recording) and offered dictation (FluidVoice, Wispr Flow,
+    …) as calls; every import failed with a custom vocabulary (glossary
+    prompt + timestamped decode → empty text; **shipped in 0.20.1**);
+    one-line local-model reports (gemma3:4b) lost their sections and next
+    steps; reworded duplicate promises; Consent button never orange; Ask
+    leaked "M1/M2" and hid chip times; failed meetings never said why;
+    notification permission never asked (onboarding row + Settings warning);
+    hover bookmark on transcript lines; Share successes no longer modal;
+    bug button overlap; wrong line highlighted on shared timestamps.
+  - **N6**: draft PR #43 (sweeps + stable identities + "Gürkan?" + tap to
+    name) rebased in, then: the first sweep learns the voices from the whole
+    call, later sweeps read only the last 60 s every 15 s (65-min call: 0.5 s
+    / 0.3 s CPU / 135 MB per sweep vs 7.3 s / 4.6 s / 1.4 GB whole-call);
+    30 s on battery, none in Low Power Mode or when hot; remembered voices
+    only suggested when on the calendar invite. Live test (two voices, 3 m
+    41 s, whole-call sweeps): 37/37 lines right, no swaps, final pass
+    unchanged. Still open: live run of the 60 s windows, Copilot gets the
+    guessed names, a few real calls before the switch defaults on.
+
+- **2026-09-25** — **N3 Ask Parrot, N4 Connections, N5 Privacy built.**
+  - **N3**: `MeetingMemory` indexes every finished meeting locally (transcript
+    chunks as "[mm:ss] Name: words" + report, on-device contextual vectors,
+    one JSON per meeting, SHA-256 fingerprint so unchanged meetings aren't
+    re-embedded), hybrid BM25 + embeddings like the KB. `ask()` → the few best
+    excerpts → reports brain via new `complete()` → answer cites `[M2 12:34]`,
+    every citation verified against that meeting's transcript; no AI → the
+    closest moments. Ask sheet (sidebar, ⌘K, meeting toolbar) with chips that
+    open the meeting at that second. "From your last call": previous meeting
+    (same calendar series or a shared invitee) → open items from its report,
+    shown in the Briefed card and sent to the copilot inside `<previous_call>`.
+  - **N4**: Markdown export (front matter, next steps as tasks, receipts as
+    code) + auto-save to a chosen folder (security-scoped bookmark;
+    `files.bookmarks.app-scope`); follow-up email (only said promises; Open
+    in Mail addressed to invitees); next steps → Reminders "Parrot" list
+    (`NSRemindersFullAccessUsageDescription`); webhook (https only, HMAC
+    X-Parrot-Signature, optional transcript, test button); `Parrot --mcp`
+    read-only stdio MCP server (list/get/search), off by default.
+  - **N5**: on-device only — global switch or per profile; the live call
+    passes it explicitly to transcription/copilot, the post-call chain runs in
+    a task-local scope (`CloudGate.$scopeLocal`) so an unrelated call isn't
+    affected; private meetings stay out of cloud Ask, cloud follow-up, the
+    webhook, MCP and a cloud call's last-call brief. Redaction of emails /
+    phones / cards (Luhn) / IBANs / optional names for every cloud AI request,
+    restored in answers. Consent button (copy notice / verbal) recorded on the
+    meeting and in exports. Retention (audio and/or meetings after N days,
+    launch + hourly, UI selection dropped first). "What left this Mac" line.
+  - **Verified (CI)**: build clean, `--profile-test` all pass (≈140 new
+    checks), snapshots + help shots render, app assembles with the new
+    entitlements. Code review: 10 findings fixed (global holds → per-meeting
+    scope; private last-call notes; Ask routing race; persistent fingerprint;
+    deleted-meeting resurrection; delete-while-viewing crash; stale MCP; …).
+  - **Needs Uygar on a real Mac**: Ask a question after 2–3 real calls
+    (with Claude, then with Ollama); Copy Setup → Claude Desktop → ask it
+    about a meeting; pick an Obsidian folder and finish a call; Draft
+    Follow-up Email → Open in Mail; Add Next Steps to Reminders (permission
+    prompt); a webhook.site URL + Send Test; a profile marked on-device only
+    → its meeting's privacy line says so; Consent button during a call.
+
+- **2026-09-24** — **N1 Receipts + bookmarks and N2 Auto-start + calendar
+  built** (plan: `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`).
+  - **CI**: new `.github/workflows/ci.yml` builds on GitHub's macOS runner,
+    runs `--profile-test`, renders the three snapshots (artifact) and
+    assembles the ad-hoc `.app`. It fetches Apple's NaturalLanguage
+    embedding assets first — the two Turkish-embedding checks failed on a
+    fresh runner before any change (assets are on-demand).
+  - **N1**: report prompts (both providers, one shared builder) require a
+    `[mm:ss]` receipt per bullet; `Receipts` parses and verifies them against
+    the transcript locally (±3 s of a real line); chips open the quote with
+    Play from Here / Show in Transcript; a commitment with no valid receipt
+    shows *unverified* (only in receipts-era reports). Bookmarks: Mark button
+    + label popover, Recording menu, menu-bar item, ⌃⌥M global hotkey
+    (Carbon, registered only while recording, toggle in Settings), report
+    card, transcript rows, "Bookmark This Line", TXT export, fed to the
+    summary prompt inside `<marked>`.
+  - **N2**: `CallDetector` reads which processes capture input (Core Audio
+    process list, macOS 14.2+; device-level fallback before) → pure state
+    machine (5 s start debounce, 20 s end debounce, never "ends" an
+    in-person recording). `CallWatcher`: Ask (default) / Auto / Off,
+    notifications with actions + in-window banner + menu-bar item, "Never
+    for This App". `CalendarService` (EventKit, read-only, opt-in): current
+    event → meeting title + attendees; invitee names in speaker naming;
+    title → profile for detected calls (unambiguous only); optional
+    reminders. Invite text reaches the copilot only if "Brief the copilot
+    from the invite" is on (off by default), inside `<calendar_invite>` with
+    angle brackets neutralised. Launch at login (`SMAppService`) in General
+    + a new onboarding step. New entitlement
+    `personal-information.calendars` + `NSCalendarsFullAccessUsageDescription`.
+  - **Verified (CI, macOS 15 runner, Xcode 16)**: build clean (no new
+    warnings), `--profile-test` 541 PASS / 0 FAIL (≈190 new checks: stamps,
+    receipt index, report flags, prompts, bookmarks, transcript merge,
+    detector state machine, app names, calendar pick/reminders/notes/invite
+    safety/profile match, attendees), snapshot + help-shot renders reviewed
+    (report chips + unverified tags, Settings cards, onboarding step), `.app`
+    assembles and `codesign --verify --deep` passes with the calendar
+    entitlement. A code review pass fixed 9 findings (re-offer a call
+    declined while the model loads, per-occurrence reminders, pre-14.2
+    mid-call re-prompt, whole-word title hints, HTML notes, notification
+    dismiss, bookmarks without a report, receipt refresh on reassign,
+    report redraws during playback).
+  - **Help screenshots**: `settings-general.png` / `settings-recording.png`
+    in `docs/help/img` predate the new cards; regenerate with
+    `--help-shots` at release time (CI renders them fine).
+  - **Needs Uygar on a real Mac**: (1) one call per mode — Ask: Zoom/Meet
+    call → notification within ~5 s, Record works from the notification and
+    the banner, "Call ended?" ~20 s after hanging up; Auto: starts and stops
+    by itself. (2) Connect Calendar → the macOS prompt, then a call during
+    an event takes its name/guests. (3) ⌃⌥M from inside Zoom marks a moment.
+    (4) After a call with a cloud or Ollama report, chips appear and click
+    through; note the citation rate on llama3.2:3b. (5) Open at login toggle
+    shows in System Settings → Login Items.
 
 - **2026-08-04** — **Audio-only capture built** (macOS 15+ process taps; the
   Anarlog-teardown item). What landed:

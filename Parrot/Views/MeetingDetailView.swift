@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AppKit
 
 /// Which pane of the post-meeting report is showing.
 enum ReportTab: String, CaseIterable, Identifiable {
@@ -21,6 +22,7 @@ enum ReportTab: String, CaseIterable, Identifiable {
 struct MeetingDetailView: View {
     let meeting: Meeting
     @Environment(RecordingManager.self) private var recordingManager
+    @Environment(AppSession.self) private var appSession
     @Environment(\.modelContext) private var modelContext
     @AppStorage("rememberVoices") private var rememberVoices = false
     /// Parent clears the selection and performs the actual delete — this view
@@ -44,6 +46,20 @@ struct MeetingDetailView: View {
     @State private var clipStopTask: Task<Void, Never>?
     /// The line a pending "delete everything after this" is anchored to.
     @State private var truncateAnchor: TranscriptSegment?
+    /// Share-menu actions: one at a time, with an outcome message.
+    @State private var actionRunning = false
+    @State private var actionMessage: String?
+    /// A Share action's success ("Saved to your folder."): a short note that
+    /// fades, not a box to dismiss. Errors still use `actionMessage`.
+    @State private var actionNote: String?
+    @State private var showPrivacyLedger = false
+    /// The transcript as a receipts index — cached, not rebuilt on every
+    /// playback tick (the timer re-renders this view ten times a second).
+    @State private var receiptIndex = ReceiptIndex.empty
+    /// A transcript line to bring into view once the Transcript tab shows.
+    @State private var scrollRequest: UUID?
+    @State private var renamingBookmark: Bookmark?
+    @State private var bookmarkLabelText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,18 +117,84 @@ struct MeetingDetailView: View {
             titleText = meeting.title
             themNameText = meeting.themName ?? ""
             prepareAudioPlayer()
+            consumeJump()
+        }
+        .onChange(of: appSession.pendingJump) { consumeJump() }
+        // Lines land while a meeting processes, and naming a voice changes
+        // the speaker the receipts quote — rebuild on either.
+        .task(id: receiptIndexKey) {
+            receiptIndex = meeting.receiptIndex
+        }
+        .alert("Rename Bookmark", isPresented: Binding(
+            get: { renamingBookmark != nil },
+            set: { if !$0 { renamingBookmark = nil } }
+        )) {
+            TextField("What happened here?", text: $bookmarkLabelText)
+            Button("Save") {
+                if let mark = renamingBookmark {
+                    meeting.renameBookmark(mark.id, to: bookmarkLabelText)
+                    try? modelContext.save()
+                }
+                renamingBookmark = nil
+            }
+            Button("Cancel", role: .cancel) { renamingBookmark = nil }
         }
         .onDisappear {
             stopPlayback()
+            // Renamed voices, moved or trimmed lines: refresh this meeting's
+            // Ask Parrot index (a no-op when nothing changed).
+            if meeting.status == .done, !meeting.isDeleted {
+                let memory = recordingManager.memory
+                let m = meeting
+                Task { await memory.index(m) }
+            }
         }
         .toolbar {
             ToolbarItemGroup {
+                Button {
+                    appSession.askRequest = AppSession.AskRequest(scope: meeting.id, scopeTitle: meeting.title)
+                } label: {
+                    Label("Ask", systemImage: "text.magnifyingglass")
+                }
+                .help("Ask about this call, or all of them")
+                .disabled(meeting.status != .done)
+
                 Menu {
                     Button("Export as TXT") { MeetingActions.exportTXT(meeting) }
+                    Button("Export as Markdown") { MeetingActions.exportMarkdown(meeting) }
                     Button("Export as SRT") { MeetingActions.exportSRT(meeting) }
+                    if ExportFolder.resolve() != nil {
+                        Button("Save to My Folder") {
+                            runAction { _ = try ExportFolder.write(meeting); return "Saved to your folder." }
+                        }
+                    }
+                    Divider()
+                    Button(meeting.followUpEmail == nil ? "Draft Follow-up Email" : "Redraft Follow-up Email") {
+                        runAction {
+                            try await recordingManager.draftFollowUp(meeting)
+                            tab = .report
+                            return nil
+                        }
+                    }
+                    .disabled(meeting.status != .done)
+                    Button("Add Next Steps to Reminders") {
+                        runAction {
+                            let n = try await recordingManager.addNextStepsToReminders(meeting)
+                            return n == 0 ? "No next steps found in this report."
+                                : "Added \(n) reminder\(n == 1 ? "" : "s") to the Parrot list."
+                        }
+                    }
+                    .disabled(meeting.summary == nil && meeting.coaching == nil)
+                    if Webhook.validate(UserDefaults.standard.string(forKey: Webhook.urlKey) ?? "") != nil {
+                        Button("Send to Webhook") {
+                            runAction { try await Webhook.send(meeting); return "Sent to your webhook." }
+                        }
+                        .disabled(!CloudGate.mayLeaveMac(meeting))
+                    }
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    Label(actionRunning ? "Working…" : "Share", systemImage: "square.and.arrow.up")
                 }
+                .disabled(actionRunning)
 
                 Button(role: .destructive) {
                     confirmingDelete = true
@@ -120,6 +202,24 @@ struct MeetingDetailView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+        .overlay(alignment: .top) {
+            if let actionNote {
+                Label(actionNote, systemImage: "checkmark.circle.fill")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .padding(.horizontal, Theme.Metrics.popoverPad)
+                    .padding(.vertical, Theme.Metrics.bannerInsetV)
+                    .background(Theme.Colors.chip, in: Capsule())
+                    .padding(.top, Theme.Metrics.bannerInsetV)
+                    .transition(.opacity)
+            }
+        }
+        .alert(actionMessage ?? "", isPresented: Binding(
+            get: { actionMessage != nil },
+            set: { if !$0 { actionMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionMessage = nil }
         }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { onDelete?() }
@@ -164,6 +264,8 @@ struct MeetingDetailView: View {
                 aiCostRow(usage)
             }
 
+            privacyRow
+
             // Name the other party so the transcript/report read naturally.
             HStack(spacing: 6) {
                 Image(systemName: "person.crop.circle")
@@ -178,6 +280,97 @@ struct MeetingDetailView: View {
         }
         .padding(Theme.Metrics.pad)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "What left this Mac" (from the meeting's own usage record) and the
+    /// consent record. Silent for old meetings with neither.
+    @ViewBuilder
+    private var privacyRow: some View {
+        let lines = PrivacyLedger.lines(onDeviceOnly: meeting.onDeviceOnly, usage: meeting.aiUsage)
+        if !lines.isEmpty || meeting.consent != nil {
+            HStack(spacing: 12) {
+                if !lines.isEmpty {
+                    Button {
+                        showPrivacyLedger.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: meeting.onDeviceOnly ? "lock.shield.fill" : "lock.shield")
+                                .foregroundStyle(meeting.onDeviceOnly ? Theme.Colors.good : Theme.Colors.ink2)
+                            Text(lines.count == 1 ? lines[0] : "What left this Mac: \(lines.count) things")
+                                .foregroundStyle(Theme.Colors.ink2)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showPrivacyLedger, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("What left this Mac")
+                                .font(Theme.Typography.sectionLabel)
+                            ForEach(lines, id: \.self) { Text("• \($0)").font(Theme.Typography.secondary) }
+                            Text("Audio stays on your Mac unless a cloud transcription engine was used.")
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.ink3)
+                        }
+                        .padding(Theme.Metrics.popoverPad)
+                        .frame(width: 340, alignment: .leading)
+                    }
+                }
+                if let consent = meeting.consent {
+                    Label(consent.summary.capitalizedFirst, systemImage: "checkmark.shield")
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+            }
+            .font(Theme.Typography.caption)
+        }
+    }
+
+    /// Runs a Share-menu action, then says how it went (or why it didn't).
+    private func runAction(_ work: @escaping () async throws -> String?) {
+        actionRunning = true
+        Task {
+            do {
+                if let note = try await work() {
+                    withAnimation { actionNote = note }
+                    try? await Task.sleep(for: .seconds(3))
+                    withAnimation { if actionNote == note { actionNote = nil } }
+                }
+            } catch {
+                actionMessage = error.localizedDescription
+            }
+            actionRunning = false
+        }
+    }
+
+    /// The drafted follow-up email with Copy and Open in Mail.
+    private func followUpCard(_ draft: String) -> some View {
+        let parts = FollowUpEmail.split(draft, fallbackSubject: "Following up: \(meeting.title)")
+        return ReportSectionCard(title: "Follow-up email", icon: "envelope", tint: Theme.Colors.accent) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(parts.subject)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .textSelection(.enabled)
+                Text(parts.body)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString("Subject: \(parts.subject)\n\n\(parts.body)", forType: .string)
+                    }
+                    Button("Open in Mail") { FollowUpEmail.openInMail(draft, meeting: meeting) }
+                    Spacer()
+                    Button("Redraft") {
+                        runAction { try await recordingManager.draftFollowUp(meeting); return nil }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Colors.accent)
+                }
+                .controlSize(.small)
+            }
+        }
     }
 
     /// One-line estimated AI cost; click for the per-line breakdown.
@@ -269,6 +462,7 @@ struct MeetingDetailView: View {
         case .failed:
             Label("Failed", systemImage: "xmark.circle")
                 .foregroundStyle(Theme.Colors.stop)
+                .help(meeting.errorMessage ?? "Processing failed")
         default:
             // A recovered call is otherwise `.done`; flag it so it doesn't read as
             // a clean recording.
@@ -334,18 +528,38 @@ struct MeetingDetailView: View {
         ScrollView {
             Group {
                 if meeting.summary == nil && meeting.coaching == nil {
-                    if meeting.status == .processing {
-                        reportGeneratingRow("Writing your report…")
-                    } else {
-                        emptyTabState("No report was generated for this meeting.")
+                    VStack(alignment: .leading, spacing: 16) {
+                        if meeting.status == .processing {
+                            reportGeneratingRow("Writing your report…")
+                        } else if meeting.status == .failed, let reason = meeting.errorMessage {
+                            // Say why, not just that it failed.
+                            emptyTabState(reason)
+                        } else {
+                            emptyTabState("No report was generated for this meeting.")
+                        }
+                        // Marks don't need a report to be useful.
+                        if !meeting.bookmarks.isEmpty {
+                            bookmarksCard
+                        }
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 16) {
                         ReportContentView(
                             summary: meeting.summary,
                             coaching: meeting.coaching,
-                            talkPercentMe: talkPercentMe
+                            talkPercentMe: talkPercentMe,
+                            receipts: receiptIndex,
+                            receiptActions: receiptActions
                         )
+                        // Playback redraws this view ten times a second; the
+                        // report only needs to when its text or lines change.
+                        .equatable()
+                        if !meeting.bookmarks.isEmpty {
+                            bookmarksCard
+                        }
+                        if let draft = meeting.followUpEmail, !draft.isEmpty {
+                            followUpCard(draft)
+                        }
                         // Summary is in; the coaching pass is still running.
                         if meeting.status == .processing, meeting.coaching == nil {
                             reportGeneratingRow("Analyzing your coaching report…")
@@ -354,6 +568,7 @@ struct MeetingDetailView: View {
                 }
             }
             .padding(Theme.Metrics.pad)
+            .padding(.bottom, Theme.Metrics.floatingClearance)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -385,6 +600,134 @@ struct MeetingDetailView: View {
             .reduce(0) { $0 + $1.text.split(separator: " ").count }
         let total = meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
         return total > 0 ? Int(Double(me) / Double(total) * 100) : nil
+    }
+
+    // MARK: - Receipts + bookmarks
+
+    /// Changes whenever a receipt's quote could: lines landing, a voice
+    /// named, or a single line moved to another speaker.
+    private var receiptIndexKey: Int {
+        var hasher = Hasher()
+        hasher.combine(meeting.speakerNamesData)
+        hasher.combine(meeting.themName)
+        for segment in meeting.segments {
+            hasher.combine(segment.id)
+            hasher.combine(segment.speakerLabel)
+        }
+        return hasher.finalize()
+    }
+
+    private var receiptActions: ReceiptActions {
+        // No audio (a recovered call whose file couldn't be finalized): the
+        // line can still be shown, just not played.
+        ReceiptActions(play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil,
+                       showInTranscript: { showInTranscript($0, text: $1) })
+    }
+
+    /// Ask Parrot sent us here: go to the moment (or the report).
+    private func consumeJump() {
+        guard let jump = appSession.pendingJump, jump.meetingID == meeting.id else { return }
+        appSession.pendingJump = nil
+        if let time = jump.time {
+            showInTranscript(time)
+        } else {
+            tab = .report
+        }
+    }
+
+    private func playFrom(_ time: TimeInterval) {
+        clipStopTask?.cancel()
+        seekTo(time)
+        if !isPlaying { togglePlayback() }
+    }
+
+    private func showInTranscript(_ time: TimeInterval, text: String? = nil) {
+        seekTo(time)
+        // Both tracks can cut a line at the same instant (a "Me" echo of the
+        // other side): the receipt's own words pick the line it quoted.
+        if let text, let line = meeting.sortedSegments.first(where: { $0.startTime == time && $0.text == text }) {
+            activeSegmentID = line.id
+        }
+        tab = .transcript
+        scrollRequest = activeSegmentID
+    }
+
+    /// "Moments you marked": each bookmark with its time (plays it), label,
+    /// and a menu to rename or remove it.
+    private var bookmarksCard: some View {
+        ReportSectionCard(title: "Moments you marked", icon: "bookmark.fill", tint: Theme.Colors.accent) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(meeting.bookmarks) { mark in
+                    bookmarkRow(mark)
+                }
+            }
+        }
+    }
+
+    private func bookmarkRow(_ mark: Bookmark) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Button {
+                playFrom(mark.time)
+            } label: {
+                Label(Receipts.stamp(mark.time), systemImage: "play.fill")
+                    .font(Theme.Typography.receipt)
+                    .foregroundStyle(Theme.Colors.accent)
+            }
+            .buttonStyle(.plain)
+            .help("Play this moment")
+            Text(mark.label.isEmpty ? "Marked moment" : mark.label)
+                .font(Theme.Typography.body)
+                .foregroundStyle(mark.label.isEmpty ? Theme.Colors.ink2 : Theme.Colors.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Menu {
+                Button("Show in Transcript") { showInTranscript(mark.time) }
+                Button("Rename…") {
+                    bookmarkLabelText = mark.label
+                    renamingBookmark = mark
+                }
+                Divider()
+                Button("Remove Bookmark", role: .destructive) {
+                    meeting.removeBookmark(mark.id)
+                    try? modelContext.save()
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Theme.Colors.ink2)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Bookmark options")
+        }
+    }
+
+    /// A bookmark between transcript lines, at the moment it was marked.
+    private func transcriptBookmarkRow(_ mark: Bookmark) -> some View {
+        HStack(spacing: 8) {
+            Text(Receipts.stamp(mark.time))
+                .font(Theme.Typography.mono(11))
+                .foregroundStyle(Theme.Colors.accent)
+                .frame(width: 40, alignment: .trailing)
+            Label(mark.label.isEmpty ? "You marked this moment" : mark.label,
+                  systemImage: "bookmark.fill")
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.accent)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .onTapGesture { seekTo(mark.time) }
+        .contextMenu {
+            Button("Rename…") {
+                bookmarkLabelText = mark.label
+                renamingBookmark = mark
+            }
+            Button("Remove Bookmark", role: .destructive) {
+                meeting.removeBookmark(mark.id)
+                try? modelContext.save()
+            }
+        }
     }
 
     // MARK: - Transcript tab
@@ -470,6 +813,8 @@ struct MeetingDetailView: View {
         Text(message)
             .font(Theme.Typography.body)
             .foregroundStyle(Theme.Colors.ink2)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 440)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 40)
     }
@@ -491,32 +836,55 @@ struct MeetingDetailView: View {
 
     private var transcriptList: some View {
         let ordered = meeting.sortedSegments
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(ordered) { segment in
-                    TranscriptSegmentRow(
-                        segment: segment,
-                        isActive: segment.id == activeSegmentID,
-                        themName: meeting.themName,
-                        meeting: meeting,
-                        playClip: playClip,
-                        onReassign: { segment.speakerLabel = $0 },
-                        // A meeting still transcribing is being appended to as
-                        // we look at it — offer the cut once it has settled.
-                        onTruncate: meeting.status == .done
-                            ? { truncateAnchor = segment } : nil,
-                        isLastLine: segment.id == ordered.last?.id
-                    )
-                    .onTapGesture {
-                        seekTo(segment.startTime)
+        let items = TranscriptItem.merge(segments: ordered, bookmarks: meeting.bookmarks)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(items) { item in
+                        switch item {
+                        case .segment(let segment):
+                            TranscriptSegmentRow(
+                                segment: segment,
+                                isActive: segment.id == activeSegmentID,
+                                themName: meeting.themName,
+                                meeting: meeting,
+                                playClip: playClip,
+                                onReassign: { segment.speakerLabel = $0 },
+                                // A meeting still transcribing is being appended to as
+                                // we look at it — offer the cut once it has settled.
+                                onTruncate: meeting.status == .done
+                                    ? { truncateAnchor = segment } : nil,
+                                isLastLine: segment.id == ordered.last?.id,
+                                onBookmark: {
+                                    meeting.addBookmark(at: segment.startTime, window: 0.05)
+                                    try? modelContext.save()
+                                }
+                            )
+                            .id(segment.id)
+                            .onTapGesture {
+                                seekTo(segment.startTime)
+                            }
+                        case .bookmark(let mark):
+                            transcriptBookmarkRow(mark)
+                        }
+                    }
+
+                    if let note = meeting.truncationNote {
+                        truncationFooter(note)
                     }
                 }
-
-                if let note = meeting.truncationNote {
-                    truncationFooter(note)
-                }
+                .padding(Theme.Metrics.pad)
             }
-            .padding(Theme.Metrics.pad)
+            // A receipt's "Show in Transcript" switches tabs, so the list may
+            // only now exist — scroll once it has laid out, then clear.
+            .task(id: scrollRequest) {
+                guard let target = scrollRequest else { return }
+                try? await Task.sleep(for: .milliseconds(80))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                scrollRequest = nil
+            }
         }
         .confirmationDialog(
             "Delete the rest of this transcript?",
@@ -612,7 +980,8 @@ struct MeetingDetailView: View {
                         .frame(width: 70, alignment: .leading)
                     if rememberVoices,
                        let embedding = meeting.speakerEmbeddings[label],
-                       let match = SpeakerProfileStore.match(embedding, in: modelContext) {
+                       let match = SpeakerProfileStore.match(embedding, in: modelContext,
+                                                             invited: meeting.attendees.map(\.displayName)) {
                         Text("sounds like \(match.name)?")
                             .font(Theme.Typography.caption)
                             .foregroundStyle(Theme.Colors.accent)
@@ -756,7 +1125,9 @@ struct MeetingDetailView: View {
 struct SpeakerNamePopover: View {
     let meeting: Meeting
     let label: String
-    let playClip: (_ start: TimeInterval, _ end: TimeInterval) -> Void
+    /// Nil during a live recording: playing clips mid-call would bleed into
+    /// the capture, and the user is hearing the voice anyway.
+    var playClip: ((_ start: TimeInterval, _ end: TimeInterval) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @AppStorage("rememberVoices") private var rememberVoices = false
@@ -768,7 +1139,8 @@ struct SpeakerNamePopover: View {
         guard rememberVoices, meeting.speakerNames[label] == nil,
               let embedding = meeting.speakerEmbeddings[label], !embedding.isEmpty
         else { return nil }
-        return SpeakerProfileStore.match(embedding, in: modelContext)
+        return SpeakerProfileStore.match(embedding, in: modelContext,
+                                         invited: meeting.attendees.map(\.displayName))
     }
 
     private func assign(_ finalName: String) {
@@ -787,7 +1159,9 @@ struct SpeakerNamePopover: View {
             Text("Who is this?")
                 .font(Theme.Typography.caption)
                 .fontWeight(.semibold)
-            Text("Listen to a couple of moments from this voice.")
+            Text(playClip != nil
+                 ? "Listen to a couple of moments from this voice."
+                 : "You're hearing them live — type who it is.")
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.ink2)
 
@@ -803,9 +1177,26 @@ struct SpeakerNamePopover: View {
                 .tint(Theme.Colors.accent)
             }
 
-            ForEach(meeting.longestSegments(for: label), id: \.id) { clip in
+            // Invitees from the calendar event, not yet given to a voice.
+            let invited = meeting.unassignedAttendeeNames
+            if !invited.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("On the invite")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                    HStack(spacing: 6) {
+                        ForEach(invited.prefix(4), id: \.self) { person in
+                            Button(person) { assign(person) }
+                                .controlSize(.small)
+                                .help("This voice is \(person)")
+                        }
+                    }
+                }
+            }
+
+            ForEach(playClip == nil ? [] : meeting.longestSegments(for: label), id: \.id) { clip in
                 Button {
-                    playClip(clip.startTime, min(clip.endTime, clip.startTime + 8))
+                    playClip?(clip.startTime, min(clip.endTime, clip.startTime + 8))
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
@@ -854,7 +1245,10 @@ struct TranscriptSegmentRow: View {
     var onTruncate: (() -> Void)? = nil
     /// Bottom of the transcript: nothing below it to cut.
     var isLastLine: Bool = false
+    /// Set when this line can be bookmarked after the call.
+    var onBookmark: (() -> Void)? = nil
     @State private var naming = false
+    @State private var hovering = false
 
     /// Muted adaptive palette for the other side of the call — "Me" is always
     /// the accent, so these stay deliberately quiet.
@@ -920,7 +1314,25 @@ struct TranscriptSegmentRow: View {
             Text(segment.text)
                 .font(Theme.Typography.body)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // The words are selectable, so right-click on them opens the
+            // text menu, not ours: a hover button makes bookmarking findable.
+            // Opacity (not if/else) keeps rows from jumping, and VoiceOver
+            // and keyboard users still reach it.
+            if let onBookmark {
+                Button(action: onBookmark) {
+                    Image(systemName: "bookmark")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+                .buttonStyle(.plain)
+                .help("Bookmark this line")
+                .accessibilityLabel("Bookmark this line")
+                .opacity(hovering ? 1 : 0)
+            }
         }
+        .onHover { hovering = $0 }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(
@@ -929,6 +1341,11 @@ struct TranscriptSegmentRow: View {
         )
         .animation(.easeInOut(duration: 0.15), value: isActive)
         .contextMenu {
+            if let onBookmark {
+                Button("Bookmark This Line") { onBookmark() }
+                if canReassign || onTruncate != nil { Divider() }
+            }
+
             // Fix a single misattributed line without touching the rest.
             if let meeting, let onReassign, !isMe {
                 Menu("This line is") {
@@ -1037,5 +1454,49 @@ extension String {
     /// traps). Used for stable speaker/sidebar colors.
     var stableHash: Int {
         unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
+    }
+
+    /// "everyone agreed…" → "Everyone agreed…".
+    var capitalizedFirst: String {
+        prefix(1).uppercased() + dropFirst()
+    }
+}
+
+// MARK: - Transcript items
+
+/// A transcript row: a spoken line, or a bookmark between lines.
+enum TranscriptItem: Identifiable {
+    case segment(TranscriptSegment)
+    case bookmark(Bookmark)
+
+    var id: UUID {
+        switch self {
+        case .segment(let s): s.id
+        case .bookmark(let b): b.id
+        }
+    }
+
+    var time: TimeInterval {
+        switch self {
+        case .segment(let s): s.startTime
+        case .bookmark(let b): b.time
+        }
+    }
+
+    /// Lines in order, each bookmark placed just before the first line that
+    /// starts after it (a mark at 12:34 sits between the 12:30 and 12:40
+    /// lines). A bookmark at the same second as a line goes before it.
+    static func merge(segments: [TranscriptSegment], bookmarks: [Bookmark]) -> [TranscriptItem] {
+        var out: [TranscriptItem] = []
+        var marks = bookmarks.sorted { $0.time < $1.time }[...]
+        for segment in segments {
+            while let next = marks.first, next.time <= segment.startTime {
+                out.append(.bookmark(next))
+                marks = marks.dropFirst()
+            }
+            out.append(.segment(segment))
+        }
+        out.append(contentsOf: marks.map { .bookmark($0) })
+        return out
     }
 }

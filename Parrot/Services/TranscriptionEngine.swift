@@ -24,6 +24,8 @@ enum AudioSource: CaseIterable {
 /// every segment knows who was talking — no diarization model needed.
 @Observable
 final class TranscriptionEngine {
+    /// Set per recording: the call is on-device only (see CloudGate).
+    var forceLocal = false
     private var whisperKit: WhisperKit?
     /// Silero voice-activity model (FluidAudio, on-device), the last gate
     /// before every decode. Whisper narrates noise ("so", "What can I do?"
@@ -559,7 +561,8 @@ final class TranscriptionEngine {
         // need their key; anything missing falls back to on-device with a
         // visible notice. (Deepgram streaming lands separately; until then it
         // behaves as local.)
-        var backend = TranscriptionBackend.selected
+        // An on-device-only call never uses a cloud engine.
+        var backend = forceLocal ? .local : TranscriptionBackend.selected
         var groqKey: String?
         cloudNotice = nil
         self.meetingStartTime = meetingStartTime
@@ -1023,7 +1026,12 @@ final class TranscriptionEngine {
         options.logProbThreshold = -1.0
         options.noSpeechThreshold = 0.6
         options.temperatureFallbackCount = 3
-        primeGlossary(into: &options)
+        // ponytail: no glossary prompt here. Prompt tokens + timestamped
+        // decoding makes Whisper return empty text for every 30 s window, so
+        // any user with a custom vocabulary got "No speech found" on every
+        // import (2026-09-25). Imports lose the vocabulary hint; bring it back
+        // only with a prompt/timestamp combo that a real file proves works.
+        glossaryActive = false
 
         let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
         let timeline = await speechTimeline(url: url)

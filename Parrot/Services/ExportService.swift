@@ -24,6 +24,18 @@ enum ExportService {
             """
         }
 
+        if let consent = meeting.consent {
+            output += "\nRecording consent: \(consent.summary)\n"
+        }
+
+        let marks = meeting.bookmarks
+        if !marks.isEmpty {
+            output += "\n=== Moments You Marked ===\n\n"
+            for mark in marks {
+                output += "[\(Receipts.stamp(mark.time))] \(mark.label.isEmpty ? "Marked moment" : mark.label)\n"
+            }
+        }
+
         if let summary = meeting.summary {
             output += """
 
@@ -67,6 +79,102 @@ enum ExportService {
         }
 
         return output
+    }
+
+    // MARK: - Markdown Export
+
+    /// Obsidian/Notion-friendly Markdown: YAML front matter, then notes,
+    /// report (receipts kept as `12:34`), marked moments, next steps as
+    /// tasks, and the transcript. `parrot_id` lets a re-export overwrite the
+    /// same note.
+    @MainActor
+    static func exportToMarkdown(meeting: Meeting) -> String {
+        var out = "---\n"
+        out += "title: \(yamlString(meeting.title))\n"
+        out += "date: \(ISO8601DateFormatter().string(from: meeting.date))\n"
+        out += "duration_minutes: \(Int((meeting.duration / 60).rounded()))\n"
+        let people = meeting.attendees.map(\.displayName).filter { !$0.isEmpty }
+            + meeting.speakerNames.values.filter { !$0.isEmpty }
+        var seen = Set<String>()
+        let uniquePeople = people.filter { seen.insert($0.lowercased()).inserted }
+        if !uniquePeople.isEmpty {
+            out += "people: [\(uniquePeople.map(yamlString).joined(separator: ", "))]\n"
+        }
+        if let profile = meeting.profile?.name { out += "profile: \(yamlString(profile))\n" }
+        out += "source: parrot\n"
+        out += "parrot_id: \(meeting.id.uuidString)\n"
+        out += "---\n\n"
+        out += "# \(meeting.title)\n\n"
+
+        if let consent = meeting.consent {
+            out += "> Recording consent: \(consent.summary)\n\n"
+        }
+        if !meeting.notes.isEmpty {
+            out += "## My notes\n\n\(meeting.notes)\n\n"
+        }
+        // The checklist replaces the report's own next-step and commitment
+        // sections, which listed the same promises a second time.
+        let steps = LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 20)
+        if let summary = meeting.summary {
+            out += "## Summary\n\n\(markdownReport(summary, skipCommitments: !steps.isEmpty))\n\n"
+        }
+        if !steps.isEmpty {
+            out += "## Next steps\n\n" + steps.map { "- [ ] \($0)" }.joined(separator: "\n") + "\n\n"
+        }
+        if let coaching = meeting.coaching {
+            out += "## Coaching\n\n\(markdownReport(coaching, skipCommitments: !steps.isEmpty))\n\n"
+        }
+        let marks = meeting.bookmarks
+        if !marks.isEmpty {
+            out += "## Moments I marked\n\n"
+            out += marks.map { "- `\(Receipts.stamp($0.time))` \($0.label.isEmpty ? "Marked moment" : $0.label)" }
+                .joined(separator: "\n") + "\n\n"
+        }
+        if let email = meeting.followUpEmail, !email.isEmpty {
+            out += "## Follow-up email (draft)\n\n\(email)\n\n"
+        }
+        out += "## Transcript\n\n"
+        for segment in meeting.sortedSegments {
+            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
+            out += "`\(segment.formattedTimestamp)` **\(speaker):** \(segment.text)  \n"
+        }
+        return out
+    }
+
+    /// Report text with `[12:34]` receipts as inline code, headings as ###.
+    static func markdownReport(_ text: String, skipCommitments: Bool = false) -> String {
+        var skipping = false
+        return ReportProse.unflattened(text).components(separatedBy: "\n").compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasSuffix(":"), trimmed.split(separator: " ").count <= 7, !trimmed.hasPrefix("-") {
+                skipping = skipCommitments && Receipts.isCommitmentSection(String(trimmed.dropLast()))
+                return skipping ? nil : "### " + String(trimmed.dropLast())
+            }
+            if skipping { return nil }
+            let cited = Receipts.extract(line)
+            guard !cited.times.isEmpty else { return line }
+            let lead = String(line.prefix { $0 == " " || $0 == "\t" })
+            return lead + cited.text + " " + cited.times.map { "`\(Receipts.stamp($0))`" }.joined(separator: " ")
+        }.joined(separator: "\n")
+    }
+
+    /// "2026-09-25 14-30 Acme renewal.md": sorts by date, safe on every FS.
+    static func markdownFilename(for meeting: Meeting) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH-mm"
+        let title = meeting.title
+            .components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>\n\r"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let short = String(title.prefix(80))
+        return "\(f.string(from: meeting.date)) \(short.isEmpty ? "Meeting" : short).md"
+    }
+
+    private static func yamlString(_ s: String) -> String {
+        "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ") + "\""
     }
 
     // MARK: - SRT Export

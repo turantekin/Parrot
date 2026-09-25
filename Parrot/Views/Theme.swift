@@ -86,6 +86,8 @@ enum Theme {
         static let caption = sans(11)
         /// Tiny uppercase panel label ("ASK PARROT").
         static let cap = sans(11, .semibold)
+        /// Receipt chips ("12:34") beside report bullets.
+        static let receipt = mono(10.5, .medium)
 
         // Live copilot "glance" scale — the panel is read in 1-second glances
         // mid-call, so its focal card runs one step above document sizes.
@@ -114,6 +116,18 @@ enum Theme {
         /// The one content inset: every pane starts at the same edge.
         static let pad: CGFloat = 20
         static let sectionGap: CGFloat = 24
+        /// Popovers, banners and small panels: the inner inset.
+        static let popoverPad: CGFloat = 12
+        /// Space between controls in a toolbar-like row (header buttons).
+        static let controlGap: CGFloat = 12
+        /// Inline pill chips (receipts, citations): horizontal / vertical inset.
+        static let chipInsetH: CGFloat = 6
+        static let chipInsetV: CGFloat = 1
+        /// Banner vertical inset.
+        static let bannerInsetV: CGFloat = 8
+        /// Room under scrolled content for the corner bug-report button
+        /// (30 pt + 16 pt inset), so a page's last control can clear it.
+        static let floatingClearance: CGFloat = 46
     }
 }
 

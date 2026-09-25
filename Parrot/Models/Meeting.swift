@@ -62,6 +62,32 @@ final class Meeting {
     /// Lines removed, summed over every trim on this meeting.
     var truncatedLineCount: Int = 0
 
+    /// Moments the user marked (JSON [Bookmark]); see `bookmarks`.
+    /// Defaulted → old rows migrate.
+    var bookmarksData: Data? = nil
+
+    /// People on the calendar invite this call matched (JSON [Attendee]).
+    /// Defaulted → old rows migrate.
+    var attendeesData: Data? = nil
+    /// EventKit identifier of the matched calendar event, nil if none.
+    var calendarEventID: String? = nil
+    /// The earlier meeting whose open items briefed this call, nil if none.
+    var previousMeetingID: UUID? = nil
+    /// Recorded under "On-device only": nothing about this meeting may go to
+    /// a cloud service, now or later (see CloudGate). Defaulted → old rows migrate.
+    var onDeviceOnly: Bool = false
+    /// How the other side was told about the recording (JSON Consent), nil if
+    /// not recorded. Defaulted → old rows migrate.
+    var consentData: Data? = nil
+    /// Drafted follow-up email (subject line + body), nil until drafted.
+    /// Defaulted → old rows migrate.
+    var followUpEmail: String? = nil
+    /// When an imported file became this meeting (`date` is the file's own
+    /// date, for the timeline). Clean-up counts from here, or a year-old
+    /// recording imported today would be deleted within the hour.
+    /// Defaulted → old rows migrate.
+    var importedAt: Date? = nil
+
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.meeting)
     var segments: [TranscriptSegment]
 
@@ -197,6 +223,91 @@ final class Meeting {
             return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
         }
         set { speakerNamesData = try? JSONEncoder().encode(newValue) }
+    }
+
+    /// Marked moments, time-sorted (see `bookmarksData`).
+    var bookmarks: [Bookmark] {
+        get {
+            guard let data = bookmarksData else { return [] }
+            return ((try? JSONDecoder().decode([Bookmark].self, from: data)) ?? [])
+                .sorted { $0.time < $1.time }
+        }
+        set {
+            bookmarksData = newValue.isEmpty
+                ? nil
+                : try? JSONEncoder().encode(newValue.sorted { $0.time < $1.time })
+        }
+    }
+
+    /// How the other side was told about the recording (see `consentData`).
+    var consent: Consent? {
+        get { consentData.flatMap { try? JSONDecoder().decode(Consent.self, from: $0) } }
+        set { consentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
+
+    /// Invitees from the matched calendar event (the user excluded).
+    var attendees: [Attendee] {
+        get {
+            guard let data = attendeesData else { return [] }
+            return (try? JSONDecoder().decode([Attendee].self, from: data)) ?? []
+        }
+        set { attendeesData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    }
+
+    /// Invitee names not yet given to a voice — the naming UI's suggestions.
+    var unassignedAttendeeNames: [String] {
+        let used = Set(speakerNames.values.map { $0.lowercased() })
+        var seen = Set<String>()
+        return attendees.map(\.displayName).filter {
+            !$0.isEmpty && !used.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted
+        }
+    }
+
+    /// Takes a calendar event's title and invitees. A title the user already
+    /// typed is kept; only the generated "Meeting <date>" one is replaced.
+    func apply(_ event: CalendarEventInfo) {
+        calendarEventID = event.id
+        attendees = event.attendees
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty, self.title == Self.defaultTitle(for: date) {
+            self.title = String(title.prefix(200))
+        }
+    }
+
+    /// Marks a moment unless one already sits within `Bookmark.mergeWindow`.
+    @discardableResult
+    func addBookmark(at time: TimeInterval, label: String = "",
+                     window: TimeInterval = Bookmark.mergeWindow) -> Bookmark? {
+        guard let result = Bookmark.adding(time, label: label, window: window, to: bookmarks) else { return nil }
+        bookmarks = result.all
+        return result.added
+    }
+
+    func renameBookmark(_ id: UUID, to label: String) {
+        var all = bookmarks
+        guard let i = all.firstIndex(where: { $0.id == id }) else { return }
+        all[i].label = Bookmark.cleanLabel(label)
+        bookmarks = all
+    }
+
+    func removeBookmark(_ id: UUID) {
+        bookmarks = bookmarks.filter { $0.id != id }
+    }
+
+    /// The transcript as every prompt and export writes it:
+    /// "[mm:ss] Name: words", one line per segment.
+    var transcriptLines: [String] {
+        sortedSegments.map { "[\($0.formattedTimestamp)] \(displayName(forSpeaker: $0.speakerLabel)): \($0.text)" }
+    }
+
+    var promptTranscript: String { transcriptLines.joined(separator: "\n") }
+
+    /// The transcript as a receipts index (for checking report stamps).
+    var receiptIndex: ReceiptIndex {
+        ReceiptIndex(lines: segments.map {
+            .init(start: $0.startTime, end: $0.endTime,
+                  speaker: displayName(forSpeaker: $0.speakerLabel), text: $0.text)
+        })
     }
 
     /// Distinct non-Me speaker labels, "Speaker 1" first.

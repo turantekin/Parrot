@@ -108,6 +108,18 @@ struct LiveBriefCard: View {
                     .foregroundStyle(engine.callBrief.isEmpty ? Theme.Colors.ink3 : Theme.Colors.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if !engine.previousCallContext.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("From your last call")
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Colors.ink3)
+                        Text(engine.previousCallContext)
+                            .font(Theme.Typography.secondary)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 DocumentsInPlayRow(names: docs)
 
                 Button(engine.callBrief.isEmpty ? "Add a brief…" : "Edit brief…") {

@@ -63,9 +63,19 @@ struct ContentView: View {
                     ImportingBanner(progress: progress)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if let prompt = recordingManager.callWatcher.prompt {
+                    CallPromptBanner(
+                        prompt: prompt,
+                        onAccept: { recordingManager.callWatcher.acceptPrompt() },
+                        onDismiss: { recordingManager.callWatcher.dismissPrompt() },
+                        onIgnoreApp: { recordingManager.callWatcher.ignorePromptApp() }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .padding(.top, 12)
         }
+        .animation(.easeInOut(duration: 0.2), value: recordingManager.callWatcher.prompt)
         // Always reachable, except mid-call: a live recording is the one time
         // the window is nobody else's business (and it keeps the button out of
         // call screenshots).
@@ -78,6 +88,33 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showBugReport) {
             BugReportSheet(screenshot: reportScreenshot)
+        }
+        .sheet(item: Binding(get: { appSession.askRequest }, set: { appSession.askRequest = $0 })) { request in
+            AskView(request: request)
+                .environment(recordingManager)
+                .environment(appSession)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .parrotMeetingWillDelete)) { note in
+            guard let id = note.object as? UUID else { return }
+            if selectedMeeting?.id == id {
+                selectedMeeting = nil
+                showDashboard = true
+            }
+            if appSession.selectedMeeting?.id == id { appSession.selectedMeeting = nil }
+            if appSession.pendingJump?.meetingID == id { appSession.pendingJump = nil }
+        }
+        // Ask Parrot's citations: open that meeting (the detail view seeks).
+        .onChange(of: appSession.pendingJump) { _, jump in
+            guard let jump else { return }
+            let id = jump.meetingID
+            let found = try? modelContext.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
+            guard let meeting = found else {
+                appSession.pendingJump = nil
+                return
+            }
+            selectedMeeting = meeting
+            showDashboard = false
+            showSettings = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .parrotReportBug)) { _ in
             presentBugReport()

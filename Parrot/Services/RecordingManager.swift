@@ -3,6 +3,7 @@ import SwiftData
 import CoreGraphics
 import AVFoundation
 import UserNotifications
+import IOKit.ps
 
 /// Orchestrates audio capture, transcription, and storage for a recording session.
 @MainActor
@@ -11,6 +12,14 @@ final class RecordingManager {
     let audioCaptureManager = AudioCaptureManager()
     let transcriptionEngine = TranscriptionEngine()
     let diarizationEngine = DiarizationEngine()
+    /// Live-labels sweep (experimental, "liveSpeakerLabels" default): the
+    /// repeating task and the previous run's label→embedding identities.
+    private var liveSweepTask: Task<Void, Never>?
+    private var liveAnchors: [String: [Float]] = [:]
+    /// Live voiceprint matches (label → remembered name), display-only —
+    /// bubbles show "Gürkan?" while the stored label stays Speaker N until
+    /// the user confirms post-call.
+    private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
     let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
     let knowledgeBase = KnowledgeBaseService()
@@ -18,6 +27,14 @@ final class RecordingManager {
     /// without a key (see CallAnalysisEngine.fastPathAvailable).
     let docMatcher = JevDocMatcher()
     let profileStore = ProfileStore()
+    /// The Mac's calendars (opt-in): names meetings, lists who's on them.
+    let calendar = CalendarService()
+    /// Notices calls in other apps and offers to record them.
+    let callWatcher = CallWatcher()
+    /// Every finished meeting, searchable on the Mac (Ask Parrot).
+    let memory = MeetingMemory()
+    /// Next steps → Apple Reminders (asks for access on first use).
+    let reminders = RemindersService()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -45,7 +62,7 @@ final class RecordingManager {
     /// so the live view can show a "Finalizing…" state.
     private(set) var isStopping = false
     private var timer: Timer?
-    private var modelContext: ModelContext?
+    private(set) var modelContext: ModelContext?
 
     /// "Still recording?" for the forgot-to-stop case (#50: a call left
     /// running for two idle hours). A transcript line is the voice signal;
@@ -94,6 +111,13 @@ final class RecordingManager {
         self.modelContext = modelContext
         recoverInterruptedRecordings(in: modelContext)
         profileStore.seedAndMigrateIfNeeded(context: modelContext, knowledgeBase: knowledgeBase)
+        // Detection needs no model to watch the mic; it declines to offer a
+        // recording until the model below is ready.
+        callWatcher.recordingManager = self
+        callWatcher.start()
+        // Catch the memory up with meetings finished before it existed (or
+        // changed since): background, low priority, local only.
+        Task { await syncMemory() }
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )
@@ -135,6 +159,13 @@ final class RecordingManager {
     }
 
     private func finishRecovery(meeting: Meeting) async {
+        // A private call stays private through its salvaged report.
+        await CloudGate.$scopeLocal.withValue(meeting.onDeviceOnly) {
+            await self.finishRecoveryWork(meeting: meeting)
+        }
+    }
+
+    private func finishRecoveryWork(meeting: Meeting) async {
         // Audio is best-effort: a crash leaves the .caf header unfinalized, so it may
         // not open. If it doesn't, drop the paths so no dead player shows and
         // diarization is skipped cleanly (segments keep their live "Me"/"Them" labels).
@@ -157,6 +188,81 @@ final class RecordingManager {
         writeAIUsage(meeting: meeting, polishSeconds: 0)
         meeting.status = .done
         try? modelContext?.save()
+        await meetingFinished(meeting)
+    }
+
+    // MARK: - Bookmarks
+
+    /// Bumped on every successful mark so the live view can flash a
+    /// confirmation, whichever path (button, menu, global hotkey) marked it.
+    private(set) var lastMarked: Bookmark?
+
+    /// Marks "now" in the call in progress. Returns nil when not recording,
+    /// or when a mark already sits within `Bookmark.mergeWindow` (a double
+    /// press is one moment).
+    @discardableResult
+    func markMoment(label: String = "") -> Bookmark? {
+        guard isRecording, !isStopping, let meeting = currentMeeting,
+              let start = recordingStartTime else { return nil }
+        guard let mark = meeting.addBookmark(at: Date.now.timeIntervalSince(start), label: label) else {
+            return nil
+        }
+        try? modelContext?.save()
+        lastMarked = mark
+        return mark
+    }
+
+    /// Labels a mark made during the call (the live view's quick field).
+    func labelMoment(_ id: UUID, label: String) {
+        currentMeeting?.renameBookmark(id, to: label)
+        try? modelContext?.save()
+    }
+
+    /// ⌃⌥M marks a moment from any app — the user is in Zoom, not Parrot.
+    /// Registered only while recording so the combo is never held otherwise.
+    private let markHotKey = GlobalHotKey()
+    static let globalMarkHotKeyDefaultsKey = "globalMarkHotKey"
+
+    private func registerMarkHotKey() {
+        let enabled = UserDefaults.standard.object(forKey: Self.globalMarkHotKeyDefaultsKey) as? Bool ?? true
+        guard enabled else { return }
+        markHotKey.register(.markMoment) { [weak self] in
+            Task { @MainActor in self?.markMoment() }
+        }
+    }
+
+    /// Settings toggled mid-call: take effect now, not next recording.
+    func refreshMarkHotKey() {
+        markHotKey.unregister()
+        if isRecording { registerMarkHotKey() }
+    }
+
+    // MARK: - Detected calls
+
+    /// Starting, stopping or importing: not the moment to offer a recording.
+    var isBusy: Bool { isStarting || isStopping || importProgress != nil }
+
+    /// Starts recording a call noticed in another app (or from a calendar
+    /// reminder). Same permission preflight as every Record button; the
+    /// matched calendar event may pick the profile. Returns whether a
+    /// recording is running afterwards.
+    @discardableResult
+    func startDetectedCall(appID: String?) async -> Bool {
+        guard let modelContext, !isRecording, !isBusy else { return isRecording }
+        var override: CallProfile?
+        if calendar.isConnected, let event = calendar.currentEvent() {
+            let profiles = profileStore.profiles(in: modelContext)
+            if let id = CalendarService.matchProfile(title: event.title,
+                                                     profiles: profiles.map { ($0.id, $0.name) }) {
+                override = profiles.first { $0.id == id }
+            }
+        }
+        do {
+            try await preflightPermissionsAndStart(modelContext: modelContext, profileOverride: override)
+        } catch {
+            NSLog("Parrot: detected-call recording failed to start, \(error.localizedDescription)")
+        }
+        return isRecording
     }
 
     // MARK: - Recording Control
@@ -164,7 +270,8 @@ final class RecordingManager {
     /// The one shared entry point for every "start recording" button — checks
     /// permissions, then starts. Returns without starting (and without throwing)
     /// when a permission flow was triggered instead.
-    func preflightPermissionsAndStart(modelContext: ModelContext) async throws {
+    func preflightPermissionsAndStart(modelContext: ModelContext,
+                                      profileOverride: CallProfile? = nil) async throws {
         // Check the system-audio permission BEFORE touching any capture API.
         // macOS 15+: the audio-only tap permission (optimistic after the one
         // official prompt — its grant can't be read back, see PermissionFlow).
@@ -187,10 +294,13 @@ final class RecordingManager {
         // Non-fatal: system audio still records if denied.
         _ = await PermissionFlow.requestMicrophone()
 
-        try await startRecording(modelContext: modelContext)
+        try await startRecording(modelContext: modelContext, profileOverride: profileOverride)
     }
 
-    func startRecording(modelContext: ModelContext) async throws {
+    /// `profileOverride` records this one call under another profile (a
+    /// detected call whose calendar title names one) without changing the
+    /// user's active choice.
+    func startRecording(modelContext: ModelContext, profileOverride: CallProfile? = nil) async throws {
         self.modelContext = modelContext
         // Reject re-entry up front (before any await) so a double-trigger can't
         // start two recordings / two transcription loops. Also blocked while a
@@ -207,10 +317,39 @@ final class RecordingManager {
         modelContext.insert(meeting)
 
         // Persist active profile/brief/snapshot onto the meeting
-        let profile = profileStore.activeProfile
+        let profile = profileOverride ?? profileStore.activeProfile
         meeting.profile = profile
-        meeting.brief = nextCallBrief.nilIfEmpty
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
+
+        // On-device only (globally, or for this profile): the live call
+        // passes it to transcription and the copilot explicitly; the
+        // post-call chain runs inside CloudGate's scope.
+        meeting.onDeviceOnly = UserDefaults.standard.bool(forKey: CloudGate.globalKey)
+            || profile?.onDeviceOnly == true
+
+        // The calendar event this call belongs to names the meeting and
+        // lists who's on it. The invite's text reaches the copilot only if
+        // the user turned that on (it's someone else's writing, and the
+        // copilot may be a cloud model), and never as the user's own brief.
+        var calendarContext = ""
+        var lastCall = ""
+        var previousIsPrivate = false
+        if calendar.isConnected, let event = calendar.currentEvent() {
+            meeting.apply(event)
+            if UserDefaults.standard.bool(forKey: CalendarService.useDetailsKey) {
+                calendarContext = CalendarService.inviteContext(for: event)
+            }
+            // "From your last call": open items from the previous meeting
+            // with these people. Parrot's own notes, read locally.
+            if let previous = previousMeeting(for: meeting, in: modelContext) {
+                previousIsPrivate = !CloudGate.mayLeaveMac(previous)
+                meeting.previousMeetingID = previous.id
+                lastCall = LastCallBrief.context(
+                    title: previous.title, date: previous.date,
+                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching))
+            }
+        }
+        meeting.brief = nextCallBrief.nilIfEmpty
 
         // Set up audio capture. On failure, remove the just-inserted meeting —
         // otherwise it lingers as a ghost .recording row until the next launch's
@@ -251,16 +390,39 @@ final class RecordingManager {
         }
 
         // Start transcription and the copilot loop
+        transcriptionEngine.forceLocal = meeting.onDeviceOnly
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
         callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
         docMatcher.resetUsage()
-        callAnalysisEngine.start(profile: profile, brief: nextCallBrief)
+        callAnalysisEngine.start(profile: profile, brief: nextCallBrief, calendarContext: calendarContext,
+                                 previousCall: lastCall, previousCallIsPrivate: previousIsPrivate,
+                                 forceLocal: meeting.onDeviceOnly)
 
         currentMeeting = meeting
         recordingStartTime = .now
         isRecording = true
         lastVoiceAt = .now
         lastIdleReminderAt = nil
+        lastMarked = nil
+        registerMarkHotKey()
+
+        // Experimental live speaker labels: re-diarize the call-so-far so
+        // "Them" bubbles upgrade to stable Speaker N mid-call. Paced by
+        // `liveSweepDelay`; the final post-call pass stays authoritative.
+        liveAnchors = [:]
+        liveSpeakerSuggestions = [:]
+        if UserDefaults.standard.bool(forKey: "liveSpeakerLabels") {
+            liveSweepTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    let delay = Self.liveSweepDelay(power: .now)
+                    try? await Task.sleep(for: .seconds(delay ?? 30))
+                    // Re-check after the wait: the Mac may have heated up or
+                    // gone to Low Power Mode meanwhile.
+                    guard let self, Self.liveSweepDelay(power: .now) != nil else { continue }
+                    await self.runLiveSweep()
+                }
+            }
+        }
 
         // Start elapsed time timer
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -286,8 +448,11 @@ final class RecordingManager {
 
         timer?.invalidate()
         timer = nil
+        markHotKey.unregister()
         // A "Still recording?" left in Notification Center is stale once stopped.
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.idleReminderID])
+        liveSweepTask?.cancel()
+        liveSweepTask = nil
 
         // Stop the copilot (its ingest no-ops once inactive), then capture — so
         // the transcription buffers stop growing and the drain below terminates.
@@ -324,22 +489,35 @@ final class RecordingManager {
             // whatever transcript survived, and the report is generated from
             // the FINAL text — never from a transcript that's about to change.
             let meetingRef = meeting
+            // This call's live identities go with it: the next recording may
+            // start (and fill liveAnchors) before this chain reaches diarization.
+            let anchors = liveAnchors
+            liveAnchors = [:]
             Task {
-                let polishSeconds = await self.polishTranscript(meeting: meetingRef)
-                await self.postProcess(meeting: meetingRef)
-                if self.callAnalysisEngine.isEnabled, self.callAnalysisEngine.provider.isConfigured {
-                    await self.generateSummary(meeting: meetingRef)
+                // A private meeting's report and after-call actions stay on
+                // this Mac; a call recording meanwhile is unaffected.
+                await CloudGate.$scopeLocal.withValue(meetingRef.onDeviceOnly) {
+                    await self.runPostCallChain(meetingRef, anchors: anchors)
                 }
-                // Last in the chain so the meter has seen the summary/coaching calls too.
-                self.writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
-                meetingRef.status = .done
-                try? self.modelContext?.save()
             }
         }
 
         isRecording = false
         elapsedTime = 0
         recordingStartTime = nil
+    }
+
+    private func runPostCallChain(_ meetingRef: Meeting, anchors: [String: [Float]]) async {
+        let polishSeconds = await polishTranscript(meeting: meetingRef)
+        await postProcess(meeting: meetingRef, anchors: anchors)
+        if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
+            await generateSummary(meeting: meetingRef)
+        }
+        // Last in the chain so the meter has seen the summary/coaching calls too.
+        writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
+        meetingRef.status = .done
+        try? modelContext?.save()
+        await meetingFinished(meetingRef)
     }
 
     // MARK: - File Import
@@ -377,10 +555,13 @@ final class RecordingManager {
             .contentModificationDate ?? .now
 
         let meeting = Meeting(title: name, date: fileDate, systemAudioPath: dest.path)
+        meeting.importedAt = .now
         meeting.status = .processing
         let profile = profileStore.activeProfile
         meeting.profile = profile
         meeting.profileSnapshotData = profile.flatMap { try? JSONEncoder().encode($0.kinds) }
+        meeting.onDeviceOnly = UserDefaults.standard.bool(forKey: CloudGate.globalKey)
+            || profile?.onDeviceOnly == true
         modelContext.insert(meeting)
         try? modelContext.save()
 
@@ -391,6 +572,12 @@ final class RecordingManager {
     }
 
     private func runImport(meeting: Meeting, audioURL: URL) async {
+        await CloudGate.$scopeLocal.withValue(meeting.onDeviceOnly) {
+            await self.runImportWork(meeting: meeting, audioURL: audioURL)
+        }
+    }
+
+    private func runImportWork(meeting: Meeting, audioURL: URL) async {
         defer { importProgress = nil }
 
         // 1. Whole-file, on-device transcription. Every segment is "Them" (one
@@ -419,8 +606,11 @@ final class RecordingManager {
             }
             try? modelContext?.save()
         } catch {
+            NSLog("Parrot: import transcription failed, \(error)")
             meeting.status = .failed
-            meeting.errorMessage = "Couldn't transcribe this file. \(error.localizedDescription)"
+            // The raw error is a CoreAudio code ("ExtAudioFileRead -50"): no use
+            // to the person looking at it. The log keeps it.
+            meeting.errorMessage = "Parrot couldn't read this audio file. Check it plays in QuickTime, then save it again as M4A or WAV and import that."
             try? modelContext?.save()
             return
         }
@@ -437,6 +627,7 @@ final class RecordingManager {
         writeAIUsage(meeting: meeting, polishSeconds: 0, backendOverride: .local)
         meeting.status = .done
         try? modelContext?.save()
+        await meetingFinished(meeting)
     }
 
     // MARK: - Deletion
@@ -445,10 +636,14 @@ final class RecordingManager {
     /// without it storage grows forever. Refuses the active recording.
     func delete(_ meeting: Meeting) {
         guard !(isRecording && meeting.id == currentMeeting?.id) else { return }
+        // Retention deletes without the UI asking: let it drop the selection
+        // first, or the detail view would read a deleted model and crash.
+        NotificationCenter.default.post(name: .parrotMeetingWillDelete, object: meeting.id)
         for path in [meeting.systemAudioPath.nilIfEmpty, meeting.micAudioPath?.nilIfEmpty].compactMap({ $0 }) {
             try? FileManager.default.removeItem(atPath: path)
         }
         if currentMeeting?.id == meeting.id { currentMeeting = nil }
+        memory.remove(meetingID: meeting.id)
         modelContext?.delete(meeting)
         try? modelContext?.save()
     }
@@ -560,9 +755,7 @@ final class RecordingManager {
         let segments = meeting.sortedSegments
         guard !segments.isEmpty else { return }
 
-        let transcript = segments
-            .map { "[\($0.formattedTimestamp)] \(meeting.displayName(forSpeaker: $0.speakerLabel)): \($0.text)" }
-            .joined(separator: "\n")
+        let transcript = meeting.promptTranscript
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
         let instructions = meeting.profile?.tone ?? (UserDefaults.standard.string(forKey: "copilotInstructions") ?? "")
         let counterpart = meeting.profile?.counterpart ?? "the other person"
@@ -571,6 +764,7 @@ final class RecordingManager {
             let summary = try await callAnalysisEngine.provider.summarize(
                 transcript: transcript,
                 insightTitles: insightTitles,
+                bookmarks: meeting.bookmarks.map(\.promptLine),
                 instructions: instructions,
                 counterpart: counterpart
             )
@@ -612,6 +806,7 @@ final class RecordingManager {
     @discardableResult
     private func polishTranscript(meeting: Meeting) async -> Double {
         guard UserDefaults.standard.bool(forKey: "polishAfterCall"),
+              !meeting.onDeviceOnly, !CloudGate.forcesLocal,
               let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
               !key.isEmpty,
               let modelContext else { return 0 }
@@ -697,6 +892,74 @@ final class RecordingManager {
 
     // MARK: - Post-Processing
 
+    /// One live pass: re-diarize the call so far and relabel in place.
+    /// Failures just wait for the next cycle (the .caf is mid-write).
+    private func runLiveSweep() async {
+        guard isRecording, elapsedTime >= 45, !diarizationEngine.isProcessing,
+              let meeting = currentMeeting,
+              let path = meeting.systemAudioPath.nilIfEmpty else { return }
+        do {
+            let url = URL(fileURLWithPath: path)
+            // The first sweep reads the whole (still short) call to learn the
+            // voices; after that only the last minute, matched against them.
+            // A call that stays silent past two minutes goes to windows anyway.
+            let windowed = !liveAnchors.isEmpty || elapsedTime > 120
+            let output = windowed
+                ? try await diarizationEngine.diarize(audioURL: url, lastSeconds: Self.liveWindow)
+                : try await diarizationEngine.diarize(audioURL: url)
+            // Stopped (or a new call started) while this ran: its labels and
+            // identities belong to a meeting whose final pass now owns them.
+            guard isRecording, currentMeeting === meeting else { return }
+            let mapping: [String: String]
+            if windowed {
+                var speech: [String: TimeInterval] = [:]
+                for turn in output.segments { speech[turn.speakerLabel, default: 0] += turn.endTime - turn.startTime }
+                mapping = Self.windowMapping(newEmbeddings: output.embeddings, speech: speech, anchors: liveAnchors)
+            } else {
+                mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: liveAnchors)
+            }
+            // Turns of clusters left out of the mapping don't label anything.
+            let turns = output.segments.compactMap { turn in
+                mapping[turn.speakerLabel].map {
+                    DiarizationEngine.SpeakerSegmentResult(speakerLabel: $0, startTime: turn.startTime, endTime: turn.endTime)
+                }
+            }
+            for segment in meeting.segments where segment.speakerLabel != "Me" {
+                // A window only speaks for the lines inside it, and only where
+                // a mapped turn actually overlaps the line.
+                if windowed {
+                    guard segment.startTime >= output.start,
+                          turns.contains(where: { $0.startTime < segment.endTime && $0.endTime > segment.startTime })
+                    else { continue }
+                }
+                if let label = Self.diarizedLabel(for: (segment.startTime, segment.endTime), turns: turns) {
+                    segment.speakerLabel = label
+                }
+            }
+            // Known voices keep their reference; a window only adds new ones.
+            for (cluster, embedding) in output.embeddings {
+                guard let label = mapping[cluster], !windowed || liveAnchors[label] == nil else { continue }
+                liveAnchors[label] = embedding
+            }
+
+            // Name matching in live: consult remembered voices (opt-in) so the
+            // bubbles can show "Gürkan?" instead of Speaker 2. Suggestion only.
+            if UserDefaults.standard.bool(forKey: "rememberVoices"), let context = modelContext {
+                var suggestions: [String: String] = [:]
+                for (label, embedding) in liveAnchors {
+                    if let match = SpeakerProfileStore.match(embedding, in: context,
+                                                               invited: meeting.attendees.map(\.displayName)) {
+                        suggestions[label] = match.name
+                    }
+                }
+                liveSpeakerSuggestions = suggestions
+            }
+            try? modelContext?.save()
+        } catch {
+            NSLog("Parrot: live speaker sweep skipped — \(error.localizedDescription)")
+        }
+    }
+
     /// Re-runs diarization on a finished meeting (audio is retained). Safe to
     /// call repeatedly; refuses the meeting currently being recorded.
     func redetectSpeakers(meeting: Meeting) async {
@@ -704,7 +967,10 @@ final class RecordingManager {
         await postProcess(meeting: meeting)
     }
 
-    private func postProcess(meeting: Meeting) async {
+    /// `anchors`: the live sweeps' identities for this meeting (empty for
+    /// imports, recovery and re-detection), so the final labels keep the
+    /// ones the user watched during the call.
+    private func postProcess(meeting: Meeting, anchors: [String: [Float]] = [:]) async {
         // Status stays .processing here — the calling chain flips .done after
         // the post-call REPORT finishes, so the UI can say "writing report…"
         // instead of the misleading "no report was generated".
@@ -715,17 +981,29 @@ final class RecordingManager {
             let audioURL = URL(fileURLWithPath: audioPath)
             let output = try await diarizationEngine.diarize(audioURL: audioURL)
 
+            // Continuity with any live sweeps: keep the identities the user
+            // watched during the call. Empty anchors → identity mapping, so
+            // non-live meetings and redetect are untouched.
+            let mapping = Self.stableMapping(newEmbeddings: output.embeddings, anchors: anchors)
+            let turns = output.segments.map {
+                DiarizationEngine.SpeakerSegmentResult(
+                    speakerLabel: mapping[$0.speakerLabel] ?? $0.speakerLabel,
+                    startTime: $0.startTime, endTime: $0.endTime)
+            }
+            let embeddings = Dictionary(uniqueKeysWithValues:
+                output.embeddings.map { (mapping[$0.key] ?? $0.key, $0.value) })
+
             // Assign speaker labels to transcript segments by time overlap.
             // "Me" segments come from the mic stream and are already attributed;
             // diarization only refines who's who within the system audio ("Them").
             for transcriptSegment in meeting.segments where transcriptSegment.speakerLabel != "Me" {
                 if let label = Self.diarizedLabel(
                     for: (transcriptSegment.startTime, transcriptSegment.endTime),
-                    turns: output.segments) {
+                    turns: turns) {
                     transcriptSegment.speakerLabel = label
                 }
             }
-            meeting.speakerEmbeddingsData = try? JSONEncoder().encode(output.embeddings)
+            meeting.speakerEmbeddingsData = try? JSONEncoder().encode(embeddings)
             try? modelContext?.save()
         } catch {
             // Diarization is a refinement pass; the audio and transcript are
@@ -734,6 +1012,100 @@ final class RecordingManager {
             NSLog("Parrot: diarization failed — \(error.localizedDescription)")
             try? modelContext?.save()
         }
+    }
+
+    /// What the live sweeps may spend right now.
+    struct PowerState: Equatable {
+        var onBattery = false
+        var lowPower = false
+        var hot = false
+
+        static var now: PowerState {
+            let info = ProcessInfo.processInfo
+            let source = IOPSGetProvidingPowerSourceType(IOPSCopyPowerSourcesInfo()?.takeRetainedValue())?
+                .takeUnretainedValue() as String?
+            return PowerState(onBattery: source == kIOPSBatteryPowerValue,
+                              lowPower: info.isLowPowerModeEnabled,
+                              hot: info.thermalState == .serious || info.thermalState == .critical)
+        }
+    }
+
+    /// Seconds until the next live sweep, or nil to skip it. After the first
+    /// one, sweeps read only the last `liveWindow` seconds, so their cost is
+    /// flat (the whole-call version cost ~5 s CPU at 65 min, 2026-09-25) and
+    /// they can run often: a new line gets its speaker in ~15 s. Battery
+    /// doubles the wait; Low Power Mode or a hot Mac skips.
+    nonisolated static func liveSweepDelay(power: PowerState) -> TimeInterval? {
+        guard !power.lowPower, !power.hot else { return nil }
+        return power.onBattery ? 30 : 15
+    }
+
+    /// How much audio a live window sweep reads.
+    static let liveWindow: TimeInterval = 60
+
+    /// Window sweeps: a minute of audio can split one voice into two clusters,
+    /// so several clusters may map to the SAME known voice (unlike
+    /// `stableMapping`, which is one-to-one). A cluster that matches no known
+    /// voice becomes a new speaker only with `minFreshSpeech` seconds of
+    /// speech; otherwise it's left out and its lines keep their label.
+    // ponytail: one new person split into two big clusters gets two fresh
+    // labels until the post-call pass merges them.
+    nonisolated static func windowMapping(
+        newEmbeddings: [String: [Float]],
+        speech: [String: TimeInterval],
+        anchors: [String: [Float]],
+        minFreshSpeech: TimeInterval = 4
+    ) -> [String: String] {
+        var mapping: [String: String] = [:]
+        let labels = newEmbeddings.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for label in labels {
+            guard let embedding = newEmbeddings[label] else { continue }
+            let best = anchors
+                .map { (label: $0.key, similarity: SpeakerProfileStore.cosine(embedding, $0.value)) }
+                .max { $0.similarity < $1.similarity }
+            if let best, best.similarity >= 0.7 { mapping[label] = best.label }
+        }
+        var next = 1
+        for label in labels where mapping[label] == nil && (speech[label] ?? 0) >= minFreshSpeech {
+            while anchors[("Speaker \(next)")] != nil || mapping.values.contains("Speaker \(next)") { next += 1 }
+            mapping[label] = "Speaker \(next)"
+            next += 1
+        }
+        return mapping
+    }
+
+    /// Maps a diarization run's labels onto the previous run's identities, so
+    /// live sweeps can't flip Speaker 1 and Speaker 2 mid-call when talk-time
+    /// order changes. Greedy in label order: best unused anchor with cosine
+    /// ≥ 0.7 (calibrated same-voice ≈ 0.96) wins that anchor's label;
+    /// unmatched clusters take the next unused index. Empty anchors → identity.
+    nonisolated static func stableMapping(
+        newEmbeddings: [String: [Float]],
+        anchors: [String: [Float]]
+    ) -> [String: String] {
+        var mapping: [String: String] = [:]
+        var usedAnchors: Set<String> = []
+        let newLabels = newEmbeddings.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for label in newLabels {
+            guard let embedding = newEmbeddings[label] else { continue }
+            let best = anchors
+                .filter { !usedAnchors.contains($0.key) }
+                .map { (label: $0.key, similarity: SpeakerProfileStore.cosine(embedding, $0.value)) }
+                .max { $0.similarity < $1.similarity }
+            if let best, best.similarity >= 0.7 {
+                mapping[label] = best.label
+                usedAnchors.insert(best.label)
+            }
+        }
+        // Unmatched clusters get the smallest "Speaker N" nobody else holds.
+        let reserved = Set(anchors.keys).union(mapping.values)
+        var next = 1
+        for label in newLabels where mapping[label] == nil {
+            while reserved.contains("Speaker \(next)") || mapping.values.contains("Speaker \(next)") { next += 1 }
+            mapping[label] = "Speaker \(next)"
+            next += 1
+        }
+        return mapping
     }
 
     /// Best speaker turn for a transcript segment: max time overlap, else the
