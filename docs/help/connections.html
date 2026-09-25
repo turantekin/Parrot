@@ -25,7 +25,7 @@ the title, date and people at the top, then your notes, the summary, next
 steps as tick boxes, coaching, marked moments and the transcript. Pick a folder
 in Settings &rarr; Connections (an Obsidian vault works well) and every finished
 meeting can be saved there automatically. Re-saving a meeting updates the same
-note.</p>
+note, even after you rename the meeting.</p>
 
 <h2>Follow-up email</h2>
 <p><strong>Draft Follow-up Email</strong> writes a short email with what was
@@ -48,7 +48,8 @@ reach Slack, Notion, HubSpot or anything else those tools connect to. Only https
 addresses are accepted. Add a signing secret and every request carries an
 <code>X-Parrot-Signature</code> header (an HMAC-SHA256 of the body), so the
 other end can check it came from you. <strong>Send Test</strong> sends a sample.
-On-device-only meetings are never sent.</p>
+Redirects aren't followed, so a meeting only ever goes to the address you
+pasted. On-device-only meetings are never sent.</p>
 
 <h2>AI apps on your Mac (MCP)</h2>
 <p>Turn on "Allow AI apps to read my meetings", click <strong>Copy
@@ -56,8 +57,9 @@ Setup</strong>, and paste it into Claude Desktop (Settings &rarr; Developer
 &rarr; Edit Config), then restart Claude. Claude can then list, read and search
 your meetings when you ask it to. Access is read-only. Keep in mind that the
 app you connect usually sends what it reads to its own cloud, which is why
-on-device-only meetings are never shown to it. Any app that speaks MCP can use
-the same setup.</p>
+on-device-only meetings are never shown to it. Turning the switch off cuts
+off an app that's already connected, the next time it asks. Any app that
+speaks MCP can use the same setup.</p>
 
 </body>
 </html>

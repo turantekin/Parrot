@@ -84,7 +84,8 @@ Tell Parrot what kind of call it is, and the profile decides what the copilot wa
 - **Me vs Them is exact**, live: your mic and the call audio are separate tracks.
 - **After the call, on-device speaker detection** ([FluidAudio](https://github.com/FluidInference/FluidAudio), a 13 MB model) tells the voices on the other side apart.
 - **Name a voice once** from short clips and every line takes the name. Reports and coaching use real names.
-- **Remember voices** (opt-in): next call, Parrot asks "sounds like Jeremy?" One click to confirm. Voiceprints stay on the Mac; forget one anytime.
+- **Remember voices** (opt-in): next call, Parrot asks "sounds like Jeremy?" One click to confirm. With a calendar invite, only people on it are suggested. Voiceprints stay on the Mac; forget one anytime.
+- **Live speaker labels** (experimental, off by default): names the other side *during* the call. "Them" becomes Speaker 1, Speaker 2 within seconds, you can name a voice mid-call, and the end-of-call pass keeps the same labels. It re-checks only the last minute of audio, so a long call costs no more than a short one.
 - Got one line wrong? Right-click it and reassign just that line.
 
 ### 📝 The report writes itself, then it coaches you
@@ -126,7 +127,7 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 
 ### 🧰 And all the everyday stuff
 
-- **Notices your calls.** When Zoom, Meet, Teams or FaceTime starts using the mic, Parrot asks *"Record it?"* (or records on its own, if you choose) and offers to stop when the call ends. It only sees that the mic is in use, never another app's audio.
+- **Notices your calls.** When Zoom, Meet, Teams or FaceTime starts using the mic, Parrot asks *"Record it?"* (or records on its own, if you choose) and offers to stop when the call ends. It only sees that the mic is in use, never another app's audio. Dictation apps like Wispr Flow don't count as calls.
 - **Knows your calendar** (opt-in, read-only, local): meetings take their event's name and guest list, guests become one-click speaker names, and an event title like "Interview: Jane" picks the matching profile.
 - **Opens at login**, if you like, so it's there for the first call of the day.
 - **Records system audio and your mic** as two tracks. On macOS 15+ it uses the audio-only System Audio permission (Core Audio taps); on macOS 14, ScreenCaptureKit. No virtual audio drivers.
@@ -135,11 +136,11 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 - **Never loses a meeting.** If Parrot crashes or gets force-quit mid-call, the recording is recovered with its transcript and report on next launch. ⌘Q mid-call finishes the recording first.
 - **Forgot to hit stop?** After 15 minutes with nobody talking, Parrot asks *Still recording?* An idle room isn't turned into words, and if you want the tail gone anyway, right-click a line and choose *Delete Everything After This Line*. The audio is kept in full.
 - **Import recordings.** Drop an audio file (m4a, mp3, wav, aac, aiff, caf) on the window and it's transcribed, split by speaker and summarised like a live call.
-- **Export** a meeting as TXT (notes, report, copilot cards and transcript in one file) or SRT subtitles.
+- **Export** a meeting as Markdown, TXT (notes, report, copilot cards and transcript in one file) or SRT subtitles.
 - **Searchable history.** Search titles and transcripts, meetings grouped by day, with a talk-ratio strip on each.
 - **Menu bar item** to start and stop from anywhere, and a dashboard with your meetings, hours and words.
 - **Keeps itself up to date** with signed Sparkle updates that install when you quit, never during a recording.
-- **A real user guide** inside the app (Help > Parrot Help, searchable and offline), also [on the web](https://turantekin.github.io/Parrot/help/).
+- **A real user guide** inside the app (Help > Parrot Help, searchable and offline), also [on the web](https://openparrot.app/help).
 - **Bug reports in two clicks.** The ladybug in the corner writes the boring parts (version, model, settings) and hands you a pre-filled GitHub issue to check and post yourself.
 - Light and dark mode, native SwiftUI, no Electron.
 
@@ -206,6 +207,8 @@ Want the tour again? **Help > Show Welcome Tour**.
 | ⌘O | Import an audio file |
 | ⌘E | Export transcript (TXT) |
 | ⌘F | Search meetings |
+| ⌘K | Ask Parrot |
+| ⌃⌥M | Mark a moment (from any app, while recording) |
 | ⌘, | Settings |
 
 ## Tech stack
@@ -248,7 +251,7 @@ make run
 - [x] **Local LLM for summaries and copilot.** Done, through Ollama (an in-process MLX model may still come one day)
 - [x] **Notarize and distribute.** Done, notarized DMG plus Sparkle auto-updates
 - [x] **Pre-call brief and per-call profiles.** Done
-- [ ] **Live speaker names during the call**, not just after it
+- [x] **Live speaker names during the call.** Built as an experiment (Settings → Transcription → Live speaker labels), off by default until it has survived more real calls
 - [x] **Calendar integration.** Done: meetings take their event's name and guests
 - [x] **Bookmarks.** Done: mark moments mid-call (⌃⌥M from any app), and every report point links to its source
 - [ ] **Better waveform visualization.** The current one is... functional

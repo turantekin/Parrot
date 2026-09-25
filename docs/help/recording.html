@@ -40,12 +40,18 @@ the mic, Parrot asks whether to stop too. Parrot only sees <em>that</em> the
 mic is in use (the same thing the orange dot in the menu bar shows), never
 the audio of another app.</p>
 
+<p>That question is a macOS notification, so Parrot needs permission to send
+notifications. The welcome tour asks for it on its "Make it automatic" step,
+and if notifications are off, Settings &rarr; Recording &rarr; Call Detection
+says so with a button to turn them on.</p>
+
 <p>Pick what happens in Settings &rarr; Recording &rarr; Call Detection:
 <strong>Ask me</strong> (the default), <strong>Record automatically</strong>,
 or <strong>Off</strong>. In automatic mode Parrot starts on its own and stops
 when the call ends. Recording laws differ by place, and many require telling
-everyone on the call, so automatic mode puts that on you. If an app keeps
-getting mistaken for a call (a dictation tool, say), choose
+everyone on the call, so automatic mode puts that on you. Dictation apps
+(FluidVoice, Wispr Flow, Superwhisper, MacWhisper, VoiceInk) are never
+mistaken for a call. If another app keeps getting mistaken for one, choose
 <strong>Never for This App</strong> on the notification. Settings lists those
 apps with an "Ask Again" button.</p>
 
@@ -97,8 +103,9 @@ icon, or press <kbd>&#8963;&#8997;M</kbd> from any app, even while Zoom or
 your browser is in front. The button offers a box to say what it was
 ("pricing question"); typing is optional. Marked moments show up in the report
 under <strong>Moments you marked</strong>, and the report is written knowing
-they mattered to you. After the call you can also right-click any transcript
-line and choose <strong>Bookmark This Line</strong>.</p>
+they mattered to you. After the call, hover over any transcript line and
+click the bookmark icon at its end (or right-click the line's time and choose
+<strong>Bookmark This Line</strong>).</p>
 <p>The <kbd>&#8963;&#8997;M</kbd> shortcut only exists while a recording is
 running, and it's the only key Parrot can see. Turn it off in Settings &rarr;
 Recording &rarr; Bookmarks.</p>
