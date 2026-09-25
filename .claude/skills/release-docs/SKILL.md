@@ -76,23 +76,59 @@ Match the last two releases (`gh release view v0.21.0 --json name,body`):
 - A line on new permissions or downloads, then: "Requires macOS 14 or later
   on Apple Silicon. Existing installs will offer the update within a day."
 
-Save it as a file for `scripts/publish.sh <version> <notes-file>` (or
-`gh release create --notes-file`).
+Save it as `dist/notes-X.Y.Z.md` for `scripts/publish.sh`, with the
+title as its first line (`# Parrot X.Y.Z: <short tagline>`): publish.sh makes
+that line the release title, which the website's "New in" pill shows. By
+hand, `gh release create --title "..." --notes-file` does the same.
 
-## 5. What the website should add
+## 5. What the website should add: ask the user
 
-Read `~/Scripts/parrot-site/content.ts` (read-only from here) to see the
-current sections. Suggest, per user-facing change: a new section, an addition
-to an existing section, an "everyday" tile, an FAQ entry, or "wait" (anything
-experimental or off by default). Rank by how much it changes why someone
-would download or trust Parrot. Download buttons, version labels and
-/changelog update themselves from GitHub, and help syncs through the site's
-workflow PR, so leave those out. The site changes happen in a separate
-session in `~/Scripts/parrot-site`, using its `/after-release` skill.
+The home page is the user's pitch, so they choose. Read
+`~/Scripts/parrot-site/content.ts` (read-only from here) to see the current
+sections, then propose, per user-facing change, one of:
+
+- **Headline**: changes why someone would download or trust Parrot. Its own
+  section or a tab in the hero demo.
+- **Existing section**: say which (Copilot, Knowledge, Profiles, Brains,
+  Names, Report, Privacy).
+- **Everyday tile**: useful but small.
+- **FAQ**: answers a question a new visitor would ask.
+- **Wait**: experimental, off by default or not finished.
+
+Rank by how much it changes why someone would download or trust Parrot, and
+give a one-line reason each. Leave out download buttons, version labels,
+/changelog and help: those update on their own.
+
+**Show the table and stop. Wait for the user to agree or change it.** Don't
+move on until they have. Then save it as `dist/site-plan-X.Y.Z.md` (`dist/`
+is ignored, so it never lands in this public repo):
+
+```markdown
+# Site plan for Parrot X.Y.Z
+
+| Feature | Where | Why |
+|---|---|---|
+| Ask Parrot (⌘K) | Headline: new hero demo tab | A new reason to download |
+| Live speaker labels | Wait | Experimental, off by default |
+
+Notes: anything the user asked for, such as wording to use or avoid.
+```
+
+`scripts/publish.sh` passes this file to the site's "Site draft" workflow,
+which writes the copy exactly as planned and opens a draft PR in
+parrot-site. No plan file, no draft: the site then waits for a chat in
+`~/Scripts/parrot-site` with `/after-release`.
 
 ## 6. Hand off
 
 Commit the help and README changes and get them onto master before running
 `scripts/release.sh <version>`: the website copies help from the release tag.
-Then publish (`scripts/publish.sh` from master, or the same three steps by
-hand from a worktree) and refresh `/Applications/Parrot.app`.
+Then publish and refresh `/Applications/Parrot.app`:
+
+```bash
+scripts/publish.sh X.Y.Z dist/notes-X.Y.Z.md dist/site-plan-X.Y.Z.md
+```
+
+Run it from master (or the same steps by hand from a worktree). It starts the
+site's help sync and, with the plan, the site draft; both end as PRs in
+parrot-site for the user to merge.
