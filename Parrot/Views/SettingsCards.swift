@@ -11,6 +11,7 @@ struct SettingsPage<Content: View>: View {
             VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap) { content }
                 .frame(maxWidth: 680, alignment: .leading)
                 .padding(Theme.Metrics.pad)
+                .padding(.bottom, Theme.Metrics.floatingClearance)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.Colors.canvas)

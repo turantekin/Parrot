@@ -125,6 +125,9 @@ enum Theme {
         static let chipInsetV: CGFloat = 1
         /// Banner vertical inset.
         static let bannerInsetV: CGFloat = 8
+        /// Room under scrolled content for the corner bug-report button
+        /// (30 pt + 16 pt inset), so a page's last control can clear it.
+        static let floatingClearance: CGFloat = 46
     }
 }
 

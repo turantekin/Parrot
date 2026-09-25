@@ -49,6 +49,9 @@ struct MeetingDetailView: View {
     /// Share-menu actions: one at a time, with an outcome message.
     @State private var actionRunning = false
     @State private var actionMessage: String?
+    /// A Share action's success ("Saved to your folder."): a short note that
+    /// fades, not a box to dismiss. Errors still use `actionMessage`.
+    @State private var actionNote: String?
     @State private var showPrivacyLedger = false
     /// The transcript as a receipts index — cached, not rebuilt on every
     /// playback tick (the timer re-renders this view ten times a second).
@@ -200,6 +203,18 @@ struct MeetingDetailView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            if let actionNote {
+                Label(actionNote, systemImage: "checkmark.circle.fill")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .padding(.horizontal, Theme.Metrics.popoverPad)
+                    .padding(.vertical, Theme.Metrics.bannerInsetV)
+                    .background(Theme.Colors.chip, in: Capsule())
+                    .padding(.top, Theme.Metrics.bannerInsetV)
+                    .transition(.opacity)
+            }
+        }
         .alert(actionMessage ?? "", isPresented: Binding(
             get: { actionMessage != nil },
             set: { if !$0 { actionMessage = nil } }
@@ -314,7 +329,11 @@ struct MeetingDetailView: View {
         actionRunning = true
         Task {
             do {
-                actionMessage = try await work()
+                if let note = try await work() {
+                    withAnimation { actionNote = note }
+                    try? await Task.sleep(for: .seconds(3))
+                    withAnimation { if actionNote == note { actionNote = nil } }
+                }
             } catch {
                 actionMessage = error.localizedDescription
             }
@@ -549,6 +568,7 @@ struct MeetingDetailView: View {
                 }
             }
             .padding(Theme.Metrics.pad)
+            .padding(.bottom, Theme.Metrics.floatingClearance)
             .frame(maxWidth: Theme.Metrics.contentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -601,7 +621,7 @@ struct MeetingDetailView: View {
         // No audio (a recovered call whose file couldn't be finalized): the
         // line can still be shown, just not played.
         ReceiptActions(play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil,
-                       showInTranscript: showInTranscript)
+                       showInTranscript: { showInTranscript($0, text: $1) })
     }
 
     /// Ask Parrot sent us here: go to the moment (or the report).
@@ -621,8 +641,13 @@ struct MeetingDetailView: View {
         if !isPlaying { togglePlayback() }
     }
 
-    private func showInTranscript(_ time: TimeInterval) {
+    private func showInTranscript(_ time: TimeInterval, text: String? = nil) {
         seekTo(time)
+        // Both tracks can cut a line at the same instant (a "Me" echo of the
+        // other side): the receipt's own words pick the line it quoted.
+        if let text, let line = meeting.sortedSegments.first(where: { $0.startTime == time && $0.text == text }) {
+            activeSegmentID = line.id
+        }
         tab = .transcript
         scrollRequest = activeSegmentID
     }
@@ -1217,6 +1242,7 @@ struct TranscriptSegmentRow: View {
     /// Set when this line can be bookmarked after the call.
     var onBookmark: (() -> Void)? = nil
     @State private var naming = false
+    @State private var hovering = false
 
     /// Muted adaptive palette for the other side of the call — "Me" is always
     /// the accent, so these stay deliberately quiet.
@@ -1282,7 +1308,25 @@ struct TranscriptSegmentRow: View {
             Text(segment.text)
                 .font(Theme.Typography.body)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // The words are selectable, so right-click on them opens the
+            // text menu, not ours: a hover button makes bookmarking findable.
+            // Opacity (not if/else) keeps rows from jumping, and VoiceOver
+            // and keyboard users still reach it.
+            if let onBookmark {
+                Button(action: onBookmark) {
+                    Image(systemName: "bookmark")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
+                .buttonStyle(.plain)
+                .help("Bookmark this line")
+                .accessibilityLabel("Bookmark this line")
+                .opacity(hovering ? 1 : 0)
+            }
         }
+        .onHover { hovering = $0 }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(

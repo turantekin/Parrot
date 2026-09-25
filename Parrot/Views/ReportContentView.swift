@@ -47,7 +47,8 @@ extension ReportContentView: Equatable {
 struct ReceiptActions {
     /// Nil when the meeting has no audio to play.
     var play: ((TimeInterval) -> Void)?
-    var showInTranscript: (TimeInterval) -> Void
+    /// The line's start, and its words to tell apart two lines that share it.
+    var showInTranscript: (TimeInterval, String?) -> Void
 }
 
 // MARK: - Receipts
@@ -109,7 +110,7 @@ struct ReceiptPopover: View {
                     }
                     Button {
                         dismiss()
-                        actions.showInTranscript(line.start)
+                        actions.showInTranscript(line.start, line.text)
                     } label: {
                         Label("Show in Transcript", systemImage: "text.bubble")
                     }
