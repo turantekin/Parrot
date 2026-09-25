@@ -352,6 +352,12 @@ enum HelpShots {
         shot("onboarding-path.png", size: .init(width: 600, height: 620),
              CopilotPathStep().environment(OnboardingModel()))
 
+        for variant in ["private", "balanced", "cloud"] {
+            UserDefaults.standard.register(defaults: [CopilotPath.defaultsKey: variant])
+            shot("onboarding-setup-\(variant).png", size: .init(width: 600, height: 620),
+                 CopilotSetupStep().environment(OnboardingModel()).environment(rm))
+        }
+
         // Reuses the dashboard shot just written as the attached screenshot, so
         // the guide shows the sheet the way a user meets it.
         shot("bug-report.png", size: .init(width: 460, height: 470),
