@@ -34,13 +34,36 @@ truth for the post-test improvement effort. Update the status table as work land
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
 | — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
-| **N** | Next features (six phases) | 🟡 N1–N5 built, N6 not started | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
+| **N** | Next features (six phases) | 🟡 N1–N5 built + tested on a Mac, N6 built behind an off-by-default switch | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-09-25 (on-device test + N6)** — **N1–N5 tested on a real Mac, 14
+  bugs fixed; N6 live speaker labels built (switch off by default).**
+  - **Fixed from testing**: call detection never saw a call end (Siri's
+    `com.apple.CoreSpeech` and Parrot's own `com.apple.replayd` hold the mic
+    during every recording) and offered dictation (FluidVoice, Wispr Flow,
+    …) as calls; every import failed with a custom vocabulary (glossary
+    prompt + timestamped decode → empty text; **shipped in 0.20.1**);
+    one-line local-model reports (gemma3:4b) lost their sections and next
+    steps; reworded duplicate promises; Consent button never orange; Ask
+    leaked "M1/M2" and hid chip times; failed meetings never said why;
+    notification permission never asked (onboarding row + Settings warning);
+    hover bookmark on transcript lines; Share successes no longer modal;
+    bug button overlap; wrong line highlighted on shared timestamps.
+  - **N6**: draft PR #43 (sweeps + stable identities + "Gürkan?" + tap to
+    name) rebased in, then: the first sweep learns the voices from the whole
+    call, later sweeps read only the last 60 s every 15 s (65-min call: 0.5 s
+    / 0.3 s CPU / 135 MB per sweep vs 7.3 s / 4.6 s / 1.4 GB whole-call);
+    30 s on battery, none in Low Power Mode or when hot; remembered voices
+    only suggested when on the calendar invite. Live test (two voices, 3 m
+    41 s, whole-call sweeps): 37/37 lines right, no swaps, final pass
+    unchanged. Still open: live run of the 60 s windows, Copilot gets the
+    guessed names, a few real calls before the switch defaults on.
 
 - **2026-09-25** — **N3 Ask Parrot, N4 Connections, N5 Privacy built.**
   - **N3**: `MeetingMemory` indexes every finished meeting locally (transcript
