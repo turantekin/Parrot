@@ -79,6 +79,7 @@ enum ProfileTest {
         testOnboardingFlow()
         testCopilotSetupState()
         testProviderKeyCheck()
+        testProgressStall()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2425,5 +2426,19 @@ enum ProfileTest {
         check("keycheck: keychain slots",
               ProviderKeyCheck.Service.deepgram.keychainAccount == "deepgram-api-key"
               && ProviderKeyCheck.Service.claude.keychainAccount == nil)
+    }
+
+    static func testProgressStall() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var s = TranscriptionEngine.ProgressStall(limit: 60, start: t0)
+        check("stall: fresh start isn't stalled", !s.isStalled(at: t0 + 59))
+        check("stall: 60 s without progress is", s.isStalled(at: t0 + 60))
+        s.note(0.1, at: t0 + 50)
+        check("stall: progress resets the clock", !s.isStalled(at: t0 + 100))
+        s.note(0.1, at: t0 + 90)
+        check("stall: the same value isn't progress", s.isStalled(at: t0 + 110))
+        var slow = TranscriptionEngine.ProgressStall(limit: 60, start: t0)
+        for i in 1...20 { slow.note(Double(i) / 100, at: t0 + Double(i * 50)) }
+        check("stall: slow but moving never trips (1000 s download)", !slow.isStalled(at: t0 + 1_030))
     }
 }
