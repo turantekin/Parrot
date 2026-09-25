@@ -830,7 +830,14 @@ enum AskChatTest {
             for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
         ) else { print("ask-chat-test: container failed"); exit(1) }
         let context = container.mainContext
-        let rm = RecordingManager()
+        // Fabricated meetings must never land in the real Application
+        // Support memory/chats store — use a scratch directory, wiped
+        // wholesale at the end so an interrupt or crash can't leave junk
+        // behind (unlike per-meeting removal, which a crash could skip).
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ask-chat-test-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let rm = RecordingManager(memory: MeetingMemory(directory: scratch), chats: AskChatStore(directory: nil))
         rm.attachForHarness(modelContext: context)
 
         func meeting(_ title: String, daysAgo: Double, _ lines: [(TimeInterval, String, String)], summary: String) -> Meeting {
@@ -876,7 +883,7 @@ enum AskChatTest {
                 chat.messages.append(AskMessage(role: .me, text: q))
                 chat.messages.append(AskMessage(answer: result))
             }
-            for m in [acme, globex] { rm.memory.remove(meetingID: m.id) }
+            try? FileManager.default.removeItem(at: scratch)
             exit(0)
         }
         RunLoop.main.run()

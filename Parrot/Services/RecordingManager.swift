@@ -32,9 +32,9 @@ final class RecordingManager {
     /// Notices calls in other apps and offers to record them.
     let callWatcher = CallWatcher()
     /// Every finished meeting, searchable on the Mac (Ask Parrot).
-    let memory = MeetingMemory()
+    let memory: MeetingMemory
     /// Ask Parrot's saved chats.
-    let chats = AskChatStore()
+    let chats: AskChatStore
     /// Next steps → Apple Reminders (asks for access on first use).
     let reminders = RemindersService()
 
@@ -93,7 +93,14 @@ final class RecordingManager {
         }
     }
 
-    init() {
+    /// `memory`/`chats` are overridable so the `--ask-chat-test` harness can
+    /// point them at a scratch directory instead of the real Application
+    /// Support store — normal app code keeps calling `RecordingManager()`.
+    /// (nil defaults, not `= MeetingMemory()`: a default-argument expression
+    /// isn't MainActor-isolated, so it can't call these actor-isolated inits.)
+    init(memory: MeetingMemory? = nil, chats: AskChatStore? = nil) {
+        self.memory = memory ?? MeetingMemory()
+        self.chats = chats ?? AskChatStore()
         callAnalysisEngine.knowledgeBase = knowledgeBase
         callAnalysisEngine.docMatcher = docMatcher
     }
