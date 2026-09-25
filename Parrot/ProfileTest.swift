@@ -77,6 +77,7 @@ enum ProfileTest {
         testPrivacyLedgerAndConsent()
         testLiveLabelStability()
         testOnboardingFlow()
+        testCopilotSetupState()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2324,5 +2325,76 @@ enum ProfileTest {
         check("fit: 8 GB → base + llama", MachineFit.whisperModel(memoryGB: 8) == "base" && MachineFit.ollamaModel(memoryGB: 8) == "llama3.2:3b")
         check("fit: 16 GB → turbo + gemma", MachineFit.whisperModel(memoryGB: 16) == "large-v3-turbo" && MachineFit.ollamaModel(memoryGB: 16) == "gemma3:4b")
         check("fit: bytes round to whole GB", MachineFit.memoryGB(17_179_869_184) == 16)
+    }
+
+    @MainActor
+    static func testCopilotSetupState() {
+        let suite = "parrot.test.copilotSetup"
+        let d = UserDefaults(suiteName: suite)!
+        func fresh() { d.removePersistentDomain(forName: suite) }
+        func choices(_ path: CopilotPath, on: Bool = true, claude: Bool = false,
+                     deepgram: Bool = false, ollamaReady: Bool = false) -> CopilotChoices {
+            CopilotChoices(path: path, ollamaModel: "gemma3:4b", copilotSwitchOn: on, claudeKeyWorks: claude,
+                           deepgramKeyWorks: deepgram, ollamaModelReady: ollamaReady)
+        }
+        let backendKey = TranscriptionBackend.defaultsKey
+
+        fresh(); CopilotPathSettings.apply(choices(.private), to: d)
+        check("setup: private uses Ollama and local speech",
+              d.string(forKey: "copilotProvider") == "ollama" && d.string(forKey: "copilotOllamaModel") == "gemma3:4b"
+              && d.string(forKey: backendKey) == "local")
+        check("setup: private waits for the model",
+              !d.bool(forKey: "copilotEnabled") && d.bool(forKey: CopilotPathSettings.enableWhenReadyKey))
+        fresh(); CopilotPathSettings.apply(choices(.private, ollamaReady: true), to: d)
+        check("setup: private with the model ready turns on now",
+              d.bool(forKey: "copilotEnabled") && !d.bool(forKey: CopilotPathSettings.enableWhenReadyKey))
+        fresh(); CopilotPathSettings.apply(choices(.private, on: false), to: d)
+        check("setup: switch off means off, nothing pending",
+              !d.bool(forKey: "copilotEnabled") && !d.bool(forKey: CopilotPathSettings.enableWhenReadyKey))
+        fresh(); CopilotPathSettings.apply(choices(.balanced, claude: true), to: d)
+        check("setup: balanced with a working key",
+              d.string(forKey: "copilotProvider") == "claude" && d.bool(forKey: "copilotEnabled")
+              && d.string(forKey: backendKey) == "local")
+        fresh(); CopilotPathSettings.apply(choices(.balanced), to: d)
+        check("setup: balanced without a key stays off", !d.bool(forKey: "copilotEnabled"))
+        fresh(); CopilotPathSettings.apply(choices(.cloud, claude: true, deepgram: true), to: d)
+        check("setup: cloud with Deepgram", d.string(forKey: backendKey) == "deepgram" && d.bool(forKey: "copilotEnabled"))
+        fresh(); CopilotPathSettings.apply(choices(.cloud, claude: true), to: d)
+        check("setup: cloud without Deepgram keeps speech local", d.string(forKey: backendKey) == "local")
+        fresh(); d.set(true, forKey: "copilotEnabled"); CopilotPathSettings.apply(choices(.later), to: d)
+        check("setup: later turns Copilot off and saves the path",
+              !d.bool(forKey: "copilotEnabled") && d.string(forKey: CopilotPath.defaultsKey) == "later")
+        check("setup: reports keep following Copilot", d.string(forKey: "reportsProvider") == nil)
+
+        fresh(); CopilotPathSettings.apply(choices(.private), to: d)
+        check("setup: model ready switches Copilot on once",
+              CopilotPathSettings.ollamaModelReady(in: d) && d.bool(forKey: "copilotEnabled")
+              && d.bool(forKey: CopilotPathSettings.justTurnedOnKey))
+        check("setup: a second ready does nothing", !CopilotPathSettings.ollamaModelReady(in: d))
+        fresh(); CopilotPathSettings.apply(choices(.balanced), to: d)
+        d.set(true, forKey: CopilotPathSettings.enableWhenReadyKey)
+        check("setup: model ready ignores other paths", !CopilotPathSettings.ollamaModelReady(in: d))
+
+        func status(_ enabled: Bool, _ path: CopilotPath?, pending: Bool = false,
+                    pulling: Bool = false, key: Bool = false) -> CopilotStatus {
+            CopilotStatus.current(copilotEnabled: enabled, path: path, enableWhenReady: pending,
+                                  ollamaPulling: pulling, ollamaProgress: pulling ? 0.4 : nil, hasClaudeKey: key)
+        }
+        check("status: enabled is on", status(true, nil) == .on)
+        check("status: private pulling waits", status(false, .private, pending: true, pulling: true) == .waitingForModel(progress: 0.4))
+        check("status: private not pulling needs Ollama", status(false, .private, pending: true) == .finishOllama)
+        check("status: private switched off is off", status(false, .private) == .off)
+        check("status: balanced without a key", status(false, .balanced) == .needsClaudeKey)
+        check("status: cloud with a key but off", status(false, .cloud, key: true) == .off)
+        check("status: never set up is off", status(false, nil) == .off && status(false, .later) == .off)
+        check("card: on shows only right after turning on",
+              CopilotStatus.showsHomeCard(.on, dismissed: false, justTurnedOn: true)
+              && !CopilotStatus.showsHomeCard(.on, dismissed: false, justTurnedOn: false))
+        check("card: a download can't be hidden",
+              CopilotStatus.showsHomeCard(.waitingForModel(progress: nil), dismissed: true, justTurnedOn: false))
+        check("card: dismiss hides the nudge",
+              !CopilotStatus.showsHomeCard(.off, dismissed: true, justTurnedOn: false)
+              && CopilotStatus.showsHomeCard(.needsClaudeKey, dismissed: false, justTurnedOn: false))
+        fresh()
     }
 }
