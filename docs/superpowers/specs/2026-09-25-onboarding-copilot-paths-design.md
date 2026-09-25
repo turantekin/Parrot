@@ -149,8 +149,9 @@ Unchanged content, restyled to the larger window.
   - Turns on when gemma3:4b finishes (62%).
   - Almost there / Needs a working Claude key: "Finish from the card on Home."
   - Off for now (Decide later): "Set it up any time from the card on Home."
-- Then: permissions row, speech model row (ready, or downloading N%),
-  Deepgram row on Cloud.
+- Then (full tour only): speech model row (ready, or downloading N%), and a
+  Deepgram row on Cloud. No permissions row: macOS 15's audio grant can't be
+  read back reliably, and the Ready screen must not claim what it can't see.
 - Line: "Downloads keep going after you close this."
 - Button: "Let's start" (full tour) or "Done" (short tour).
 
@@ -160,8 +161,8 @@ Unchanged content, restyled to the larger window.
 |---|---|---|---|---|
 | `copilotProvider` | `ollama` | `claude` | `claude` | untouched |
 | `copilotOllamaModel` | chosen | untouched | untouched | untouched |
-| `transcriptionBackend` | `local` | `local` | `deepgram` if its key passed, else `local` | `local` |
-| `whisperModel` | chosen | chosen | `base` (backup) | chosen |
+| `transcriptionBackend` | `local` | `local` | `deepgram` if its key passed, else `local` | untouched |
+| `whisperModel` | chosen on the speech step | same | not touched (first launch already loads Base) | same as Private |
 | `copilotEnabled` | switch value, applied when the Ollama model is ready | switch value if Claude key passed, else `false` | same as Balanced | `false` |
 | `onboardingCopilotPath` (new) | `private` | `balanced` | `cloud` | `later` |
 
@@ -185,8 +186,9 @@ on-device Whisper when its socket fails.
     progress bar. No close button.
   - Close ✕ hides it for good (`copilotCardDismissed`). Existing users with
     Copilot off see it once too.
-- **Settings → Copilot** gets the same "Set up Copilot" button at the top
-  of the Live Call Copilot card. Always there, even after ✕.
+- **Settings → Copilot** gets the same "Set up Copilot" button in the Live
+  Call Copilot card. Always there, even after ✕. Pressing it (or Show Welcome
+  Tour) closes the Settings window so the sheet on the main window is seen.
 - Both open the short tour: `MeetingActions.showCopilotSetup()` sets a
   `onboardingMode = copilot` key, then presents the same sheet as
   `showWelcomeTour()`.
@@ -203,13 +205,12 @@ sheet closing. Changes:
   timeout: fail only if progress hasn't moved for 60 s. At 300 s total,
   the 1.6 GB turbo model fails on connections slower than about 5 MB/s.
   The 300 s limit on `WhisperKit(config)` (loading, not downloading) stays.
-- Record button while the model isn't ready: "Getting ready… 41%",
-  inactive, instead of throwing `modelNotReady` on press.
-- Toolbar pill while downloading: "Speech model 41%". On failure it becomes
-  "Download failed. Retry".
-- Quit mid-download: on next launch, resume the load of the selected model.
-  Needs a test to confirm whether WhisperKit resumes partial files or starts
-  over; either is acceptable, silently doing nothing is not.
+- Record button while the model isn't ready: already disabled, with the
+  download shown under it (`DashboardView.modelStatus`). Keep as is; no new
+  toolbar pill. The Ollama download shows on the Home Copilot card.
+- Quit mid-download: already handled. `RecordingManager.prepare` loads the
+  selected model on every launch. Test whether WhisperKit resumes partial
+  files or starts over; either is acceptable.
 
 ### Ollama model
 Today the pull lives in `OllamaModelStatusView`'s `@State`; when the view
@@ -280,7 +281,8 @@ card views for the demo, `Theme` for all colours and metrics.
 **Saved step.** `onboardingStep` is an Int today; inserting steps would put
 a user mid-onboarding during an update on the wrong screen. Store the step
 by name (`onboardingStepName`), migrating the old Int once (0→welcome,
-1→permissions, 2→speech, 3→automatic, 4→ready).
+1→permissions, 2 or later→meetCopilot, so nobody mid-tour skips the new
+Copilot screens).
 
 ## Errors and edge cases
 
