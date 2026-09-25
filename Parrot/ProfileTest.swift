@@ -78,6 +78,7 @@ enum ProfileTest {
         testLiveLabelStability()
         testOnboardingFlow()
         testCopilotSetupState()
+        testProviderKeyCheck()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
     }
@@ -2396,5 +2397,33 @@ enum ProfileTest {
               !CopilotStatus.showsHomeCard(.off, dismissed: true, justTurnedOn: false)
               && CopilotStatus.showsHomeCard(.needsClaudeKey, dismissed: false, justTurnedOn: false))
         fresh()
+    }
+
+    static func testProviderKeyCheck() {
+        let c = ProviderKeyCheck.request(.claude, key: "sk-ant-x")
+        check("keycheck: claude asks for one model",
+              c.url?.absoluteString == "https://api.anthropic.com/v1/models?limit=1" && c.httpMethod == "GET")
+        check("keycheck: claude headers",
+              c.value(forHTTPHeaderField: "x-api-key") == "sk-ant-x"
+              && c.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
+        let dg = ProviderKeyCheck.request(.deepgram, key: "abc")
+        check("keycheck: deepgram projects with a token",
+              dg.url?.absoluteString == "https://api.deepgram.com/v1/projects"
+              && dg.value(forHTTPHeaderField: "Authorization") == "Token abc")
+        check("keycheck: short timeout", c.timeoutInterval == 10 && dg.timeoutInterval == 10)
+        check("keycheck: 200 works", ProviderKeyCheck.classify(status: 200) == .works)
+        check("keycheck: 400, 401 and 403 reject",
+              [400, 401, 403].allSatisfy { ProviderKeyCheck.classify(status: $0) == .rejected })
+        check("keycheck: 429 and 500 say nothing about the key",
+              ProviderKeyCheck.classify(status: 429) == .unreachable && ProviderKeyCheck.classify(status: 500) == .unreachable)
+        check("keycheck: no response is unreachable", ProviderKeyCheck.classify(status: nil) == .unreachable)
+        check("keycheck: messages",
+              ProviderKeyCheck.message(.unreachable, .deepgram) == "Couldn't reach Deepgram. Check your internet."
+              && ProviderKeyCheck.message(.rejected, .claude) == "That key didn't work. Check it and try again."
+              && ProviderKeyCheck.message(.works, .claude) == "Key works"
+              && ProviderKeyCheck.message(nil, .claude) == nil)
+        check("keycheck: keychain slots",
+              ProviderKeyCheck.Service.deepgram.keychainAccount == "deepgram-api-key"
+              && ProviderKeyCheck.Service.claude.keychainAccount == nil)
     }
 }
