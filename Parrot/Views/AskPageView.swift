@@ -286,7 +286,10 @@ struct AskPageView: View {
             Text(privacyLine)
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.ink3)
-                .fixedSize(horizontal: false, vertical: true)
+                // Wraps without fixedSize: outside the ScrollView, a fixed
+                // height here is measured at the window's minimum width and
+                // pinned the window taller than the screen.
+                .lineLimit(3)
         }
         .padding(Theme.Metrics.pad)
         // Room for the floating bug-report button in the corner.
