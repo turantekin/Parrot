@@ -443,6 +443,7 @@ struct MeetingDetailView: View {
         case .failed:
             Label("Failed", systemImage: "xmark.circle")
                 .foregroundStyle(Theme.Colors.stop)
+                .help(meeting.errorMessage ?? "Processing failed")
         default:
             // A recovered call is otherwise `.done`; flag it so it doesn't read as
             // a clean recording.
@@ -511,6 +512,9 @@ struct MeetingDetailView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         if meeting.status == .processing {
                             reportGeneratingRow("Writing your report…")
+                        } else if meeting.status == .failed, let reason = meeting.errorMessage {
+                            // Say why, not just that it failed.
+                            emptyTabState(reason)
                         } else {
                             emptyTabState("No report was generated for this meeting.")
                         }
@@ -784,6 +788,8 @@ struct MeetingDetailView: View {
         Text(message)
             .font(Theme.Typography.body)
             .foregroundStyle(Theme.Colors.ink2)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 440)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 40)
     }

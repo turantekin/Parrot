@@ -572,8 +572,11 @@ final class RecordingManager {
             }
             try? modelContext?.save()
         } catch {
+            NSLog("Parrot: import transcription failed, \(error)")
             meeting.status = .failed
-            meeting.errorMessage = "Couldn't transcribe this file. \(error.localizedDescription)"
+            // The raw error is a CoreAudio code ("ExtAudioFileRead -50"): no use
+            // to the person looking at it. The log keeps it.
+            meeting.errorMessage = "Parrot couldn't read this audio file. Check it plays in QuickTime, then save it again as M4A or WAV and import that."
             try? modelContext?.save()
             return
         }
