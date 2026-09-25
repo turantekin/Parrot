@@ -25,6 +25,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Models/AIUsage.swift` | 144 | Token accounting and per-model price table |
 | `Models/SpeakerProfile.swift` | 30 | Remembered voice: name + running-mean embedding (opt-in, local) |
 | `Models/Bookmark.swift` | 50 | A marked moment (time + label); merge window, prompt line |
+| `Models/Consent.swift` | 45 | How the other side was told it's recorded; notice text |
 
 ## Services
 
@@ -55,6 +56,17 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/CallWatcher.swift` | 310 | Polls the detector; Ask/Auto modes; notification actions + delegate; calendar reminders |
 | `Services/CalendarService.swift` | 250 | EventKit read-only: current event match, notes cleaning, invite context, title → profile |
 | `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
+| `Services/MeetingMemory.swift` | 300 | Local index of finished meetings (chunks + on-device vectors, one file per meeting), hybrid search |
+| `Services/AskEngine.swift` | 260 | Ask Parrot prompt/context, `[M2 12:34]` citation parsing + checks; LastCallBrief (previous meeting, open items) |
+| `Services/RecordingManager+Memory.swift` | 110 | meetingFinished hook, memory sync, previous meeting, `ask()` |
+| `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
+| `Services/Integrations.swift` | 230 | Apple Reminders, export folder (security-scoped bookmark), webhook (payload, HMAC, send) |
+| `Services/RecordingManager+Integrations.swift` | 90 | After-call actions, follow-up drafting, next steps → Reminders |
+| `Services/MCPServer.swift` | 260 | `--mcp`: read-only stdio MCP server (list/get/search meetings), opt-in, private meetings hidden |
+| `Services/CloudGate.swift` | 60 | On-device-only switch: global or per-call holds; checked by every cloud path |
+| `Services/Redactor.swift` | 200 | Hide emails/phones/cards/IBANs/names from cloud AI and restore them; request/result helpers |
+| `Services/Retention.swift` | 55 | Automatic clean-up rules (audio / whole meetings after N days) |
+| `Services/RecordingManager+Privacy.swift` | 100 | Consent recording, retention run, PrivacyLedger ("what left this Mac") |
 
 ## Views
 
@@ -81,6 +93,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
+| `Views/AskView.swift` | 250 | Ask Parrot sheet: question, cited answer chips, sources, privacy line |
+| `Views/ConnectionsPrivacySettings.swift` | 260 | Settings → Connections (folder, email, webhook, MCP) and → Privacy (lock, redaction, consent, clean-up) |
 
 ## Build & non-source
 

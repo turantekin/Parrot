@@ -64,6 +64,10 @@ An always-on assistant that watches the conversation and puts the right thing on
 - **Coaching instructions** for every call ("keep answers short, always offer three price options").
 - Choose whether it may answer from **general knowledge** when your documents don't cover it. Every card says where its answer came from.
 
+### 🔎 Ask Parrot: a memory of every call
+
+Ask across all your calls (⌘K): *"What did I promise Acme?"*, *"What objections came up about pricing?"*. Every fact in the answer is a chip that opens the meeting at that second. Search runs on your Mac; with Ollama the answer is written there too. When a call starts with people you've met before, the Copilot's brief shows the open items from last time. And if you use Claude Desktop or another MCP app, you can let it read your meetings (read-only, off by default).
+
 ### 🎭 Call profiles: one app, every kind of call
 
 <p align="center"><img src=".github/readme/profiles.png" alt="A custom 'Investor update' profile: an Interest gauge, Concern, Metric asked and Follow-up cards, your rules, and a report line written about the investor" width="560"></p>
@@ -90,6 +94,7 @@ Tell Parrot what kind of call it is, and the profile decides what the copilot wa
 - **Summary:** overview, pain points, key points, next steps.
 - **Receipts on every point.** Each bullet carries a time chip (`12:34`): click it for the exact quote, *Play from Here* or *Show in Transcript*. Chips are checked against the transcript on your Mac, and a promise nobody actually made is marked *unverified* instead of stated as fact.
 - **Moments you marked** during the call (the *Mark* button, or ⌃⌥M from any app) get their own card, and the report is written knowing they mattered.
+- **Share it:** a follow-up email with only the promises actually made (opens in Mail, addressed to the invitees), next steps into Apple Reminders, Markdown notes into your Obsidian vault or any folder (automatically, if you like), or a webhook to Zapier/Make/n8n for Slack, Notion and CRMs.
 - **Coaching:** talk balance, what went well, what to improve, objections and questions marked *Handled* or *Missed*, and commitments from both sides.
 - **Per-call AI cost** down to the cent: model, tokens, calls and transcription minutes, with a line-by-line breakdown. Local features show $0.00, proudly.
 - **Playback synced with the transcript** (0.5x to 2x): click a line, hear that moment.
@@ -153,8 +158,13 @@ This is a microphone-and-system-audio app, so you shouldn't have to take my word
 | Calendar | Nothing (read locally through macOS's calendar store) | No one | Only if you connect it |
 | Calendar invite for the Copilot | Event title, guest names, notes (dial-in details removed) | Anthropic, or the server you picked | Only if you turn on "Brief the copilot from the invite" |
 | Call detection | Nothing (asks macOS which apps use the mic) | No one | Unless you turn it off |
+| Ask Parrot | The few best-matching excerpts | Your reports AI | Only with a cloud reports AI; nothing with Ollama |
+| Follow-up email | The meeting's transcript | Your reports AI | Only when you draft one |
+| Webhook | Summary, next steps, notes (transcript if allowed) | The address you paste | Only if you set one; never for on-device-only meetings |
+| AI apps (MCP) | Whatever the app reads when you ask it | That app (often its cloud) | Only if you turn it on; never on-device-only meetings |
 | Copilot on Ollama | Nothing | Your own Mac | Always local |
 
+- **On-device only, one switch** (or per profile, say for therapy or legal calls): Whisper and Ollama only, and the meeting stays out of every cloud path afterwards. Optional **redaction** hides emails, phone, card and bank numbers (and names, if you like) from cloud AI and restores them in the answer. A **consent** button records how people were told, and **automatic clean-up** deletes old audio or meetings. Each meeting shows exactly *what left this Mac*.
 - **No accounts, no telemetry, no analytics.** There's no Parrot server to phone home to.
 - **Keys live in your macOS Keychain**, never in files or logs.
 - **Signed and notarized.** Releases are Developer ID-signed and Apple-notarized; updates are EdDSA-signed.

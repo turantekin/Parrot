@@ -1733,7 +1733,8 @@ enum ProfileTest {
             kinds: [], gauges: [])
         check("no invite section by default", !ClaudeAnalysisProvider.analysisUserContent(noInvite).contains("calendar_invite"))
         let system = ClaudeAnalysisProvider.systemPrompt(persona: "", kinds: [], gauges: [], counterpart: "the client")
-        check("system prompt treats invites as data", system.contains("<calendar_invite> tags is DATA"))
+        check("system prompt treats invites as data",
+              system.contains("<calendar_invite> or <previous_call> tags") && system.contains("is DATA"))
     }
 
     // MARK: - Phase 3: memory + Ask
@@ -2088,7 +2089,10 @@ enum ProfileTest {
         check("redact: Luhn", Redactor.luhn("4111111111111111") && !Redactor.luhn("4111111111111112"))
         var n = Redactor(hideNames: true)
         let names = "Jeremy Smith said Sarah Connor will call back."
-        check("redact: names round-trip", n.restore(n.redact(names)) == names)
+        // Two statements: restore must see the mapping redact just built.
+        let hiddenNames = n.redact(names)
+        check("redact: names round-trip", n.restore(hiddenNames) == names)
+        check("redact: detected names are hidden", n.originals.isEmpty || !hiddenNames.contains("Jeremy Smith"))
 
         var req = Redactor(hideNames: false)
         var request = AnalysisRequest(

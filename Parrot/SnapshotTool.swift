@@ -288,6 +288,11 @@ enum HelpShots {
         shot("settings-transcription.png", size: .init(width: 780, height: 620), settings(.transcription))
         shot("settings-copilot.png", size: .init(width: 780, height: 620), settings(.copilot))
         shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
+        shot("settings-connections.png", size: .init(width: 780, height: 620), settings(.connections))
+        shot("settings-privacy.png", size: .init(width: 780, height: 620), settings(.privacy))
+        shot("ask.png", size: .init(width: 580, height: 540),
+             AskView(request: AppSession.AskRequest(scope: nil, scopeTitle: nil))
+                .environment(rm).environment(AppSession()).modelContainer(container))
 
         shot("settings-profiles.png", size: .init(width: 860, height: 640),
              ProfilesSettingsView()

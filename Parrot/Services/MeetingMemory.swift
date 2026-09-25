@@ -44,7 +44,10 @@ struct MemoryChunk: Codable, Identifiable, Equatable {
         languageRaw = try c.decodeIfPresent(String.self, forKey: .languageRaw) ?? "en"
         space = try c.decodeIfPresent(String.self, forKey: .space)
         let bytes = try c.decodeIfPresent(Data.self, forKey: .vector) ?? Data()
-        vector = bytes.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        // Copy out rather than rebind: Data's storage needn't be Float-aligned.
+        var floats = [Float](repeating: 0, count: bytes.count / MemoryLayout<Float>.size)
+        _ = floats.withUnsafeMutableBytes { bytes.copyBytes(to: $0) }
+        vector = floats
     }
 
     func encode(to encoder: Encoder) throws {

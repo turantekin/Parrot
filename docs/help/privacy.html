@@ -62,6 +62,18 @@ and after that everything runs offline.</p>
   custom server. The matched event's title, guest names and notes (minus
   dial-in links and numbers) go with the Copilot's requests during that
   call. Off by default.</li>
+  <li><strong>Ask Parrot with a cloud AI:</strong> the few best-matching excerpts
+  from your meetings (not whole meetings, never audio) go to the post-call
+  reports AI to write the answer. With Ollama, nothing leaves.</li>
+  <li><strong>Follow-up email:</strong> the meeting's transcript goes to the post-call
+  reports AI to write the draft, only when you ask for one (or turn on "after
+  every call").</li>
+  <li><strong>Webhook:</strong> the finished meeting (summary, next steps, notes, and
+  the transcript only if you allow it) goes to the address you pasted.</li>
+  <li><strong>AI apps (MCP):</strong> an app you connect, such as Claude Desktop, can
+  read your meetings when you ask it something, and usually sends that to its
+  own cloud. It's off until you turn it on, and never sees on-device-only
+  meetings.</li>
   <li><strong>Cloud transcription (Groq or Deepgram):</strong> the call audio
   is sent to them for speech-to-text as it happens. This is the one opt-in
   that sends sound. On-device stays the default.</li>
@@ -71,6 +83,32 @@ and after that everything runs offline.</p>
   install when you quit, never during a recording. Turn off <strong>Keep
   Parrot up to date</strong> in Settings &rarr; General to install by hand.</li>
 </ul>
+
+<h2>Your controls</h2>
+<p>Settings &rarr; Privacy has four switches:</p>
+<ul>
+  <li><strong>On-device only.</strong> One switch for nothing leaving this Mac. Whisper
+  transcribes, Ollama runs the Copilot and reports, and there's no polish pass,
+  no TypeSafe answers and no webhook. You can also turn it on for one profile
+  (Settings &rarr; Profiles), so only your therapy or legal calls run this way.
+  Meetings recorded like this stay out of Ask Parrot when a cloud AI would write
+  the answer, out of the follow-up email on a cloud AI, out of webhooks, and
+  out of AI apps connected through MCP.</li>
+  <li><strong>Hide personal details from cloud AI.</strong> Before anything goes to
+  Claude or a custom server, emails, phone numbers, card numbers and IBANs become
+  placeholders like <code>[EMAIL_1]</code>, and the real values are put back in
+  what comes back. Names can be hidden too, using Apple's on-device name
+  detection.</li>
+  <li><strong>Recording consent.</strong> The Consent button on the call screen
+  copies your notice to paste into the call chat, or notes that everyone agreed
+  out loud. The record stays with the meeting and shows in its report and
+  exports.</li>
+  <li><strong>Automatic clean-up.</strong> Delete call audio (keeping transcript
+  and report) and/or whole meetings after a set number of days.</li>
+</ul>
+<p>Each meeting also shows a <strong>What left this Mac</strong> line under its
+title, built from that meeting's own record: which service got audio or text,
+and for what.</p>
 
 <h2>And Ollama?</h2>
 <p>Ollama runs on your own machine, so a Copilot on Ollama keeps everything
