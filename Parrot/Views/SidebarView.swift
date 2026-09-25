@@ -41,7 +41,7 @@ struct SidebarView: View {
                     page = .dashboard
                     selectedMeeting = nil
                 }
-                NavRow(title: "Ask Parrot", icon: "sparkles", selected: page == .ask) {
+                NavRow(title: "Ask Parrot", icon: "sparkles", selected: page == .ask, beta: true) {
                     page = .ask
                 }
                 .help("Ask anything about your past calls (⌘K)")
@@ -142,6 +142,7 @@ private struct NavRow: View {
     let title: String
     let icon: String
     let selected: Bool
+    var beta = false
     let action: () -> Void
 
     var body: some View {
@@ -154,6 +155,7 @@ private struct NavRow: View {
                 Text(title)
                     .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
+                if beta { BetaTag() }
                 Spacer()
             }
             .padding(.horizontal, 8)

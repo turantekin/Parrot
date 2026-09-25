@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// "Beta" pill for Ask Parrot: it's new, so answers can miss things.
+struct BetaTag: View {
+    var body: some View {
+        Text("Beta")
+            .font(Theme.Typography.cap)
+            .foregroundStyle(Theme.Colors.accent)
+            .padding(.horizontal, Theme.Metrics.chipInsetH)
+            .padding(.vertical, Theme.Metrics.chipInsetV)
+            .background(Theme.Colors.accent.opacity(0.12), in: Capsule())
+            .help("Ask Parrot is new and still improving")
+    }
+}
+
 /// Parrot's face in Ask Parrot: the app icon in a circle with a small ✦
 /// badge, so an answer reads as the app's AI.
 struct ParrotAvatar: View {

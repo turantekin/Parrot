@@ -127,6 +127,7 @@ struct AskPageView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Theme.Metrics.sectionGap / 2) {
                             if chat.messages.isEmpty {
+                                betaNote
                                 if switching?.askConfigured != true { chooseAI }
                                 examples
                             }
@@ -168,6 +169,7 @@ struct AskPageView: View {
             Text(chat.messages.isEmpty ? "New chat" : chat.title)
                 .font(Theme.Typography.title(15))
                 .lineLimit(1)
+            BetaTag()
             if chat.scope != nil, let title = chat.scopeTitle {
                 HStack(spacing: 4) {
                     Text("This meeting: \(title)").lineLimit(1)
@@ -226,6 +228,30 @@ struct AskPageView: View {
                 AskAnswerView(message: m, existing: Set(meetings.map(\.id)), open: open)
             }
         }
+    }
+
+    /// Honest expectations on a new chat: the feature is new, answers can
+    /// miss things, feedback goes to the existing report window.
+    private var betaNote: some View {
+        HStack(alignment: .top, spacing: Theme.Metrics.chipInsetH * 1.5) {
+            ParrotAvatar()
+            VStack(alignment: .leading, spacing: Theme.Metrics.chipInsetH) {
+                Text("**Ask Parrot is new.** It's still learning, so an answer can miss something. Click a time to see where it came from. Tell us what worked and what didn't.")
+                    .font(Theme.Typography.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Send feedback") {
+                    NotificationCenter.default.post(name: .parrotReportBug, object: nil)
+                }
+                .buttonStyle(.link)
+                .font(Theme.Typography.secondary)
+            }
+        }
+        .padding(Theme.Metrics.popoverPad)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.accent.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius))
+        .padding(.bottom, Theme.Metrics.sectionGap / 2)
     }
 
     /// No AI yet: the two ways to get written answers.
