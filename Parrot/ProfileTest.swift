@@ -2057,25 +2057,41 @@ enum ProfileTest {
             d.set(savedGlobal, forKey: CloudGate.globalKey)
             d.set(savedBackend, forKey: TranscriptionBackend.defaultsKey)
             d.set(savedProvider, forKey: "copilotProvider")
-            CloudGate.releaseAll()
         }
-        CloudGate.releaseAll()
         d.set(false, forKey: CloudGate.globalKey)
         d.set(TranscriptionBackend.groq.rawValue, forKey: TranscriptionBackend.defaultsKey)
         d.set(CopilotProviderKind.claude.rawValue, forKey: "copilotProvider")
         check("gate: open by default", !CloudGate.forcesLocal)
         check("gate: cloud engine allowed when open", TranscriptionBackend.selected == .groq)
         check("gate: Claude allowed when open", SwitchingAnalysisProvider.liveKind == .claude)
-        let id = UUID()
-        CloudGate.hold(id)
-        check("gate: a private call closes it", CloudGate.forcesLocal)
-        check("gate: transcription forced on-device", TranscriptionBackend.selected == .local)
-        check("gate: copilot forced to Ollama", SwitchingAnalysisProvider.liveKind == .ollama)
-        check("gate: reports forced to Ollama", SwitchingAnalysisProvider.reportsKind == .ollama)
-        CloudGate.release(id)
-        check("gate: reopens after the call", !CloudGate.forcesLocal)
+        CloudGate.$scopeLocal.withValue(true) {
+            check("gate: a private meeting's work is local", CloudGate.forcesLocal)
+            check("gate: transcription forced on-device in scope", TranscriptionBackend.selected == .local)
+            check("gate: reports forced to Ollama in scope", SwitchingAnalysisProvider.reportsKind == .ollama)
+        }
+        check("gate: the scope ends with the work (other calls unaffected)",
+              !CloudGate.forcesLocal && SwitchingAnalysisProvider.reportsKind == .claude)
         d.set(true, forKey: CloudGate.globalKey)
-        check("gate: global switch closes it", CloudGate.forcesLocal && TranscriptionBackend.selected == .local)
+        check("gate: global switch closes everything",
+              CloudGate.forcesLocal && TranscriptionBackend.selected == .local && SwitchingAnalysisProvider.liveKind == .ollama)
+        d.set(false, forKey: CloudGate.globalKey)
+
+        // A private meeting's notes never ride along to a cloud copilot.
+        var request = AnalysisRequest(
+            transcript: "x", knownInsightTitles: [], references: [], instructions: "", callBrief: "",
+            allowGeneralKnowledge: true, knownDocumentNames: [], persona: "", counterpart: "x",
+            kinds: [], gauges: [], previousCallContext: "Last call: therapy notes")
+        request.previousCallIsPrivate = true
+        var redactor = Redactor(hideNames: false)
+        let copy = redactor.redact(request)
+        check("gate: privacy flags survive redaction", copy.previousCallIsPrivate && !copy.forceLocal)
+
+        guard let ctx = phase4Context() else { check("gate container", false); return }
+        let open = phase4Meeting(ctx)
+        let secret = phase4Meeting(ctx)
+        secret.onDeviceOnly = true
+        check("gate: normal meeting may leave", CloudGate.mayLeaveMac(open))
+        check("gate: private meeting never leaves", !CloudGate.mayLeaveMac(secret))
     }
 
     static func testRedactor() {
