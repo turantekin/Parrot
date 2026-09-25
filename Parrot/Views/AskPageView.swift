@@ -233,7 +233,8 @@ struct AskPageView: View {
         case .parrot:
             HStack(alignment: .top, spacing: Theme.Metrics.chipInsetH * 1.5) {
                 ParrotAvatar()
-                AskAnswerView(message: m, existing: Set(meetings.map(\.id)), open: open)
+                AskAnswerView(message: m, existing: Set(meetings.map(\.id)), open: open,
+                              timeOnly: chat?.scope != nil)
             }
         }
     }

@@ -1086,6 +1086,9 @@ enum ProfileTest {
         check("answer: history comes first",
               AskEngine.answerUser(question: "q", context: "c", history: "User: hi").hasPrefix("<conversation>\nUser: hi\n</conversation>"))
         check("answer: system prompt says history is context only", AskEngine.systemPrompt.contains("<conversation>"))
+        check("answer: never talks about excerpts", AskEngine.systemPrompt.contains("never mention"))
+        let colons = AskEngine.parse("Here is what happened:: [M1 00:12]", refs: [AskEngine.MeetingRef(ref: "M1", meetingID: UUID(), title: "Acme", date: .now, people: [])]) { _, _ in true }
+        check("answer: a doubled colon is tidied", colons.first?.text == "Here is what happened:")
     }
 
     @MainActor

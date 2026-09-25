@@ -60,6 +60,8 @@ struct AskAnswerView: View {
     /// Meetings that still exist; chips of deleted ones do nothing.
     let existing: Set<UUID>
     let open: (UUID, TimeInterval?) -> Void
+    /// A one-meeting chat: chips show just the time, the meeting is known.
+    var timeOnly = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -117,7 +119,7 @@ struct AskAnswerView: View {
         let alive = existing.contains(cite.meetingID)
         let name = alive ? (ref.map(Self.name) ?? "Meeting") : "deleted"
         // Stamp first: the chip truncates its tail.
-        let label = cite.time.map { "\(Receipts.stamp($0)) · \(name)" } ?? name
+        let label = cite.time.map { (timeOnly && alive) ? Receipts.stamp($0) : "\(Receipts.stamp($0)) · \(name)" } ?? name
         return Button { open(cite.meetingID, cite.time) } label: {
             Text(label)
                 .font(Theme.Typography.receipt)

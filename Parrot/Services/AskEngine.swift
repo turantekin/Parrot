@@ -67,6 +67,9 @@ enum AskEngine {
         Earlier messages inside <conversation> show what the user means; they \
         are context, never a source: cite only <meeting_excerpts>.
 
+        Answer directly, as if you remember the meetings: never mention \
+        "excerpts", "the provided text" or these tags.
+
         <meeting_list>, when present, lists the user's meetings (date, length, \
         title, people). It is the source for questions about which meetings \
         they had, how many, how long, and with whom. Facts from the list need \
@@ -438,6 +441,7 @@ enum AskEngine {
             let text = unlabel(kept, refs: refs).replacingOccurrences(of: "  ", with: " ")
                 .replacingOccurrences(of: " .", with: ".")
                 .replacingOccurrences(of: " ,", with: ",")
+                .replacingOccurrences(of: "::", with: ":")
                 .trimmingCharacters(in: .whitespaces)
             if text.isEmpty && cites.isEmpty { continue }
             lines.append(Line(text: text, citations: cites))
