@@ -34,13 +34,52 @@ truth for the post-test improvement effort. Update the status table as work land
 
 | — | Calendar connect + onboarding step | ⬜ not started | From the 2026-08-04 competitor onboarding teardown: sync calendars for meeting reminders, and give onboarding a "Connect calendar" step (Google / Outlook / Skip) once the integration exists. |
 | — | Audio-only capture permission (macOS 15+) | 🟡 built | 2026-08-04: `SystemAudioTap` (Core Audio process tap → 16 kHz mono, same contract as SCK) is the default backend on 15+; SCK stays for 14.x, as the silent-tap rescue, and behind a `forceSCKCapture` default. Optimistic permission flow (no status API exists — an unauthorized tap "succeeds" silently, measured). Verified mechanically end-to-end via the new `--capture-test` harness; needs **one real recording + the one-time System Audio Allow click** (see progress log). |
-| **N** | Next features (six phases) | 🟡 N1 + N2 built | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
+| **N** | Next features (six phases) | 🟡 N1–N5 built, N6 not started | 2026-09-24 competitor + user-demand review → `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`. Order: N1 Receipts + bookmarks · N2 Auto-start + calendar (absorbs the "Calendar connect" row) · N3 Ask Parrot memory + auto brief · N4 Send it where work happens (Markdown/Obsidian, follow-up email, Reminders, webhook, local MCP) · N5 Consent + compliance mode · N6 Live speaker names. |
 
 Legend: ⬜ not started · 🟡 built (awaiting your eyeball) · ✅ done · ⏸ paused
 
 ---
 
 ## Progress log
+
+- **2026-09-25** — **N3 Ask Parrot, N4 Connections, N5 Privacy built.**
+  - **N3**: `MeetingMemory` indexes every finished meeting locally (transcript
+    chunks as "[mm:ss] Name: words" + report, on-device contextual vectors,
+    one JSON per meeting, SHA-256 fingerprint so unchanged meetings aren't
+    re-embedded), hybrid BM25 + embeddings like the KB. `ask()` → the few best
+    excerpts → reports brain via new `complete()` → answer cites `[M2 12:34]`,
+    every citation verified against that meeting's transcript; no AI → the
+    closest moments. Ask sheet (sidebar, ⌘K, meeting toolbar) with chips that
+    open the meeting at that second. "From your last call": previous meeting
+    (same calendar series or a shared invitee) → open items from its report,
+    shown in the Briefed card and sent to the copilot inside `<previous_call>`.
+  - **N4**: Markdown export (front matter, next steps as tasks, receipts as
+    code) + auto-save to a chosen folder (security-scoped bookmark;
+    `files.bookmarks.app-scope`); follow-up email (only said promises; Open
+    in Mail addressed to invitees); next steps → Reminders "Parrot" list
+    (`NSRemindersFullAccessUsageDescription`); webhook (https only, HMAC
+    X-Parrot-Signature, optional transcript, test button); `Parrot --mcp`
+    read-only stdio MCP server (list/get/search), off by default.
+  - **N5**: on-device only — global switch or per profile; the live call
+    passes it explicitly to transcription/copilot, the post-call chain runs in
+    a task-local scope (`CloudGate.$scopeLocal`) so an unrelated call isn't
+    affected; private meetings stay out of cloud Ask, cloud follow-up, the
+    webhook, MCP and a cloud call's last-call brief. Redaction of emails /
+    phones / cards (Luhn) / IBANs / optional names for every cloud AI request,
+    restored in answers. Consent button (copy notice / verbal) recorded on the
+    meeting and in exports. Retention (audio and/or meetings after N days,
+    launch + hourly, UI selection dropped first). "What left this Mac" line.
+  - **Verified (CI)**: build clean, `--profile-test` all pass (≈140 new
+    checks), snapshots + help shots render, app assembles with the new
+    entitlements. Code review: 10 findings fixed (global holds → per-meeting
+    scope; private last-call notes; Ask routing race; persistent fingerprint;
+    deleted-meeting resurrection; delete-while-viewing crash; stale MCP; …).
+  - **Needs Uygar on a real Mac**: Ask a question after 2–3 real calls
+    (with Claude, then with Ollama); Copy Setup → Claude Desktop → ask it
+    about a meeting; pick an Obsidian folder and finish a call; Draft
+    Follow-up Email → Open in Mail; Add Next Steps to Reminders (permission
+    prompt); a webhook.site URL + Send Test; a profile marked on-device only
+    → its meeting's privacy line says so; Consent button during a call.
 
 - **2026-09-24** — **N1 Receipts + bookmarks and N2 Auto-start + calendar
   built** (plan: `docs/superpowers/plans/2026-09-24-next-features-roadmap.md`).

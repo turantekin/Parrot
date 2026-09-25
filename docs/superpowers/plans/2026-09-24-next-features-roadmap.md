@@ -23,9 +23,9 @@ working fully offline with Whisper + Ollama.
 |---|---|---|---|---|
 | 1 | Receipts + bookmarks ✅ built | S–M | — | Quick trust win; citation chips are reused by phases 3 and 4 |
 | 2 | Auto-start + calendar ✅ built (+ open at login) | M | — | Daily-use hook; gives phases 3 and 6 "who is on this call" |
-| 3 | Ask Parrot (memory) + auto brief | M–L | 1, 2 | The headline feature; answers cite with phase-1 chips |
-| 4 | Send it where work happens | M | 1, 3 | Exports carry receipts; MCP reuses phase-3 search |
-| 5 | Consent + compliance mode | S–M | 4 | The "on-device only" lock must cover every outbound path, incl. phase 4's |
+| 3 | Ask Parrot (memory) + auto brief ✅ built | M–L | 1, 2 | The headline feature; answers cite with phase-1 chips |
+| 4 | Send it where work happens ✅ built | M | 1, 3 | Exports carry receipts; MCP reuses phase-3 search |
+| 5 | Consent + compliance mode ✅ built | S–M | 4 | The "on-device only" lock must cover every outbound path, incl. phase 4's |
 | 6 | Live speaker names | M–L | 2 | Polish; riskiest tech, so last; calendar attendees narrow the guess |
 
 Phase 5 can be pulled forward if a lawyer/therapist launch is planned. Its
