@@ -114,6 +114,12 @@ final class CallAnalysisEngine {
     /// Set by RecordingManager; supplies grounded references for suggestions.
     var knowledgeBase: KnowledgeBaseService?
 
+    /// Live speaker names (Settings → Live speaker labels): the call screen's
+    /// name for each other-side line a sweep has labelled, keyed by the line's
+    /// end time. Asked when a prompt is built, since sweeps label lines after
+    /// they arrive. Unlabelled lines stay "Them".
+    @ObservationIgnored var speakerNames: (() -> [TimeInterval: String])?
+
     let provider: AnalysisProvider
     /// The user's one-liner for this call; the prompt carries it as "Brief for this specific call".
     private(set) var callBrief = ""
@@ -271,8 +277,10 @@ final class CallAnalysisEngine {
             // place that sees "Them + question" first, and it never touches the
             // Haiku cadence below. The previous line or two disambiguate a
             // follow-up ("and for express?").
+            let names = speakerNames?() ?? [:]
             let before = segments.dropLast().suffix(2)
-                .map { "\($0.source.label): \($0.text)" }.joined(separator: "\n")
+                .map { Self.promptLine($0.text, source: $0.source, name: names[$0.time]) }
+                .joined(separator: "\n")
             fastTask?.cancel()
             fastTask = Task { [weak self] in
                 await self?.fastDocAnswer(question: text, before: before, at: time)
@@ -355,9 +363,11 @@ final class CallAnalysisEngine {
             times: segments.map(\.time),
             seconds: TimeInterval(CopilotWindow.selected.minutes * 60))
         let window = segments.suffix(take)
+        let names = speakerNames?() ?? [:]
         let transcript = window
-            .map { "\($0.source.label): \($0.text)" }
+            .map { Self.promptLine($0.text, source: $0.source, name: names[$0.time]) }
             .joined(separator: "\n")
+        Self.log.notice("pass: \(window.count) lines, \(window.filter { $0.source == .them && names[$0.time] != nil }.count) with a speaker name")
         // Excerpts are not model insights: listing one as "already shown"
         // would make Haiku skip the very question it answers.
         let knownTitles = insights.filter { $0.kindKey != Insight.docExcerptKind }.prefix(20).map(\.title)
@@ -694,6 +704,12 @@ final class CallAnalysisEngine {
         let parts = previous.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
         let text = (parts.count == 2 ? String(parts[1]) : previous).trimmingCharacters(in: .whitespaces)
         return text.isEmpty ? question : text + " " + question
+    }
+
+    /// One transcript line as the copilot sees it. A live speaker name
+    /// replaces "Them" only; "Me" is always the user.
+    nonisolated static func promptLine(_ text: String, source: AudioSource, name: String?) -> String {
+        "\(source == .them ? name ?? source.label : source.label): \(text)"
     }
 
     // MARK: - Heuristics

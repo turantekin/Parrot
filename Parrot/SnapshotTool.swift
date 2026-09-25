@@ -721,7 +721,7 @@ enum SnapshotIO {
 }
 
 /// Dev-only: one real analysis pass through the selected copilot provider.
-///   Parrot --analyze-test [claude|ollama|custom] [model]
+///   [ANALYZE_TRANSCRIPT=file] Parrot --analyze-test [claude|ollama|custom] [model]
 /// Fixture sales transcript + the Sales discovery preset profile; prints the
 /// parsed cards, sentiment, and token usage so structured-output quality of a
 /// backend can be judged without a live call. Exits non-zero on failure.
@@ -740,7 +740,9 @@ enum AnalyzeTest {
         }
 
         let profile = ProfilePresets.all().first { $0.name == "Sales discovery" }
-        let transcript = """
+        // ANALYZE_TRANSCRIPT=<file> swaps in your own call (e.g. named speakers).
+        let transcript = ProcessInfo.processInfo.environment["ANALYZE_TRANSCRIPT"]
+            .flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? """
         [00:12] Them: So walk me through how the migration from our current tool would work.
         [00:31] Me: Great question — we handle the export and import for you, usually within a week.
         [01:02] Them: Okay. And honestly the price feels steep compared to what we pay now.
