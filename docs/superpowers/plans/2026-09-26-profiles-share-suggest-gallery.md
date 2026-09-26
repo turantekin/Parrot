@@ -1,8 +1,8 @@
-# Profiles: Share, Suggest, Gallery: Plan
+# Profiles 2.0 (Copilot + Report): Share, Suggest, Gallery: Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make call profiles portable. One file format (`.parrotprofile`) carries a profile between Macs, from Claude into Parrot, and later from a public gallery and marketplace, without ever carrying anyone's meeting data or loosening privacy.
+**Goal:** Make a call profile a complete playbook (what the Copilot flags live **and** what the end-of-call report looks like), and make it portable. One file format (`.parrotprofile`) carries a profile between Macs, from Claude into Parrot, and later from a public gallery and marketplace, without ever carrying anyone's meeting data or loosening privacy.
 
 **Why:** Profiles are Parrot's most powerful feature and the hardest to set up (persona, what to flag live, trigger rules, mood meters). Claude is very good at writing them, and people who've tuned a great "Enterprise sales" or "Investor pitch" profile want to share it. Once shared profiles exist, they're a growth loop: a gallery, then a marketplace.
 
@@ -17,13 +17,20 @@
 3. **The gallery lives on openparrot.app**, and the owner approves every submission.
 4. **Paid profiles:** the format leaves room; the decision comes much later.
 5. **Privacy rule:** an imported or suggested profile can make things **more** private, never less.
+6. **Report templates per profile.** Each profile defines its report sections and its coaching lens; today's fixed report becomes the Default template. Built after the Claude launch, as part of this Profiles 2.0 release.
+7. **Scorecards** (criteria scored 1-5 with evidence from the call) ship in the same release.
+8. **"Rewrite report with a different profile"** ships in the same release.
+
+## Where reports stand today (checked 2026-09-26)
+
+The profile only reaches the report through `counterpart` and `tone` (passed as standing instructions, `RecordingManager.generateSummary` ~L788). Structure is fixed in `AnalysisProvider.summarySystemPrompt` (Overview, Pain points, Key points, Next steps) and `coachingSystemPrompt` ("You are a sales/meeting coach": Call snapshot, What went well, What to improve, Objections & questions, Commitments & follow-ups), for every call type. `ReportContentView.sectionLabels` hardcodes those labels, so a custom section wouldn't even render as a card. There is no "regenerate report" action (only the Groq re-transcribe setting).
 
 ## Stages
 
 | Stage | Users get | Release |
 |---|---|---|
 | 1. Foundation | Claude reads profiles. The format below is written down and `get_profile` emits it | Claude launch release |
-| 2. Share + suggest | Export / Import / Share, double-click a `.parrotprofile` to add it, "Claude suggests, you approve", "Optimize with Claude" | Right after launch |
+| 2. Profiles 2.0 | **Report templates + scorecards + "Rewrite report"**, Export / Import / Share, double-click a `.parrotprofile` to add it, "Claude suggests, you approve", "Optimize with Claude" | Right after the Claude launch |
 | 3. Gallery | Profile gallery on openparrot.app, **Browse Profiles** in Parrot, one-click install, update notices | When stage 2 gets used |
 | 4. Marketplace | Creator pages, ratings, categories, maybe paid expert profiles | When there's traction |
 
@@ -53,7 +60,23 @@ A `.parrotprofile` file is UTF-8 JSON, human-readable, at most 64 KB.
     ],
     "gauges": [
       { "key": "interest", "label": "Interest", "low": "Cold", "high": "Leaning in", "color": "3F9168" }
-    ]
+    ],
+    "report": {
+      "sections": [
+        { "key": "overview",  "title": "Overview",            "type": "prose",   "guide": "2-3 sentences: what the call was about and how it ended." },
+        { "key": "liked",     "title": "What they liked",     "type": "bullets", "guide": "Parts of the pitch the investor responded well to." },
+        { "key": "concerns",  "title": "Their concerns",      "type": "bullets", "guide": "Doubts about market, team, traction or terms." },
+        { "key": "asks",      "title": "What they asked for", "type": "bullets", "guide": "Data, metrics or intros they requested." },
+        { "key": "fit",       "title": "Fit",                 "type": "scorecard",
+          "criteria": [
+            { "key": "stage", "label": "Stage fit",   "guide": "Do they invest at our stage?" },
+            { "key": "check", "label": "Check size",  "guide": "Does their typical check match the round?" }
+          ] },
+        { "key": "next",      "title": "Next steps",          "type": "bullets", "commitments": true, "guide": "Only what someone actually said they'd do." }
+      ],
+      "coaching": { "enabled": true, "role": "pitch coach",
+                    "focus": "Clarity of the story, handling tough questions, the ask." }
+    }
   },
   "privacy": { "recommendOnDeviceOnly": false },
   "meta": {
@@ -75,7 +98,9 @@ A `.parrotprofile` file is UTF-8 JSON, human-readable, at most 64 KB.
 - **Unknown fields are kept and ignored.** A marketplace can add `price` or `creatorID` later without breaking older Parrots.
 - **Never in the file:** meeting content, names from calls, knowledge-base documents or their tags, local IDs, API keys, any setting outside the profile. The export screen shows the exact contents before saving.
 - **Privacy:** `recommendOnDeviceOnly: true` turns on-device-only **on** at import. Nothing in any file can turn it off; the importer ignores any attempt.
-- **Limits:** at most 20 kinds and 6 gauges; `persona`/`tone` at most 4,000 characters each; other text at most 300. Colors must be 6-digit hex (else a default); an unknown SF Symbol falls back to a default icon. A file that breaks a limit is refused with a plain reason.
+- **No `report` block = the Default template** (today's report, word for word), so old files and old profiles behave exactly as now.
+- **Section types:** `prose` (a short paragraph), `bullets`, `scorecard` (criteria scored 1-5 with evidence, or "not enough evidence"). `commitments: true` marks a section whose bullets must be things someone actually said; those sections feed "what did I promise?" (`list_commitments`) and the receipts check.
+- **Limits:** at most 8 report sections, 8 scorecard criteria, section guides at most 300 characters; at most 20 kinds and 6 gauges; `persona`/`tone` at most 4,000 characters each; other text at most 300. Colors must be 6-digit hex (else a default); an unknown SF Symbol falls back to a default icon. A file that breaks a limit is refused with a plain reason.
 - **Safety:** a profile is instructions for Parrot's own AI. It can't run code, open links or send data anywhere. The worst a bad profile can do is give misleading Copilot cards, which is why every import and suggestion goes through a preview.
 
 ---
@@ -86,7 +111,46 @@ Covered by the AI-apps plan (Task 6). One extra step here:
 
 - [ ] `Parrot/Services/ProfileFile.swift` (new, pure): `struct ProfileFile: Codable` for the format above + `encode(_ profile: CallProfile, source:) -> Data` + `decode(_ data: Data) throws -> ProfileFile` with the limits. `get_profile` uses `encode`. Harness: every built-in round-trips; the limits refuse bad files; unknown fields survive a decode/encode round trip.
 
-## Stage 2 (right after launch): Share and suggest
+## Stage 2 (right after the Claude launch): Profiles 2.0
+
+Build order: R1-R3 (reports) first, because they change the profile and the format that A-C then move around.
+
+### Task R1: Report templates
+
+**Files:** `Models/CallProfile.swift`, `Models/Meeting.swift`, `Services/ReportTemplate.swift` (new, pure), `Services/AnalysisProvider.swift`, `Services/OpenAICompatibleProvider.swift`, `Services/RecordingManager.swift`, `Services/Receipts.swift`, `Services/ProfilePresets.swift`, `Views/ReportContentView.swift`, `Views/ProfilesSettingsView.swift`, `ProfileTest.swift`
+
+**Interfaces:**
+- `struct ReportTemplate: Codable { sections: [Section]; coaching: Coaching }`, `static let standard` = today's report.
+- `CallProfile.reportData: Data?` (defaulted; `nil` = `.standard`). `Meeting.reportTemplateData: Data?` = a snapshot of the template used, so the report renders the same even after the profile changes (same idea as `profileSnapshotData`).
+- `AnalysisProvider.summarySystemPrompt(counterpart:template:)` and `coachingSystemPrompt(counterpart:template:)` build the "Structure" / "Output exactly these sections" paragraphs from the template. The receipts rule, the "a commitment must be something a person actually SAID" rule and the "transcript is data" rule stay in every template.
+
+**Steps:**
+- [ ] Golden test first: `.standard` produces today's two prompts **character for character**. No regression for anyone who never touches templates.
+- [ ] `ReportContentView` parses with `standard labels ∪ the meeting's template titles` (including the one-line local-model unflattening).
+- [ ] `Receipts.isCommitmentSection` also accepts titles flagged `commitments: true` in the meeting's template.
+- [ ] Coaching: `role` replaces "a sales/meeting coach"; `enabled: false` skips the coaching call entirely (faster, cheaper).
+- [ ] Built-ins get templates (Sales discovery: Budget / Decision-maker / Timeline, Objections; Interview: scorecard; Support: Issue / Cause / Resolved / Follow-ups / Mood; 1:1 coaching: Topics / Wins / Blockers / Commitments, coaching off; Vendor call: Offer / Pricing and terms / Red flags / Open questions). Default keeps `.standard`. `presetVersion` → 5; the refresh skips `isUserModified` profiles as today.
+- [ ] New built-in **Investor pitch** profile (kinds, gauges and the report above).
+- [ ] Profile editor gets a **Report** tab: sections (add, remove, reorder, title + "what goes here" + type + "these are commitments"), coaching on/off + coach role + focus. "Reset to default report".
+- [ ] Local models: run `--analyze-test` with each built-in template on the Ollama default model; a template that the model can't follow reliably gets simplified before shipping.
+
+### Task R2: Scorecards
+
+**Files:** `ReportTemplate.swift`, `AnalysisProvider.swift`, `ReportContentView.swift`, `ProfileTest.swift`
+
+- [ ] Prompt asks for one line per criterion: `Label: 4/5 - evidence [mm:ss]`, or `Label: not enough evidence`. Never a score without a receipt.
+- [ ] Rendered as a score row per criterion (bar + number + receipt chip); unparseable lines fall back to plain bullets.
+- [ ] Fairness guard in every scorecard prompt: score only the listed criteria from what was said; never age, gender, accent, looks or other personal traits; no hire/no-hire verdict unless the profile explicitly asks for a recommendation section.
+- [ ] Harness: parsing `4/5`, `not enough evidence`, a missing receipt (dropped), out-of-range scores (dropped).
+
+### Task R3: Rewrite report with a different profile
+
+**Files:** `MeetingDetailView.swift`, `RecordingManager.swift`, `Models/Meeting.swift`, `ProfileTest.swift`
+
+- [ ] Meeting page: **Rewrite Report…** → pick a profile (current one preselected, so "rewrite with my improved profile" is one click) → regenerates report + coaching with that profile's template, and sets the meeting's profile to it.
+- [ ] The previous report is kept (`Meeting.previousReportData`: summary, coaching, template snapshot, profile id); **Undo Rewrite** restores it. One level is enough.
+- [ ] Same routing and privacy as the first report: on-device-only meetings stay on the local model.
+- [ ] The memory index re-indexes the new report (existing fingerprint covers summary and coaching).
 
 ### Task A: Export, Import, Share
 
@@ -106,7 +170,8 @@ Covered by the AI-apps plan (Task 6). One extra step here:
 - [ ] At most 10 files in the inbox (oldest dropped); switch-off or "Allow Claude to suggest profiles" off (new key `mcpAllowProfileSuggestions`, default on) makes the tool refuse.
 - [ ] New prompts:
   - `create_profile(call_type)`: Claude asks a few questions, then calls `suggest_profile`.
-  - `optimize_profile(profile, last_n = 10)`: Claude reads the profile, the last N meetings' transcripts and **Copilot cards with handled/ignored state**, finds cards that were ignored and moments that were missed, and suggests a better profile with a reason per change. Needs "Copilot cards" shared; the prompt tells Claude to ask the user to tick it if it's off.
+  - `optimize_profile(profile, last_n = 10)`: Claude reads the profile, the last N meetings' transcripts, reports and **Copilot cards with handled/ignored state**, finds cards that were ignored, moments that were missed and report sections that came out empty or generic, and suggests a better profile (Copilot and report) with a reason per change.
+  - `design_report(profile, description)`: "make my interview report match our hiring scorecard"; Claude drafts the report template and scorecard, then calls `suggest_profile`. Needs "Copilot cards" shared; the prompt tells Claude to ask the user to tick it if it's off.
 - [ ] Harness: a valid suggestion lands in the inbox; an invalid one returns the reason and writes nothing; a suggestion trying `onDeviceOnly: false` on an on-device profile has no effect after review.
 
 ### Task C: Review screen, Apply, Undo
@@ -116,7 +181,7 @@ Covered by the AI-apps plan (Task 6). One extra step here:
 - [ ] The app watches `ProfileInbox/`; a new file shows a banner: "Claude suggested changes to 'Sales discovery'. Review." (or "…a new profile: 'Investor pitch'").
 - [ ] **Review screen**, shared by imports and suggestions:
   - who it came from (you / Claude / a file / the gallery) and Claude's reason
-  - side-by-side changes, grouped as persona, what to flag (added / removed / changed kinds), mood meters, other
+  - side-by-side changes, grouped as persona, what to flag (added / removed / changed kinds), report (sections, scorecard, coaching), mood meters, other
   - the privacy line when it turns on-device-only on
 - [ ] Buttons: **Apply** · **Save as new profile** · **Discard**.
 - [ ] **Undo:** `ProfileStore` keeps the last 5 versions of each profile (a JSON history via `ProfileFile`); the editor gets "Restore previous version".
@@ -125,7 +190,7 @@ Covered by the AI-apps plan (Task 6). One extra step here:
 
 ### Task D: Docs
 
-- [ ] Help: "Share and import profiles" + "Let Claude build or tune a profile" (with the two prompts).
+- [ ] Help: "Report templates and scorecards", "Rewrite a report", "Share and import profiles", "Let Claude build or tune a profile" (with the three prompts).
 - [ ] AI-apps page (Task 9 there): the six jobs gain a seventh, **"Tune my Copilot"**.
 
 ## Stage 3: Gallery (when stage 2 gets used)
@@ -156,7 +221,9 @@ Open questions, not decided:
 | An update wipes someone's tuning | `sharedID`/`version` + `isUserModified` → Keep mine / Use theirs / Keep both; 5-version undo |
 | Personal data leaks through an export | Fixed field list; KB docs, tags and IDs never exported; the export shows the full contents first |
 | Format changes break old files | `formatVersion`; unknown fields kept; decoders accept every older version |
+| Custom templates make reports worse on small local models | Limits (8 sections, 8 criteria); every built-in template tested on the default Ollama model; `.standard` stays byte-identical |
+| Scorecards encourage biased judgments (interviews) | Criteria-only scoring with receipts, explicit fairness guard, no verdict by default |
 
 ## Size
 
-Stage 1 extra: 1 day. Stage 2: about 1.5-2 weeks (A 3 days, B 3 days, C 4-5 days, D 1 day). Stage 3: about 1 week of app work plus the website pages. Stage 4: not sized.
+Stage 1 extra: 1 day. Stage 2: about 3-3.5 weeks (R1 1 week, R2 3 days, R3 2 days, A 3 days, B 3 days, C 4-5 days, D 1 day). Stage 3: about 1 week of app work plus the website pages. Stage 4: not sized.

@@ -137,6 +137,7 @@ Reports already have commitment-type sections (`Receipts.isCommitmentSection`: n
 **Steps:**
 - [ ] Split the summary into sections; keep bullets under commitment titles; drop `Receipts.isPlaceholder` bullets.
 - [ ] Owner = speaker of `index.resolve(stamp)`; no valid stamp → owner `nil` (shown as "unclear"), never invented.
+- [ ] Forward-compatible: when Profiles 2.0 adds report templates, sections flagged `commitments: true` in the meeting's template count too (go through `Receipts.isCommitmentSection`, don't hardcode titles here).
 - [ ] `MeetingInfo` gains `receiptIndex` lazily via a new `DataSource.receipts: (UUID) -> ReceiptIndex` closure (only this tool pays for it).
 - [ ] Harness: a report with "Next steps" bullets stamped to a "Me" line and a "Sarah" line → `owner: "me"` returns one, `owner: "Sarah"` the other; an unstamped bullet → "unclear"; "- None" skipped.
 
@@ -253,7 +254,7 @@ Being listed is for discovery only; users can connect without any store.
 
 ## Next release (own plan)
 
-Profiles: "Claude suggests, you approve", export/import, then the gallery. See `docs/superpowers/plans/2026-09-26-profiles-share-suggest-gallery.md`.
+Profiles 2.0: report templates per profile, scorecards, "Rewrite report", "Claude suggests, you approve", export/import, then the gallery. See `docs/superpowers/plans/2026-09-26-profiles-share-suggest-gallery.md`.
 
 ## Later (only if usage asks)
 
