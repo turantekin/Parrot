@@ -80,6 +80,7 @@ struct CopilotPathStep: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .disabled(locked)
         .opacity(locked ? 0.45 : 1)
     }

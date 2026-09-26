@@ -2398,6 +2398,11 @@ enum ProfileTest {
               && !CopilotStatus.showsHomeCard(.on, dismissed: false, justTurnedOn: false))
         check("card: a download can't be hidden",
               CopilotStatus.showsHomeCard(.waitingForModel(progress: nil), dismissed: true, justTurnedOn: false))
+        check("ready: short tour says set up only when on or on its way",
+              ReadyStep.title(.on, mode: .copilot) == "Copilot is set up"
+              && ReadyStep.title(.waitingForModel(progress: nil), mode: .copilot) == "Copilot is set up"
+              && ReadyStep.title(.needsClaudeKey, mode: .copilot) == "Almost there"
+              && ReadyStep.title(.off, mode: .full) == "Ready to go")
         check("card: dismiss hides the nudge",
               !CopilotStatus.showsHomeCard(.off, dismissed: true, justTurnedOn: false)
               && CopilotStatus.showsHomeCard(.needsClaudeKey, dismissed: false, justTurnedOn: false))
@@ -2512,6 +2517,14 @@ enum ProfileTest {
         d.set(OnboardingMode.copilot.rawValue, forKey: OnboardingMode.defaultsKey)
         let short = OnboardingModel(defaults: d)
         check("sheet: the short tour asks again after decide later", short.path == nil && short.step == .meetCopilot)
+        d.removePersistentDomain(forName: suite)
+        d.set(CopilotPath.cloud.rawValue, forKey: CopilotPath.defaultsKey)
+        d.set(OnboardingStep.copilotSetup.rawValue, forKey: OnboardingFlow.stepKey)
+        d.set(true, forKey: CloudGate.globalKey)
+        let gated = OnboardingModel(defaults: d)
+        check("sheet: on-device only drops a saved cloud path", gated.path == nil && gated.step == .copilotPath)
+        d.set(CopilotPath.private.rawValue, forKey: CopilotPath.defaultsKey)
+        check("sheet: on-device only keeps a saved private path", OnboardingModel(defaults: d).path == .private)
         d.removePersistentDomain(forName: suite)
     }
 }

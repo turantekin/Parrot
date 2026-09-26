@@ -23,7 +23,7 @@ struct ReadyStep: View {
                 .font(.system(size: 56))
                 .scaleEffect(celebrate ? 1.0 : 0.4)
                 .opacity(celebrate ? 1 : 0)
-            StepHeader(title: model.mode == .copilot ? "Copilot is set up" : "Ready to go",
+            StepHeader(title: Self.title(status, mode: model.mode),
                        subtitle: "Downloads keep going after you close this.")
             CopilotHeroCard(title: copy.title, subtitle: copy.detail, emphasized: status == .on) {
                 if status == .on {
@@ -37,7 +37,7 @@ struct ReadyStep: View {
                     PermissionRow(icon: "waveform", askTitle: "", grantedTitle: "Live text: Deepgram",
                                   subtitle: "The speech model on this Mac is the backup", isGranted: true, action: {})
                 }
-                SpeechDownloadRow()
+                SpeechDownloadRow(backup: backend == TranscriptionBackend.deepgram.rawValue)
             }
         }
         .frame(maxWidth: 480)
@@ -47,6 +47,15 @@ struct ReadyStep: View {
                 hasClaudeKey = APIKeyStore.load() != nil
             }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.55).delay(0.05)) { celebrate = true }
+        }
+    }
+
+    /// The short tour claims "set up" only when Copilot is on or on its way.
+    static func title(_ status: CopilotStatus, mode: OnboardingMode) -> String {
+        guard mode == .copilot else { return "Ready to go" }
+        switch status {
+        case .on, .waitingForModel: return "Copilot is set up"
+        case .finishOllama, .needsClaudeKey, .off: return "Almost there"
         }
     }
 

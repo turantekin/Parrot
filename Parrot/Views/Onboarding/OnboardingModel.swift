@@ -30,6 +30,8 @@ final class OnboardingModel {
         let mode = OnboardingMode(rawValue: defaults.string(forKey: OnboardingMode.defaultsKey) ?? "") ?? .full
         var saved = CopilotPath(rawValue: defaults.string(forKey: CopilotPath.defaultsKey) ?? "")
         if mode == .copilot, saved == .later { saved = nil }  // the short tour asks again
+        // On-device only greys out Balanced and Cloud, so a saved one can't stand.
+        if defaults.bool(forKey: CloudGate.globalKey), saved == .balanced || saved == .cloud { saved = nil }
         self.mode = mode
         path = saved
         ollamaModel = defaults.string(forKey: "copilotOllamaModel")

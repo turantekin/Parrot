@@ -84,9 +84,11 @@ struct PermissionRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(grantedTitle)
                         .font(Theme.Typography.cardTitle)
-                    Text(subtitle)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.ink3)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Colors.ink3)
+                    }
                 }
 
                 Spacer()
@@ -104,9 +106,11 @@ struct PermissionRow: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(askTitle)
                             .font(Theme.Typography.cardTitle)
-                        Text(subtitle)
-                            .font(Theme.Typography.caption)
-                            .opacity(0.75)
+                        if !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(Theme.Typography.caption)
+                                .opacity(0.75)
+                        }
                     }
 
                     Spacer()

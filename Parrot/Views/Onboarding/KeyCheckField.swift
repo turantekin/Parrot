@@ -74,6 +74,8 @@ struct KeyCheckField: View {
         checking = true
         checkedKey = key
         let outcome = await ProviderKeyCheck.check(service, key: trimmed)
+        // The field changed while this ran: the result belongs to the old key.
+        guard key == checkedKey else { checking = false; return }
         checking = false
         result = outcome
         if outcome == .works {
