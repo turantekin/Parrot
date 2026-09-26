@@ -151,9 +151,10 @@ final class TranscriptionEngine {
                 modelFolder = localFolder
             } else {
                 modelState = .downloading(progress: 0)
-                modelFolder = try await Self.withTimeout(seconds: 300) {
+                modelFolder = try await Self.withStallTimeout(seconds: 60) { tick in
                     try await WhisperKit.download(variant: resolvedModelName) { progress in
                         let fraction = min(max(progress.fractionCompleted, 0), 1)
+                        tick(fraction)
                         Task { @MainActor [weak self] in
                             guard let self, self.loadGeneration == generation,
                                   case .downloading(let current) = self.modelState else { return }
@@ -324,6 +325,51 @@ final class TranscriptionEngine {
             if let hit = hits.first { return hit }
         }
         return nil
+    }
+
+    /// Tracks whether a download is still moving. Only a rise in progress
+    /// counts, so a stuck value can't keep it alive.
+    struct ProgressStall {
+        let limit: TimeInterval
+        private var best: Double = -1
+        private var lastMove: Date
+
+        init(limit: TimeInterval, start: Date = .now) {
+            self.limit = limit
+            lastMove = start
+        }
+
+        mutating func note(_ progress: Double, at time: Date = .now) {
+            guard progress > best else { return }
+            best = progress
+            lastMove = time
+        }
+
+        func isStalled(at time: Date = .now) -> Bool {
+            time.timeIntervalSince(lastMove) >= limit
+        }
+    }
+
+    /// Like `withTimeout`, but for downloads: fails only when progress stops
+    /// moving for `seconds`. A fixed limit failed the 1.6 GB turbo model on
+    /// anything slower than ~5 MB/s.
+    nonisolated private static func withStallTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        _ op: @escaping @Sendable (_ tick: @escaping @Sendable (Double) -> Void) async throws -> T
+    ) async throws -> T {
+        let watch = OSAllocatedUnfairLock(initialState: ProgressStall(limit: seconds))
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await op { progress in watch.withLock { $0.note(progress) } } }
+            group.addTask {
+                while true {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    if watch.withLock({ $0.isStalled() }) { throw ModelLoadTimeout() }
+                }
+            }
+            guard let first = try await group.next() else { throw ModelLoadTimeout() }
+            group.cancelAll()
+            return first
+        }
     }
 
     private struct ModelLoadTimeout: LocalizedError {

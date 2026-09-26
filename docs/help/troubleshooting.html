@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="troubleshooting, mic muted, transcription stops, call starts, zoom, meet, safari, model loading, stuck, permission stuck, permission won't turn green, gibberish, wrong language, diagnostics, logs">
+<meta name="keywords" content="troubleshooting, mic muted, transcription stops, call starts, zoom, meet, safari, model loading, stuck, permission stuck, permission won't turn green, gibberish, wrong language, diagnostics, logs, set up copilot, ollama install, check key">
 <title>Troubleshooting</title>
 <link rel="canonical" href="https://openparrot.app/help/troubleshooting.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -31,6 +31,16 @@ most, join the meeting first and start Parrot second.</p>
 that's normal. But if it sits there forever with no progress, quit Parrot and
 open it again; a fresh start clears it in almost every case. If it keeps
 happening, pick the model again in Settings → Transcription.</p>
+<p>Downloads carry on after you close the setup window, and if you quit
+halfway, the next launch picks up where it left off. A download only gives up
+when nothing has arrived for a minute; press <strong>Retry</strong> to try
+again.</p>
+
+<h2>Ollama won't install from the setup</h2>
+<p>Use <strong>Or download it from ollama.com</strong> under the Install row,
+open Ollama once, and come back: the rows turn green on their own. Parrot only
+opens an Ollama it has checked is signed by Ollama, so a damaged download is
+thrown away rather than run.</p>
 
 <h2>The permission row won't turn green</h2>
 <p>On macOS 15 and newer, the System Audio row confirms itself the first time
