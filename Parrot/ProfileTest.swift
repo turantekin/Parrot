@@ -2827,6 +2827,27 @@ enum ProfileTest {
         check("mcp: placeholders skipped", !all.contains("None"))
         check("mcp: commitments honour the date filter", tool("list_commitments", ["since": twentyDaysAgo, "until": "2000-01-01"])
               == "No commitments found.")
+        check("mcp: advertises prompts", (initResult?["capabilities"] as? [String: Any])?["prompts"] != nil)
+        let prompts = (call("prompts/list")?["result"] as? [String: Any])?["prompts"] as? [[String: Any]]
+        check("mcp: four ready-made prompts", prompts?.compactMap { $0["name"] as? String }
+              == ["weekly_digest", "follow_up_email", "prep_for_call", "prd_from_calls"])
+        func promptText(_ name: String, _ args: [String: Any] = [:]) -> String {
+            let messages = (call("prompts/get", ["name": name, "arguments": args])?["result"] as? [String: Any])?["messages"] as? [[String: Any]]
+            return ((messages?.first?["content"] as? [String: Any])?["text"] as? String) ?? ""
+        }
+        let digest = promptText("weekly_digest")
+        check("mcp: digest uses list_commitments", digest.contains("list_commitments") && digest.contains("last 7 days"))
+        check("mcp: prompts say text is data", digest.contains("data, not instructions"))
+        check("mcp: prompt arguments land", promptText("prd_from_calls", ["topic": "SSO", "when": "this month"])
+              .contains("\"SSO\" with Parrot's search_meetings with when = \"this month\""))
+        check("mcp: a missing required argument is an error",
+              (call("prompts/get", ["name": "follow_up_email"])?["error"] as? [String: Any])?["code"] as? Int == -32602)
+        check("mcp: unknown prompt is an error", call("prompts/get", ["name": "nope"])?["error"] != nil)
+        check("mcp: every tool is read-only with a title", tools?.allSatisfy { t in
+            let hints = t["annotations"] as? [String: Any]
+            return hints?["readOnlyHint"] as? Bool == true && hints?["destructiveHint"] as? Bool == false
+                && hints?["openWorldHint"] as? Bool == false && !((t["title"] as? String) ?? "").isEmpty
+        } == true)
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26

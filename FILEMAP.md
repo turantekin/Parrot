@@ -64,8 +64,9 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
 | `Services/Integrations.swift` | 230 | Apple Reminders, export folder (security-scoped bookmark), webhook (payload, HMAC, send) |
 | `Services/RecordingManager+Integrations.swift` | 90 | After-call actions, follow-up drafting, next steps → Reminders |
-| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments), opt-in, private meetings hidden |
+| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations), opt-in, private meetings hidden |
 | `Services/MCPCommitments.swift` | 55 | Pure: commitment bullets from a report, owner = speaker of the cited receipt line |
+| `Services/MCPPrompts.swift` | 115 | Pure: the four ready-made MCP prompts (weekly digest, follow-up email, call prep, PRD from calls) |
 | `Services/CloudGate.swift` | 60 | On-device-only switch: global or per-call holds; checked by every cloud path |
 | `Services/Redactor.swift` | 200 | Hide emails/phones/cards/IBANs/names from cloud AI and restore them; request/result helpers |
 | `Services/Retention.swift` | 55 | Automatic clean-up rules (audio / whole meetings after N days) |
