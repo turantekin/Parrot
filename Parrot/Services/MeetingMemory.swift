@@ -289,15 +289,24 @@ final class MeetingMemory {
             return Self.rank(queryTokens: KnowledgeBaseService.lexicalTokens(query),
                              chunkTokens: tokens, cosine: cosine, topK: topK)
         }.value
-        let words = pool.map { chunk -> Set<String> in
-            if let cached = wordCache[chunk.id] { return cached }
-            let w = Self.words(chunk.text)
-            wordCache[chunk.id] = w
-            return w
-        }
-        return Self.promoteRare(queryWords: names, chunkWords: words, order: order, topK: topK,
+        return Self.promoteRare(queryWords: names, chunkWords: pool.map(cachedWords), order: order, topK: topK,
                                 namedOnly: namedOnly)
             .map { pool[$0] }
+    }
+
+    /// Meetings whose passages say `word` (a whole lowercased word):
+    /// "How many meetings with Revolut?" is counted from this.
+    func meetingsMentioning(_ word: String) -> Set<UUID> {
+        Set(chunks.filter { cachedWords($0).contains(word) }.map(\.meetingID))
+    }
+
+    /// ponytail: built on the main actor, once per passage; move into the
+    /// detached ranking task if tens of thousands of passages ever stall it.
+    private func cachedWords(_ chunk: MemoryChunk) -> Set<String> {
+        if let cached = wordCache[chunk.id] { return cached }
+        let w = Self.words(chunk.text)
+        wordCache[chunk.id] = w
+        return w
     }
 
     /// Lowercased whole words (letters and digits), unshortened.
@@ -310,19 +319,26 @@ final class MeetingMemory {
         "meeting", "meetings", "about", "which", "where", "there", "their", "would", "could", "should",
         "anything", "something", "people", "talked", "discussed", "decide", "decided", "promise", "promised",
         "toplantı", "toplantıda", "toplantısında", "toplantılar", "hangi", "neler", "konuşuldu", "görüşme",
+        // Capitalised, so `nameWords` picks them up, but never a name.
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "january", "february", "march", "april", "june", "july", "august", "september", "october",
+        "november", "december", "pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi", "pazar",
+        "ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül", "ekim",
+        "kasım", "aralık",
     ]
 
     /// The search shortens words to 5 letters, so "Complycube" is "compl"
     /// and drowns among complete / complex / compliance. A rare name from the
     /// question (`AskEngine.nameWords`: Complycube, Kerem, Dietify) pulls the
     /// passages that contain it exactly to the top. Rare = in at most 3% of
-    /// the passages (at least 3).
+    /// the passages (at least 3), and in at least one: a misspelt name
+    /// matches nothing and must not empty a local model's passages.
     nonisolated static func promoteRare(queryWords: Set<String>, chunkWords: [Set<String>],
                                         order: [Int], topK: Int, namedOnly: Bool = false) -> [Int] {
         let limit = max(3, chunkWords.count * 3 / 100)
         let rare = queryWords.filter { word in
             word.count >= 4 && !commonWords.contains(word) && !word.allSatisfy(\.isNumber)
-                && chunkWords.lazy.filter { $0.contains(word) }.prefix(limit + 1).count <= limit
+                && (1...limit).contains(chunkWords.lazy.filter { $0.contains(word) }.prefix(limit + 1).count)
         }
         guard !rare.isEmpty else { return order }
         let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })

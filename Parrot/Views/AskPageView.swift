@@ -121,7 +121,9 @@ struct AskPageView: View {
                     OllamaModelStatusView(model: OpenAICompatibleProvider.ollamaModel, hideWhenReady: true)
                         .id(askProvider)   // re-check when the AI choice changes
                         .padding(.horizontal, Theme.Metrics.pad)
-                        .padding(.vertical, Theme.Metrics.bannerInsetV)
+                        // Ready: the view is empty, so no strip either.
+                        .padding(.vertical, recordingManager.ollama.status(for: OpenAICompatibleProvider.ollamaModel) == .ready
+                                 ? 0 : Theme.Metrics.bannerInsetV)
                 }
                 ScrollViewReader { proxy in
                     ScrollView {

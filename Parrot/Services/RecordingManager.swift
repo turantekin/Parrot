@@ -21,7 +21,7 @@ final class RecordingManager {
     /// the user confirms post-call.
     private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
-    let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
+    let callAnalysisEngine: CallAnalysisEngine
     let knowledgeBase = KnowledgeBaseService()
     /// TypeSafe client for the copilot's "From your docs" excerpts; inert
     /// without a key (see CallAnalysisEngine.fastPathAvailable).
@@ -103,7 +103,9 @@ final class RecordingManager {
     /// Support store — normal app code keeps calling `RecordingManager()`.
     /// (nil defaults, not `= MeetingMemory()`: a default-argument expression
     /// isn't MainActor-isolated, so it can't call these actor-isolated inits.)
-    init(memory: MeetingMemory? = nil, chats: AskChatStore? = nil) {
+    /// `provider` too: the Ask routing test records every prompt with a stub.
+    init(memory: MeetingMemory? = nil, chats: AskChatStore? = nil, provider: AnalysisProvider? = nil) {
+        callAnalysisEngine = CallAnalysisEngine(provider: provider ?? SwitchingAnalysisProvider())
         self.memory = memory ?? MeetingMemory()
         self.chats = chats ?? AskChatStore()
         callAnalysisEngine.knowledgeBase = knowledgeBase

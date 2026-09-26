@@ -326,7 +326,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
                 ["role": "user", "content": user],
             ],
             // Low temperature: reports and Ask answers are factual, and a
-            // small model at Ollama's default of 1 drifts (miscounts, mixes
+            // small model at Ollama's default of 0.8 drifts (miscounts, mixes
             // up speakers).
             "options": ["num_ctx": numCtx, "num_predict": maxTokens, "temperature": 0.2],
         ]

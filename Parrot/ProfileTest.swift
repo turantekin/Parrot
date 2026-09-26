@@ -86,6 +86,8 @@ enum ProfileTest {
         testAskRealTestFixes()
         testAskMeetingQuestions()
         testAskDeepTestFixes()
+        testAskReviewFixes()
+        testAskRouting()
         testOnboardingFlow()
         testCopilotSetupState()
         testProviderKeyCheck()
@@ -1190,6 +1192,119 @@ enum ProfileTest {
               AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
     }
 
+    /// The final review's wrong-answer phrasings.
+    static func testAskReviewFixes() {
+        func kind(_ q: String) -> AskEngine.MeetingQuestion? { AskEngine.meetingQuestion(q)?.kind }
+        check("count: 'meet with X' counts X", kind("Did I meet with Revolut?") == .countWith("revolut"))
+        check("count: 'met with X this month'", kind("Have I met with Kerem this month?") == .countWith("kerem"))
+        check("count: 'talk to X'", kind("Did I talk to Kerem this week?") == .countWith("kerem"))
+        check("count: 'go to last week' is a plain count", kind("How many meetings did I go to last week?") == .count)
+        check("count: 'have to cancel' goes to the AI", kind("how many meetings did I have to cancel?") == nil)
+        check("count: 'talk about X with Y' goes to the AI", kind("Did I talk about pricing with Acme?") == nil)
+        check("count: 'about pricing' goes to the AI", kind("How many meetings were about pricing?") == nil)
+        check("count: 'decide in my longest' goes to the AI", kind("What did we decide in my longest meeting?") == nil)
+        check("count: Turkish 'Kerem'le'", AskEngine.meetingQuestion("Kerem'le kaç toplantı yaptım?").map { $0.kind == .countWith("kerem") && $0.turkish } == true)
+        check("count: Turkish 'Revolut'la'", kind("Revolut'la kaç görüşme yaptım?") == .countWith("revolut"))
+        check("count: 'last 30 days' isn't 30 meetings", kind("My longest meetings in the last 30 days") == .longest(5))
+        check("count: '3 longest' still reads 3", kind("Show my 3 longest meetings") == .longest(3))
+        check("count: 'which was my longest' still counted", kind("Which was my longest meeting?") == .longest(5))
+
+        check("names: a word no passage has keeps the local model's passages",
+              MeetingMemory.promoteRare(queryWords: ["complycub"], chunkWords: [["a"], ["b"]], order: [1, 0],
+                                        topK: 2, namedOnly: true) == [1, 0])
+        check("names: a weekday is never a name",
+              MeetingMemory.promoteRare(queryWords: ["monday"], chunkWords: [["a"], ["monday"]], order: [0, 1],
+                                        topK: 2, namedOnly: true) == [0, 1])
+
+        let globex = UUID(), dietify = UUID()
+        let titles = [(id: globex, title: "Globex hiring sync"), (id: dietify, title: "Dietify demo")]
+        check("focus: a topic word searches everything", AskEngine.namedMeeting(in: "Any hiring updates?", titles: titles) == nil)
+        check("focus: a capitalised name focuses", AskEngine.namedMeeting(in: "What did Globex say?", titles: titles) == globex)
+        check("focus: 'the hiring call' focuses", AskEngine.namedMeeting(in: "What came up in the hiring call?", titles: titles) == globex)
+        check("focus: Turkish 'X toplantısında'", AskEngine.namedMeeting(in: "dietify toplantısında ne konuşuldu?", titles: titles) == dietify)
+
+        let now = Date()
+        let cal = Calendar.current
+        check("dates: Turkish 'dünkü'", AskEngine.dateRange(in: "Dünkü toplantıda ne oldu?", now: now)
+              == cal.date(byAdding: .day, value: -1, to: now).flatMap { cal.dateInterval(of: .day, for: $0) })
+        check("dates: Turkish 'geçen haftaki'", AskEngine.dateRange(in: "Geçen haftaki görüşmeler", now: now)?.end
+              == cal.dateInterval(of: .weekOfYear, for: now)?.start)
+        check("dates: Turkish 'bu ayki'", AskEngine.dateRange(in: "Bu ayki toplantılar", now: now) == cal.dateInterval(of: .month, for: now))
+        let thirty = AskEngine.dateRange(in: "my longest meetings in the last 30 days", now: now)
+        check("dates: 'last 30 days'", thirty?.end == now && thirty?.start == cal.date(byAdding: .day, value: -30, to: cal.startOfDay(for: now)))
+        // A fixed Saturday: Monday is 5 days back, Saturday is today.
+        let saturday = cal.date(from: DateComponents(year: 2026, month: 9, day: 26, hour: 15))!
+        check("dates: 'on Monday' is the latest Monday", AskEngine.dateRange(in: "What did we agree on Monday?", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 21)))
+        check("dates: Turkish 'pazartesi'", AskEngine.dateRange(in: "Pazartesi ne konuştuk?", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 21)))
+        check("dates: 'on Saturday' said on a Saturday is today", AskEngine.dateRange(in: "on saturday", now: saturday)
+              == cal.dateInterval(of: .day, for: saturday))
+        check("dates: 'next Monday' narrows nothing", AskEngine.dateRange(in: "What's planned for next Monday?", now: saturday) == nil)
+        check("dates: 'pazar' isn't 'pazartesi'", AskEngine.dateRange(in: "pazar günü", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 20)))
+    }
+
+    /// Records every prompt Ask Parrot sends, instead of sending it.
+    private final class PromptRecorder: AnalysisProvider, @unchecked Sendable {
+        var prompts: [String] = []
+        var isConfigured: Bool { true }
+        func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult { throw AnalysisError.missingAPIKey }
+        func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                       instructions: String, counterpart: String) async throws -> String { "" }
+        func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
+                            counterpart: String) async throws -> String { "" }
+        func complete(system: String, user: String, maxTokens: Int) async throws -> String {
+            prompts.append(system + "\n" + user)
+            return "SAME"
+        }
+    }
+
+    /// The whole `ask` path with a cloud AI: an on-device-only meeting never
+    /// reaches a prompt, and counts are done on the Mac with no AI at all.
+    @MainActor
+    static func testAskRouting() {
+        guard !CloudGate.forcesLocal else { print("  (skipped ask routing: on-device only is on)"); return }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { check("routing: container", false); return }
+        let context = container.mainContext
+        let recorder = PromptRecorder()
+        let rm = RecordingManager(memory: MeetingMemory(directory: nil), chats: AskChatStore(directory: nil), provider: recorder)
+        rm.attachForHarness(modelContext: context)
+        func add(_ title: String, _ text: String, onDeviceOnly: Bool) {
+            let m = Meeting(title: title, date: .now.addingTimeInterval(-3600))
+            m.status = .done
+            m.onDeviceOnly = onDeviceOnly
+            context.insert(m)
+            rm.memory.replace(meetingID: m.id, with: MeetingMemory.buildChunks(
+                meetingID: m.id, lines: [.init(start: 5, end: 9, speaker: "Sam", text: text)],
+                summary: nil, coaching: nil), fingerprint: 1)
+        }
+        add("Acme renewal", "The pricing went up twenty percent.", onDeviceOnly: false)
+        add("Zorblax merger", "The merger pricing is ninety million.", onDeviceOnly: true)
+        try? context.save()
+
+        let sem = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            let chat = AskChat(title: "Routing", scope: nil, scopeTitle: nil)
+            _ = await rm.ask("What happened with pricing?", in: chat)
+            _ = await rm.ask("What did Zorblax say about the merger?", in: chat)
+            let sent = recorder.prompts.joined(separator: "\n")
+            check("routing: the cloud AI was asked", !recorder.prompts.isEmpty)
+            check("routing: private passages never reach a prompt", !sent.contains("ninety million"))
+            check("routing: private titles never reach a prompt", !sent.contains("Zorblax merger"))
+            let before = recorder.prompts.count
+            let count = await rm.ask("How many meetings did I have today?", in: chat)
+            check("routing: counts never call the AI", recorder.prompts.count == before)
+            check("routing: counts say where they came from", count.model == "Counted on this Mac")
+            check("routing: a count that includes a private meeting is marked private", count.usedPrivate)
+            sem.signal()
+        }
+        while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: .now + 0.01) }
+    }
+
     @MainActor
     static func testAskDeepTestFixes() {
         typealias E = AskEngine
@@ -1336,8 +1451,8 @@ enum ProfileTest {
         let list = AskEngine.meetingList(items, limit: 2)
         let rows = list.components(separatedBy: "\n")
         check("list: newest first, line format",
-              rows.first == "- 23 Sep 2026 10:59, 22 min, \"Meeting ‹Revolut›\", with Mac, Uygar")
-        check("list: no people, under a minute", rows.dropFirst().first == "- 22 Sep 2026 09:05, under 1 min, \"Standup\"")
+              rows.first == "- Wed 23 Sep 2026 10:59, 22 min, \"Meeting ‹Revolut›\", with Mac, Uygar")
+        check("list: no people, under a minute", rows.dropFirst().first == "- Tue 22 Sep 2026 09:05, under 1 min, \"Standup\"")
         check("list: cut list says how many are left out", rows.count == 3 && rows.last == "(1 older meeting not listed)")
         check("list: several left out is plural",
               AskEngine.meetingList(items, limit: 1).hasSuffix("(2 older meetings not listed)"))

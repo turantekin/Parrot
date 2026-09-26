@@ -92,7 +92,7 @@ extension RecordingManager {
             var done = meetings.filter { $0.status == .done && (range?.contains($0.date) ?? true) }
             if case .countWith(let who) = mq.kind {
                 // Where the name appears: title, people, report, or what was said.
-                let saidIn = Set(memory.chunks.filter { MeetingMemory.words($0.text).contains(who) }.map(\.meetingID))
+                let saidIn = memory.meetingsMentioning(who)
                 done = done.filter { m in
                     saidIn.contains(m.id)
                         || MeetingMemory.words(([m.title] + people(m) + [m.summary ?? ""]).joined(separator: " ")).contains(who)
@@ -148,7 +148,11 @@ extension RecordingManager {
         // answered from that whole meeting, like a one-meeting chat.
         let focus = chat.scope != nil ? nil : AskEngine.namedMeeting(
             in: searchQuestion,
-            titles: meetings.filter { $0.status == .done && !excluded.contains($0.id) }.map { ($0.id, $0.title) })
+            // A date in the question still counts: "Revolut last week" never
+            // focuses on a Revolut call from months ago.
+            titles: meetings.filter {
+                $0.status == .done && !excluded.contains($0.id) && (range?.contains($0.date) ?? true)
+            }.map { ($0.id, $0.title) })
         let scope = focus.map { [$0] }
             ?? AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
         // Names in the question (capitalised, or a title / person word):
@@ -157,7 +161,7 @@ extension RecordingManager {
         for m in meetings where m.status == .done {
             known.formUnion(MeetingMemory.words(([m.title] + people(m)).joined(separator: " ")).filter { $0.count >= 4 })
         }
-        known.subtract(["meeting", "minutes", "interview", "review", "tasks", "launchese"])
+        known.subtract(AskEngine.genericTitleWords)
         let names = AskEngine.nameWords(in: question, known: known)
             .union(AskEngine.nameWords(in: searchQuestion, known: known))
         // Rank wide, put the last answer's meetings first (follow-up

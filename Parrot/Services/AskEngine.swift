@@ -95,7 +95,8 @@ enum AskEngine {
         }
         order.sort { (meetings[$0]?.date ?? .distantPast) > (meetings[$1]?.date ?? .distantPast) }
 
-        let dateFormat = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        // With the weekday, so "what did we agree on Monday?" can be matched.
+        let dateFormat = Date.FormatStyle(date: .abbreviated, time: .omitted).weekday(.abbreviated)
         var refs: [MeetingRef] = []
         var blocks: [String] = []
         for (i, id) in order.enumerated() {
@@ -181,7 +182,7 @@ enum AskEngine {
     private static let listDate: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "d MMM yyyy HH:mm"
+        f.dateFormat = "EEE d MMM yyyy HH:mm"
         return f
     }()
 
@@ -324,20 +325,29 @@ enum AskEngine {
     /// ("Dietify toplantısında…", "the Revolut call"); nil when none or
     /// several match. Auto titles ("Meeting Jul 8…") have no such word.
     static func namedMeeting(in question: String, titles: [(id: UUID, title: String)]) -> UUID? {
-        let asked = MeetingMemory.words(question)
-        let generic: Set<String> = [
-            "meeting", "meetings", "minutes", "interview", "review", "tasks", "launchese", "weekly", "calls",
-            "limited", "january", "february", "march", "april", "august", "september", "october", "november",
-            "december",
-        ]
+        // Only a name picks one meeting: capitalised mid-sentence
+        // ("What did Complycube say?") or right before call / meeting /
+        // toplantı ("the Dietify call"). A topic word ("hiring") searches all.
+        var asked = nameWords(in: question, known: [])
+        if let before = try? Regex(#"([\p{L}\p{N}]+)\s+(call|meeting|toplant|görüşme)"#) {
+            for match in question.lowercased().matches(of: before) {
+                if let word = match.output[1].substring { asked.insert(String(word)) }
+            }
+        }
         var found = Set<UUID>()
         for item in titles {
             let names = MeetingMemory.words(item.title)
-                .filter { $0.count >= 5 && !generic.contains($0) && !$0.contains(where: \.isNumber) }
+                .filter { $0.count >= 5 && !genericTitleWords.contains($0) && !$0.contains(where: \.isNumber) }
             if !names.isDisjoint(with: asked) { found.insert(item.id) }
         }
         return found.count == 1 ? found.first : nil
     }
+
+    /// Title words that never name a meeting or a person.
+    static let genericTitleWords: Set<String> = [
+        "meeting", "meetings", "minutes", "interview", "review", "tasks", "weekly", "calls", "limited",
+        "january", "february", "march", "april", "august", "september", "october", "november", "december",
+    ]
 
     /// No AI rewrite: search the new question with the previous one.
     static func localFollowUp(question: String, previousQuestion: String?) -> String {
@@ -388,14 +398,33 @@ enum AskEngine {
             guard let interval, let start = calendar.date(byAdding: unit, value: -1, to: interval.start) else { return nil }
             return DateInterval(start: start, end: interval.start)
         }
-        if q.contains(" yesterday ") || q.contains(" dün ") {
+        // Turkish adds a suffix: "dünkü", "geçen haftaki", "bu ayda".
+        func has(_ phrases: String...) -> Bool {
+            phrases.contains { p in ["", "ki", "kü", "da", "de"].contains { q.contains(" \(p)\($0) ") } }
+        }
+        if has("yesterday", "dün") {
             return calendar.date(byAdding: .day, value: -1, to: now).flatMap { calendar.dateInterval(of: .day, for: $0) }
         }
-        if q.contains(" today ") || q.contains(" bugün ") { return calendar.dateInterval(of: .day, for: now) }
-        if q.contains(" last week ") || q.contains(" geçen hafta ") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
-        if q.contains(" this week ") || q.contains(" bu hafta ") { return calendar.dateInterval(of: .weekOfYear, for: now) }
-        if q.contains(" last month ") || q.contains(" geçen ay ") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
-        if q.contains(" this month ") || q.contains(" bu ay ") { return calendar.dateInterval(of: .month, for: now) }
+        if has("today", "bugün") { return calendar.dateInterval(of: .day, for: now) }
+        if has("last week", "geçen hafta") { return shifted(calendar.dateInterval(of: .weekOfYear, for: now), by: .weekOfYear) }
+        if has("this week", "bu hafta") { return calendar.dateInterval(of: .weekOfYear, for: now) }
+        if has("last month", "geçen ay") { return shifted(calendar.dateInterval(of: .month, for: now), by: .month) }
+        if has("this month", "bu ay") { return calendar.dateInterval(of: .month, for: now) }
+        // "the last 30 days", "son 7 gün": up to now.
+        if let match = try? Regex(#"\b(?:last|past|son)\s+(\d{1,3})\s+(?:days?|gün)"#).firstMatch(in: question.lowercased()),
+           let days = match.output[1].substring.flatMap({ Int($0) }), days > 0,
+           let start = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)) {
+            return DateInterval(start: start, end: now)
+        }
+        // "on Monday", "pazartesi": the latest one, today included. "next
+        // Monday" hasn't happened, so no meetings to narrow to.
+        let weekdays = [("sunday", "pazar"), ("monday", "pazartesi"), ("tuesday", "salı"), ("wednesday", "çarşamba"),
+                        ("thursday", "perşembe"), ("friday", "cuma"), ("saturday", "cumartesi")]
+        for (i, day) in weekdays.enumerated() where has(day.0, day.1)
+            && !has("next \(day.0)", "gelecek \(day.1)", "önümüzdeki \(day.1)") {
+            let back = (calendar.component(.weekday, from: now) - (i + 1) + 7) % 7
+            return calendar.date(byAdding: .day, value: -back, to: now).flatMap { calendar.dateInterval(of: .day, for: $0) }
+        }
         return nil
     }
 
@@ -406,7 +435,8 @@ enum AskEngine {
     /// Words after "with" that aren't a name.
     private static let notNames: Set<String> = [
         "my", "the", "a", "an", "our", "team", "client", "clients", "customer", "customers", "anyone",
-        "someone", "them", "him", "her", "people", "benim", "ekibim", "biri", "kimse",
+        "someone", "them", "him", "her", "people", "benim", "ekibim", "biri", "kimse", "with", "last", "this",
+        "next", "today", "yesterday", "you", "bugün", "dün", "geçen", "hafta",
     ]
 
     /// "How many meetings", "my longest meetings", "time spent in meetings"
@@ -417,23 +447,33 @@ enum AskEngine {
     static func meetingQuestion(_ question: String) -> (kind: MeetingQuestion, turkish: Bool)? {
         let q = " " + question.lowercased() + " "
         func has(_ pattern: String) -> Bool { q.range(of: pattern, options: .regularExpression) != nil }
-        // "How many meetings with Revolut", "did I meet Complycube?",
-        // "Revolut ile kaç toplantı": counted too, by where the name appears.
-        func name(_ pattern: String) -> String? {
-            guard let r = q.range(of: pattern, options: .regularExpression) else { return nil }
-            let words = q[r].components(separatedBy: CharacterSet.letters.union(.decimalDigits).inverted).filter { !$0.isEmpty }
-            return words.last.flatMap { notNames.contains($0) || $0.count < 3 ? nil : $0 }
+        // Anything past "how many / which one" ("…about pricing", "…did we
+        // decide", "…did I have to cancel") needs the AI, not a count.
+        if has(#"\b(about|regarding|where|mention\w*|discuss\w*|decid\w*|agree\w*|(have|had|need) to|what did)\b|\bkonu(su|sunda|lar\w*)?\b|hakkında|nerede|ne (ded|konuş|söyle)"#) {
+            return nil
         }
+        // "How many meetings with Revolut", "did I meet with Complycube?",
+        // "Revolut ile / Kerem'le kaç toplantı": counted too, by where the
+        // name appears.
+        func name(_ pattern: String) -> String? {
+            guard let match = try? Regex(pattern).firstMatch(in: q),
+                  let word = match.output[1].substring.map(String.init) else { return nil }
+            return notNames.contains(word) || word.count < 3 ? nil : word
+        }
+        let word = #"([\p{L}\p{N}][\p{L}\p{N}-]*)"#
         if has(#"\bhow many (meetings|calls)\b|\b(any|number of) (meetings|calls)\b|\bdid i (meet|talk|speak)\b|\bhave i (met|talked|spoken)\b"#),
-           let who = name(#"\b(with|to|meet|met)\s+[\p{L}\p{N}][\p{L}\p{N}-]*"#) {
+           let who = name(#"\b(?:with|meet|met|(?:talk|talked|speak|spoke|spoken)\s+to)\s+(?:with\s+)?"# + word) {
             return (.countWith(who), false)
         }
+        let turkishWith = #"(?:\s+ile\b|['’]y?l[ae]\b)"#
         if has("kaç (toplant|görüşme)|toplantı yaptım mı|görüştüm mü|görüşme yaptım mı"),
-           let who = name(#"[\p{L}\p{N}][\p{L}\p{N}-]*(?=\s+ile\b)"#) {
+           let who = name(word + turkishWith) {
             return (.countWith(who), true)
         }
-        guard !has(#"\bwith\b|\bile\b"#) else { return nil }
-        let number = q.range(of: #"\b([1-9][0-9]?)\b"#, options: .regularExpression).flatMap { Int(q[$0]) }
+        guard !has(#"\bwith\b"# + "|" + turkishWith) else { return nil }
+        // "3 longest", not the 30 of "in the last 30 days".
+        let number = q.range(of: #"\b[1-9][0-9]?\b(?!\s*(days?|weeks?|months?|years?|hours?|minutes?|gün|hafta|ay|yıl|saat|dakika))"#,
+                             options: .regularExpression).flatMap { Int(q[$0]) }
         if has(#"\blongest\b"#), has(#"\b(meetings?|calls?)\b"#) { return (.longest(number ?? 5), false) }
         if has("en uzun"), has("toplant|görüşme") { return (.longest(number ?? 5), true) }
         if has(#"\bhow many (meetings|calls)\b|\bnumber of (meetings|calls)\b"#) { return (.count, false) }

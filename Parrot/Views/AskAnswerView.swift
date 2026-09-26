@@ -15,9 +15,12 @@ struct BetaTag: View {
 
 /// Three dots that pulse in turn while Parrot works on an answer.
 struct ThinkingDots: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        TimelineView(.animation) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
+        // 20 frames a second is plenty for three dots; Reduce Motion holds them still.
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: reduceMotion)) { context in
+            let t = reduceMotion ? 0.3 : context.date.timeIntervalSinceReferenceDate
             HStack(spacing: Theme.Metrics.thinkingDot * 0.6) {
                 ForEach(0..<3, id: \.self) { i in
                     Circle()
