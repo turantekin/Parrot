@@ -127,7 +127,7 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 **Steps:**
 - [ ] Golden test first: `.standard` produces today's two prompts **character for character**. No regression for anyone who never touches templates.
 - [ ] `ReportContentView` parses with `standard labels ∪ the meeting's template titles` (including the one-line local-model unflattening).
-- [ ] `Receipts.isCommitmentSection` also accepts titles flagged `commitments: true` in the meeting's template.
+- [ ] `Receipts.isCommitmentSection` also accepts titles flagged `commitments: true` in the meeting's template, and **every caller passes the meeting's template**: `ReportContentView` (receipt flags), `AskEngine`/`LastCallBrief.openItems` (the Copilot's "open items from last time" and Ask), `ExportService.markdownReport(skipCommitments:)`, `RecordingManager+Integrations` (Reminders, follow-up email, webhook "next steps") and the MCP `list_commitments`. Otherwise a custom "Promises made" section silently drops out of all of them.
 - [ ] Coaching: `role` replaces "a sales/meeting coach"; `enabled: false` skips the coaching call entirely (faster, cheaper).
 - [ ] Built-ins get templates (Sales discovery: Budget / Decision-maker / Timeline, Objections; Interview: scorecard; Support: Issue / Cause / Resolved / Follow-ups / Mood; 1:1 coaching: Topics / Wins / Blockers / Commitments, coaching off; Vendor call: Offer / Pricing and terms / Red flags / Open questions). Default keeps `.standard`. `presetVersion` → 5; the refresh skips `isUserModified` profiles as today.
 - [ ] New built-in **Investor pitch** profile (kinds, gauges and the report above).
@@ -170,8 +170,8 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 - [ ] At most 10 files in the inbox (oldest dropped); switch-off or "Allow Claude to suggest profiles" off (new key `mcpAllowProfileSuggestions`, default on) makes the tool refuse.
 - [ ] New prompts:
   - `create_profile(call_type)`: Claude asks a few questions, then calls `suggest_profile`.
-  - `optimize_profile(profile, last_n = 10)`: Claude reads the profile, the last N meetings' transcripts, reports and **Copilot cards with handled/ignored state**, finds cards that were ignored, moments that were missed and report sections that came out empty or generic, and suggests a better profile (Copilot and report) with a reason per change.
-  - `design_report(profile, description)`: "make my interview report match our hiring scorecard"; Claude drafts the report template and scorecard, then calls `suggest_profile`. Needs "Copilot cards" shared; the prompt tells Claude to ask the user to tick it if it's off.
+  - `optimize_profile(profile, last_n = 10)`: Claude reads the profile, the last N meetings' transcripts, reports and **Copilot cards with handled/ignored state**, finds cards that were ignored, moments that were missed and report sections that came out empty or generic, and suggests a better profile (Copilot and report) with a reason per change. Needs "Copilot cards" shared; the prompt tells Claude to ask the user to tick it if it's off.
+  - `design_report(profile, description)`: "make my interview report match our hiring scorecard"; Claude drafts the report template and scorecard, then calls `suggest_profile`.
 - [ ] Harness: a valid suggestion lands in the inbox; an invalid one returns the reason and writes nothing; a suggestion trying `onDeviceOnly: false` on an on-device profile has no effect after review.
 
 ### Task C: Review screen, Apply, Undo
@@ -200,7 +200,7 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 - [ ] **Website:** openparrot.app/profiles with category pages (Sales, Hiring, Fundraising, Support, Coaching, Legal, Health), search and "Open in Parrot" buttons.
 - [ ] **In the app:** **Browse Profiles** fetches `index.json` from openparrot.app. This is user-initiated and sends nothing about the user (a plain GET of public files). Install goes through the Review screen. New URL scheme `parrot://profile/install?url=…` for one-click install from the website; it only accepts `https://openparrot.app/…` URLs.
 - [ ] **Update notices:** once a day, and only when the user has gallery profiles installed, compare `sharedID`/`version` against `index.json`: "Investor pitch v4 is available". Same Keep mine / Use theirs choice as imports.
-- [ ] Built-in presets are published as the first gallery entries.
+- [ ] **No empty shelves:** open the gallery with 15-20 strong profiles made by the owner (built-ins, Investor pitch, plus ones built with Claude for recruiters, consultants, agencies, real estate, founders' customer calls) before accepting outside submissions.
 - [ ] License: gallery profiles are CC BY 4.0 (free to use and remix, with credit); `basedOn` records the lineage.
 
 ## Stage 4: Marketplace (decide when there's traction)

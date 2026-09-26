@@ -19,7 +19,7 @@
 5. **Trust line:** Parrot shows when an AI app last read meetings and how many ("Claude read 5 meetings today at 14:02"). Counts only, never content.
 6. **Talk-time stats** ship in this round (coaching demo).
 7. **Tips** after a finished report: at most once a week, with "Don't show again".
-8. **Profiles:** the launch release lets Claude *read* profiles. "Claude suggests, you approve", export/import and the gallery come in the release right after, in their own plan: `docs/superpowers/plans/2026-09-26-profiles-share-suggest-gallery.md`. That plan's file format is designed now, so nothing here blocks it.
+8. **Profiles:** the launch release lets Claude *read* profiles. Report templates, "Claude suggests, you approve" and export/import come in the release right after (Profiles 2.0); the gallery comes after that. All in their own plan: `docs/superpowers/plans/2026-09-26-profiles-share-suggest-gallery.md`. That plan's file format is designed now, so nothing here blocks it.
 9. **Re-analysis happens in Claude.** Claude can redo a report with its own model or another framework; the result stays in Claude. Saving it back into Parrot is a later, separate decision.
 
 ## What the AI app can see (permissions)
@@ -105,7 +105,7 @@ Today `search_meetings` passes all-zero cosine scores (`MCPServer.swift:233-236`
 - `list_meetings` and `search_meetings` gain optional `since`, `until` (ISO dates), `when` (plain words: "last week", "in August", parsed by `AskEngine.dateRange`), `person` (matches `people`).
 
 **Steps:**
-- [ ] Make `handle`/`call` async; in `run()` wrap each line in a `Task` and wait with a semaphore (stdio stays one-request-at-a-time, order preserved).
+- [ ] Make `handle`/`call` async and turn `run()` into an async loop over stdin lines (`FileHandle.standardInput.bytes.lines`), handling one request at a time in order. **Don't** block the main thread on a semaphore: `snapshot` is `@MainActor`, so waiting on main for a task that needs main deadlocks.
 - [ ] `search_meetings` calls `MeetingMemory().search(query, within: allowedIDs, topK: limit)` where `allowedIDs` is the filtered snapshot (keeps the privacy gate).
 - [ ] Add the filter arguments to both tools; apply them to the snapshot before search/list.
 - [ ] Results carry speaker name + `[mm:ss]` stamp per excerpt (already in chunk text for transcripts; add for report chunks: "(report)").
@@ -194,7 +194,7 @@ For bulk export and for AI apps that can read files (Claude Code, Codex, Cowork)
 **Interfaces:**
 - UserDefaults keys: `mcpShareTranscripts` (true), `mcpShareReports` (true), `mcpShareNotes` (true), `mcpShareCards` (false), `mcpExcludedProfileIDs` ([]).
 - `MCPAccess.filter(_ info: MeetingInfo) -> MeetingInfo?` strips unticked parts and drops excluded meetings; every tool and search result goes through it.
-- Activity: each `tools/call` that returns meeting content bumps `mcpReadsToday` (reset by date) and sets `mcpLastReadAt`; the first ever sets `mcpFirstReadAt`.
+- Activity: each `tools/call` that returns meeting content bumps `mcpReadsToday` (reset by date) and sets `mcpLastReadAt`; the first ever sets `mcpFirstReadAt`. These are written by the `--mcp` process, a different process from the app, so the app re-reads them when the page appears, when the app becomes active, and every 30 s while the page is open (no KVO across processes).
 
 **Steps:**
 - [ ] Read the settings per request (like `mcpEnabled`), so a change applies to a running AI app at once.
@@ -209,7 +209,7 @@ The app is sandboxed, so it can't edit other apps' config files. Each app gets t
 
 | App | Button | What it does |
 |---|---|---|
-| Claude Desktop (+ Cowork) | **Connect** | Builds `Parrot.mcpb` in the temp folder (manifest, launcher that runs *this* app's `Parrot --mcp`, icon, privacy link) and opens it; Claude shows its install screen |
+| Claude Desktop (+ Cowork) | **Connect** | Builds `Parrot.mcpb` in the temp folder (manifest, launcher, icon, privacy link) and opens it; Claude shows its install screen. The launcher tries this app's path first, then finds Parrot by bundle id (same launcher as the release `.mcpb`), so moving the app doesn't break it |
 | Cursor | **Connect** | Opens Cursor's MCP install deeplink with the command |
 | Claude Code | **Copy command** | `claude mcp add parrot -- "<path>" --mcp` |
 | Codex (OpenAI) | **Copy command** | `codex mcp add parrot -- "<path>" --mcp` |
@@ -217,7 +217,7 @@ The app is sandboxed, so it can't edit other apps' config files. Each app gets t
 
 **Steps:**
 - [ ] Buttons disabled until "Allow AI apps to read my meetings" is on; turning it on is still the only consent step.
-- [ ] Show "Installed" hints only when cheap to detect (Claude Desktop / Cursor by bundle id via `NSWorkspace.urlForApplication(withBundleIdentifier:)`); otherwise hide the Connect button and keep Copy.
+- [ ] Detect Claude Desktop / Cursor by bundle id (`NSWorkspace.urlForApplication(withBundleIdentifier:)`). Installed → **Connect**; not installed → **Get Claude** (opens claude.ai/download) next to Copy.
 - [ ] Fix the blurb: drop "ChatGPT", name Claude, Codex, Cursor; keep "the app you connect usually sends what it reads to its own cloud, so on-device-only meetings are never shown to it".
 - [ ] Harness: `.mcpb` manifest JSON has name, version = `AppUpdater.currentVersion`, the four prompts, all tools, and a launcher pointing at the given path; command builders quote paths with spaces.
 - [ ] Manual (on a Mac): Connect → Claude install screen → ask "what did I promise last week?" → answer cites meetings. Repeat in Claude Code and Codex.
@@ -228,6 +228,7 @@ The app is sandboxed, so it can't edit other apps' config files. Each app gets t
 
 **Steps:**
 - [ ] `MainPage.aiApps` page, top to bottom: main switch · connect buttons (Task 8) · "What Claude can see" checkboxes + excluded call types · the six jobs, each with 2 example questions and Copy · activity line · the privacy sentence.
+- [ ] One line that tells **Ask Parrot and Claude** apart, so they don't compete: "Ask Parrot runs on your Mac and stays private. Claude is a bigger brain for bigger jobs (writing, many calls at once), using your Claude plan."
 - [ ] Settings → Connections card shrinks to the main switch + "Open Claude & AI Apps".
 - [ ] First-connection banner: the app watches `mcpFirstReadAt`; shows once, dismissible.
 - [ ] Meeting page: "Ask Claude" menu (Follow-up email · Second opinion · What did we agree?). Each copies a question naming the meeting (title + date) and opens Claude Desktop if installed (bundle id), else just copies. Hidden when the switch is off or the meeting is on-device only.
@@ -250,6 +251,8 @@ Being listed is for discovery only; users can connect without any store.
 - [ ] **Release asset:** `scripts/release.sh` packs `Parrot.mcpb` (launcher finds Parrot by bundle id, so it doesn't assume `/Applications`) and attaches it to the GitHub release; website gets a "Works with Claude" block with the download.
 - [ ] **MCP Registry:** add `server.json` (name `io.github.turantekin/parrot`, the release `.mcpb` URL + sha256) and publish with the registry CLI. Then list on Smithery and mcp.so.
 - [ ] **Claude plugin directory** (the only listing route for local servers; standalone `.mcpb` listings are closed): `integrations/claude-plugin/` with `plugin.json`, `.mcp.json` (same launcher), four skills mirroring the prompts, README, PRIVACY. Validate with `claude plugin validate`, submit at claude.ai/directory/manage (repo must be public at publish). Data-handling answers: reads personal data locally; sends nothing itself; the Claude session receives what tools return.
+- [ ] **Before any submission:** a privacy policy page on openparrot.app covering the AI-app connection (the directory requires one); reviewer notes (install Parrot, load the sample meetings, turn the switch on); check Anthropic's brand guidelines for "Claude" naming and any "Works with Claude" badge.
+- [ ] **Beta first:** 5-10 real users on a direct-download build for a week before the directory submission and the public launch.
 - [ ] **Not now:** ChatGPT (needs a hosted relay or the developer tunnel), Gemini.
 
 ## Next release (own plan)
@@ -271,6 +274,12 @@ Profiles 2.0: report templates per profile, scorecards, "Rewrite report", "Claud
 | Plugin directory review / security scan flags the launcher script | Keep it a few lines, no network, documented in PRIVACY; `.mcpb` download works regardless |
 | Context floods in long histories | Paging (Task 2), export-to-file (Task 5), `limit` caps everywhere |
 | Sandboxed `--mcp` can't reach a moved/renamed app | Launcher resolves by bundle id, not path |
+| Text inside a recorded call tries to steer Claude, e.g. into sending an email through Claude's Gmail connector | Server `instructions` and every transcript tool mark the text as data, not instructions; Parrot itself can't send anything; Claude asks before write actions in other connectors. Documented on the help page |
+| Branding: using "Claude" in the page name and website | Follow Anthropic's brand guidelines; fall back to "AI Apps" if needed |
+
+## How we'll know it works (no telemetry)
+
+Parrot is local-first, so no usage tracking. Signals instead: `.mcpb` downloads on the GitHub release, the Claude plugin directory's own usage tab (installs, runs, errors), MCP Registry / Smithery listing stats, GitHub stars and issues, website visits to the Claude page, and the beta users' feedback. Optional later: a one-time, opt-in "How are you using Claude with Parrot?" question.
 
 ## Size
 
