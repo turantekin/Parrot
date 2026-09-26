@@ -94,7 +94,7 @@ private struct OllamaSetupRows: View {
                 Link("Or download it from ollama.com", destination: OllamaInstaller.websiteURL)
                     .font(Theme.Typography.caption)
             }
-            if !ollama.isPulling, ollama.status != .ready {
+            if !ollama.isPulling, ollama.status(for: model.ollamaModel) != .ready {
                 Picker("Model", selection: $model.ollamaModel) {
                     ForEach(OllamaCatalog.models, id: \.id) { Text($0.label).tag($0.id) }
                 }
@@ -105,9 +105,13 @@ private struct OllamaSetupRows: View {
         .task(id: model.ollamaModel) {
             while !Task.isCancelled {
                 await ollama.refresh(model: model.ollamaModel)
-                model.ollamaModelReady = ollama.status == .ready && ollama.model == model.ollamaModel
                 try? await Task.sleep(for: .seconds(1.5))
             }
+        }
+        // Live, not per poll: Continue right after the download lands must
+        // already count the model as ready.
+        .onChange(of: ollama.status(for: model.ollamaModel), initial: true) { _, status in
+            model.ollamaModelReady = status == .ready
         }
     }
 
@@ -137,13 +141,13 @@ private struct OllamaSetupRows: View {
     private func modelRow(_ ollama: OllamaService, serverUp: Bool) -> some View {
         let name = model.ollamaModel
         let size = OllamaCatalog.sizeLabel(for: name) ?? "size varies"
-        let current = ollama.model == name
-        if current, case .pulling(let progress) = ollama.status {
+        let status = ollama.status(for: name)
+        if case .pulling(let progress) = status {
             DownloadRow(title: "Downloading \(name)", progress: progress,
                         note: "Keep going. Copilot turns on by itself when it's done.")
-        } else if current, ollama.status == .ready {
+        } else if status == .ready {
             done("\(name) is ready")
-        } else if serverUp {
+        } else if serverUp, !ollama.isPulling {
             PermissionRow(icon: "arrow.down.circle", askTitle: "Download \(name)", grantedTitle: "",
                           subtitle: "\(size). Runs Copilot on this Mac.") {
                 ollama.pull(name)
@@ -151,7 +155,7 @@ private struct OllamaSetupRows: View {
         } else {
             PendingRow(title: "Download \(name)")
         }
-        if current, case .failed(let why) = ollama.status {
+        if case .failed(let why) = status {
             Text(why)
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Theme.Colors.stop)

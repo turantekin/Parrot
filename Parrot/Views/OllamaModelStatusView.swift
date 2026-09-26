@@ -10,7 +10,7 @@ struct OllamaModelStatusView: View {
 
     var body: some View {
         let ollama = recordingManager.ollama
-        let status: OllamaService.Status = ollama.model == model ? ollama.status : .checking
+        let status = ollama.status(for: model)
         HStack(spacing: 8) {
             switch status {
             case .checking:
@@ -34,6 +34,7 @@ struct OllamaModelStatusView: View {
                     ollama.pull(model)
                 }
                 .controlSize(.small)
+                .disabled(ollama.isPulling)  // one pull at a time
 
             case .pulling(let progress):
                 ProgressView(value: progress)

@@ -44,12 +44,14 @@ enum CopilotPathSettings {
         }
     }
 
-    /// The Ollama model finished. Honours a pending "turn on" from the
-    /// private path; returns true when it switched Copilot on.
+    /// An Ollama model is ready. Honours a pending "turn on" from the
+    /// private path, but only for the model Copilot is set to use; returns
+    /// true when it switched Copilot on.
     @discardableResult
-    static func ollamaModelReady(in d: UserDefaults = .standard) -> Bool {
+    static func ollamaModelReady(_ model: String, in d: UserDefaults = .standard) -> Bool {
         guard d.bool(forKey: enableWhenReadyKey),
-              d.string(forKey: CopilotPath.defaultsKey) == CopilotPath.private.rawValue else { return false }
+              d.string(forKey: CopilotPath.defaultsKey) == CopilotPath.private.rawValue,
+              d.string(forKey: "copilotOllamaModel") == model else { return false }
         d.set(true, forKey: "copilotEnabled")
         d.set(false, forKey: enableWhenReadyKey)
         d.set(true, forKey: justTurnedOnKey)

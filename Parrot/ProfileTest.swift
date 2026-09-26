@@ -2373,13 +2373,16 @@ enum ProfileTest {
         check("setup: reports keep following Copilot", d.string(forKey: "reportsProvider") == nil)
 
         fresh(); CopilotPathSettings.apply(choices(.private), to: d)
+        check("setup: a different model finishing leaves Copilot waiting",
+              !CopilotPathSettings.ollamaModelReady("llama3.2:3b", in: d) && !d.bool(forKey: "copilotEnabled")
+              && d.bool(forKey: CopilotPathSettings.enableWhenReadyKey))
         check("setup: model ready switches Copilot on once",
-              CopilotPathSettings.ollamaModelReady(in: d) && d.bool(forKey: "copilotEnabled")
+              CopilotPathSettings.ollamaModelReady("gemma3:4b", in: d) && d.bool(forKey: "copilotEnabled")
               && d.bool(forKey: CopilotPathSettings.justTurnedOnKey))
-        check("setup: a second ready does nothing", !CopilotPathSettings.ollamaModelReady(in: d))
+        check("setup: a second ready does nothing", !CopilotPathSettings.ollamaModelReady("gemma3:4b", in: d))
         fresh(); CopilotPathSettings.apply(choices(.balanced), to: d)
         d.set(true, forKey: CopilotPathSettings.enableWhenReadyKey)
-        check("setup: model ready ignores other paths", !CopilotPathSettings.ollamaModelReady(in: d))
+        check("setup: model ready ignores other paths", !CopilotPathSettings.ollamaModelReady("gemma3:4b", in: d))
 
         func status(_ enabled: Bool, _ path: CopilotPath?, pending: Bool = false,
                     pulling: Bool = false, key: Bool = false) -> CopilotStatus {
@@ -2460,9 +2463,40 @@ enum ProfileTest {
               == .failed("pull model manifest: file does not exist"))
         check("ollama: manifest line carries nothing", OllamaService.parsePullLine(#"{"status":"pulling manifest"}"#) == nil)
         check("ollama: junk ignored", OllamaService.parsePullLine("not json") == nil)
-        let service = OllamaService()
-        check("ollama: starts checking, not pulling", service.status == .checking && !service.isPulling && service.pullProgress == nil)
+        let suite = "parrot.test.ollamaService"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        let service = OllamaService(defaults: d)
+        check("ollama: starts checking, not pulling",
+              service.status(for: "gemma3:4b") == .checking && !service.isPulling && service.pullProgress == nil)
         check("ollama: checking isn't a running server", !service.isServerUp)
+        service.record(installed: nil, for: "gemma3:4b")
+        check("ollama: no answer is server down", service.status(for: "gemma3:4b") == .serverDown && !service.isServerUp)
+        service.record(installed: [], for: "gemma3:4b")
+        check("ollama: missing model", service.status(for: "gemma3:4b") == .missing && service.isServerUp)
+
+        check("ollama: a pull takes the slot", service.beginPull("gemma3:4b") && service.pullingModel == "gemma3:4b"
+              && service.status(for: "gemma3:4b") == .pulling(progress: nil))
+        check("ollama: one pull at a time", !service.beginPull("llama3.2:3b") && service.pullingModel == "gemma3:4b")
+        service.record(installed: [], for: "gemma3:4b")
+        check("ollama: a check of the pulling model keeps its progress", service.status(for: "gemma3:4b") == .pulling(progress: nil))
+        service.record(installed: ["llama3.2:3b"], for: "llama3.2:3b")
+        check("ollama: another model gets its own status, the pull is untouched",
+              service.status(for: "llama3.2:3b") == .ready && service.pullingModel == "gemma3:4b"
+              && service.status(for: "gemma3:4b") == .pulling(progress: nil) && service.isPulling)
+
+        // Private path waiting on gemma: a check that finds it ready turns
+        // Copilot on even if an earlier check already saw it ready.
+        let fresh = OllamaService(defaults: d)
+        fresh.record(installed: ["gemma3:4b"], for: "gemma3:4b")
+        CopilotPathSettings.apply(CopilotChoices(path: .private, ollamaModel: "gemma3:4b", copilotSwitchOn: true,
+                                                 claudeKeyWorks: false, deepgramKeyWorks: false,
+                                                 ollamaModelReady: false), to: d)
+        fresh.record(installed: ["gemma3:4b", "llama3.2:3b"], for: "llama3.2:3b")
+        check("ollama: another model being ready doesn't turn Copilot on", !d.bool(forKey: "copilotEnabled"))
+        fresh.record(installed: ["gemma3:4b"], for: "gemma3:4b")
+        check("ollama: ready again still turns a waiting Copilot on", d.bool(forKey: "copilotEnabled"))
+        d.removePersistentDomain(forName: suite)
     }
 
     static func testOllamaInstaller() {

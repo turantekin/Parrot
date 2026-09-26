@@ -14,53 +14,61 @@ final class OllamaService {
 
     enum PullEvent: Equatable { case progress(Double?), done, failed(String) }
 
-    private(set) var status: Status = .checking
-    /// The model `status` describes.
-    private(set) var model = OpenAICompatibleProvider.ollamaModel
-    private var pullTask: Task<Void, Never>?
+    /// What the last check found for each model a screen asked about; the
+    /// model being pulled holds the pull's progress instead.
+    private(set) var statuses: [String: Status] = [:]
+    /// The one model downloading. A check of it never overwrites the pull's
+    /// progress, and a check of any other model never touches the pull.
+    private(set) var pullingModel: String?
+    /// False until a check reaches the server.
+    private(set) var isServerUp = false
+    private let defaults: UserDefaults
     nonisolated private static let base = URL(string: "http://localhost:11434")!
 
-    var isServerUp: Bool {
-        switch status {
-        case .checking, .serverDown: false
-        default: true
-        }
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
     }
 
-    var isPulling: Bool {
-        if case .pulling = status { true } else { false }
-    }
+    func status(for model: String) -> Status { statuses[model] ?? .checking }
+
+    var isPulling: Bool { pullingModel != nil }
 
     var pullProgress: Double? {
-        if case .pulling(let progress) = status { progress } else { nil }
+        guard let pullingModel, case .pulling(let progress)? = statuses[pullingModel] else { return nil }
+        return progress
     }
 
-    /// Re-reads the server and the model. Leaves a running pull of the same
-    /// model alone, so polling never hides its progress.
+    /// Re-reads the server and the model.
     func refresh(model: String) async {
-        if isPulling, model == self.model { return }
-        if model != self.model {
-            self.model = model
-            status = .checking
-        }
-        guard let installed = await Self.installedModels() else {
-            status = .serverDown
+        record(installed: await Self.installedModels(), for: model)
+    }
+
+    /// One check's result (`nil`: server down). Leaves a running pull alone.
+    /// A ready model honours a pending "turn Copilot on" every time; that's
+    /// a no-op unless setup is waiting on exactly this model.
+    func record(installed: [String]?, for model: String) {
+        isServerUp = installed != nil
+        guard model != pullingModel else { return }
+        guard let installed else {
+            statuses[model] = .serverDown
             return
         }
-        let wasReady = status == .ready
-        status = installed.contains(model) ? .ready : .missing
-        if status == .ready, !wasReady { CopilotPathSettings.ollamaModelReady() }
+        statuses[model] = installed.contains(model) ? .ready : .missing
+        if statuses[model] == .ready { CopilotPathSettings.ollamaModelReady(model, in: defaults) }
     }
 
     /// Starts a pull unless one is already running.
     func pull(_ model: String) {
-        guard pullTask == nil else { return }
-        self.model = model
-        status = .pulling(progress: nil)
-        pullTask = Task { [weak self] in
-            await self?.runPull(model)
-            self?.pullTask = nil
-        }
+        guard beginPull(model) else { return }
+        Task { [weak self] in await self?.runPull(model) }
+    }
+
+    /// Marks `model` as downloading; false when another pull holds the slot.
+    func beginPull(_ model: String) -> Bool {
+        guard pullingModel == nil else { return false }
+        pullingModel = model
+        statuses[model] = .pulling(progress: nil)
+        return true
     }
 
     /// Launch: a private-path user whose model never finished gets the pull
@@ -70,10 +78,11 @@ final class OllamaService {
               defaults.bool(forKey: CopilotPathSettings.enableWhenReadyKey) else { return }
         let model = OpenAICompatibleProvider.ollamaModel
         await refresh(model: model)
-        if status == .missing { pull(model) }
+        if status(for: model) == .missing { pull(model) }
     }
 
     private func runPull(_ model: String) async {
+        defer { pullingModel = nil }
         do {
             var request = URLRequest(url: Self.base.appendingPathComponent("api/pull"))
             request.httpMethod = "POST"
@@ -83,22 +92,23 @@ final class OllamaService {
             for try await line in bytes.lines {
                 switch Self.parsePullLine(line) {
                 case .progress(let progress)?:
-                    status = .pulling(progress: progress)
+                    statuses[model] = .pulling(progress: progress)
                 case .done?:
-                    status = .ready
-                    CopilotPathSettings.ollamaModelReady()
+                    statuses[model] = .ready
+                    CopilotPathSettings.ollamaModelReady(model, in: defaults)
                     return
                 case .failed(let message)?:
-                    status = .failed(message)
+                    statuses[model] = .failed(message)
                     return
                 case nil:
                     continue
                 }
             }
-            status = .checking  // stream ended without a success line
+            pullingModel = nil  // stream ended without a success line: check again
+            statuses[model] = .checking
             await refresh(model: model)
         } catch {
-            status = .failed(error is URLError ? "Ollama stopped. Open it and try again." : error.localizedDescription)
+            statuses[model] = .failed(error is URLError ? "Ollama stopped. Open it and try again." : error.localizedDescription)
         }
     }
 
