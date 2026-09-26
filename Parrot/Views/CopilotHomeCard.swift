@@ -24,17 +24,9 @@ struct CopilotHomeCard: View {
                 card(status)
             }
         }
-        .onAppear {
-            // Help shots never read the Keychain.
-            if !UserDefaults.standard.bool(forKey: "onboardingNoKeyPrefill") {
-                hasClaudeKey = APIKeyStore.load() != nil
-            }
-        }
+        .task { hasClaudeKey = await APIKeyStore.loadInBackground() != nil }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            // Help shots never read the Keychain.
-            if !UserDefaults.standard.bool(forKey: "onboardingNoKeyPrefill") {
-                hasClaudeKey = APIKeyStore.load() != nil
-            }
+            Task { hasClaudeKey = await APIKeyStore.loadInBackground() != nil }
         }
     }
 

@@ -42,10 +42,8 @@ struct ReadyStep: View {
         }
         .frame(maxWidth: 480)
         .padding(Theme.Metrics.pad)
+        .task { hasClaudeKey = await APIKeyStore.loadInBackground() != nil }
         .onAppear {
-            if !UserDefaults.standard.bool(forKey: "onboardingNoKeyPrefill") {
-                hasClaudeKey = APIKeyStore.load() != nil
-            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.55).delay(0.05)) { celebrate = true }
         }
     }

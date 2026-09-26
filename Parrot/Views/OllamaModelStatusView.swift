@@ -35,6 +35,7 @@ struct OllamaModelStatusView: View {
                 }
                 .controlSize(.small)
                 .disabled(ollama.isPulling)  // one pull at a time
+                waitingNote(ollama)
 
             case .pulling(let progress):
                 ProgressView(value: progress)
@@ -57,10 +58,21 @@ struct OllamaModelStatusView: View {
                     .lineLimit(2)
                 Button("Retry") { ollama.pull(model) }
                     .buttonStyle(.link)
+                    .disabled(ollama.isPulling)
+                waitingNote(ollama)
             }
         }
         .font(Theme.Typography.caption)
         // Re-check whenever the selected model changes (also fires on appear).
         .task(id: model) { await ollama.refresh(model: model) }
+    }
+
+    /// Ollama pulls one model at a time; say why the button is off.
+    @ViewBuilder
+    private func waitingNote(_ ollama: OllamaService) -> some View {
+        if let other = ollama.pullingModel, other != model {
+            Text("Waiting for \(other) to finish downloading.")
+                .foregroundStyle(Theme.Colors.ink3)
+        }
     }
 }

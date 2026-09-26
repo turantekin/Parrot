@@ -48,11 +48,38 @@ final class OllamaInstaller {
         await open(app)
     }
 
+    /// Where `install()` unpacks the app.
+    static var downloadsCopy: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Ollama.app")
+    }
+
+    /// Ollama moves itself into Applications on first launch and leaves the
+    /// copy we unpacked in Downloads. Once it runs from Applications, that
+    /// copy goes to the Trash (recoverable). Only after this session's
+    /// install, so it's never a copy the user put there.
+    func trashDownloadsCopyIfMoved() async {
+        guard state == .opened, let installed = Self.installedAppURL() else { return }
+        let copy = Self.downloadsCopy
+        guard Self.shouldTrash(copy: copy, installedAt: installed,
+                               copyExists: FileManager.default.fileExists(atPath: copy.path)) else { return }
+        _ = try? await NSWorkspace.shared.recycle([copy])
+    }
+
+    /// True only when the live Ollama sits in an Applications folder, so a
+    /// copy still running from Downloads (or macOS's translocated copy of it)
+    /// is never touched.
+    nonisolated static func shouldTrash(copy: URL, installedAt: URL, copyExists: Bool) -> Bool {
+        copyExists
+            && installedAt.standardizedFileURL != copy.standardizedFileURL
+            && installedAt.deletingLastPathComponent().lastPathComponent == "Applications"
+    }
+
     func install() async {
         guard !isBusy else { return }
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let app = Self.downloadsCopy
+        let downloads = app.deletingLastPathComponent()
         let zip = downloads.appendingPathComponent("Ollama-darwin.zip")
-        let app = downloads.appendingPathComponent("Ollama.app")
         do {
             state = .downloading(progress: nil)
             try await download(to: zip)

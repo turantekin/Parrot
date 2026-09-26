@@ -105,6 +105,7 @@ private struct OllamaSetupRows: View {
         .task(id: model.ollamaModel) {
             while !Task.isCancelled {
                 await ollama.refresh(model: model.ollamaModel)
+                if ollama.isServerUp { await recordingManager.ollamaInstaller.trashDownloadsCopyIfMoved() }
                 try? await Task.sleep(for: .seconds(1.5))
             }
         }
@@ -152,6 +153,8 @@ private struct OllamaSetupRows: View {
                           subtitle: "\(size). Runs Copilot on this Mac.") {
                 ollama.pull(name)
             }
+        } else if let other = ollama.pullingModel {
+            PendingRow(title: "Download \(name) after \(other) finishes")
         } else {
             PendingRow(title: "Download \(name)")
         }

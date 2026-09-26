@@ -2511,6 +2511,18 @@ enum ProfileTest {
               !OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: "/System/Applications/Calculator.app")))
         check("installer: a missing file is not Ollama",
               !OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: "/nonexistent/Ollama.app")))
+        let copy = URL(fileURLWithPath: "/Users/me/Downloads/Ollama.app")
+        let moved = URL(fileURLWithPath: "/Applications/Ollama.app")
+        check("installer: trash the Downloads copy once Ollama runs from Applications",
+              OllamaInstaller.shouldTrash(copy: copy, installedAt: moved, copyExists: true))
+        check("installer: never trash the copy Ollama is running from",
+              !OllamaInstaller.shouldTrash(copy: copy, installedAt: copy, copyExists: true))
+        check("installer: never trash while macOS runs a translocated copy",
+              !OllamaInstaller.shouldTrash(copy: copy, installedAt: URL(fileURLWithPath: "/private/var/folders/x/T/AppTranslocation/ab/d/Ollama.app"), copyExists: true))
+        check("installer: nothing to trash when the copy is gone",
+              !OllamaInstaller.shouldTrash(copy: copy, installedAt: moved, copyExists: false))
+        check("installer: ~/Applications counts too",
+              OllamaInstaller.shouldTrash(copy: copy, installedAt: URL(fileURLWithPath: "/Users/me/Applications/Ollama.app"), copyExists: true))
         if let path = ProcessInfo.processInfo.environment["PARROT_OLLAMA_APP"] {
             check("installer: the real download passes", OllamaInstaller.isSignedByOllama(URL(fileURLWithPath: path)))
         }

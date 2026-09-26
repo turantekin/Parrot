@@ -685,12 +685,20 @@ enum APIKeyStore {
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
+    /// `load` off the main thread. A Keychain read can wait on a macOS
+    /// "allow access?" prompt, and on the main actor that freezes the window.
+    static func loadInBackground(account: String = "claude-api-key") async -> String? {
+        await Task.detached { load(account: account) }.value
+    }
+
     static func load(account: String = "claude-api-key") -> String? {
         // The logic harness must stay hermetic: reading the app's keychain
         // item from an ad-hoc dev binary makes securityd pop a consent dialog
         // and block forever when nobody clicks it (bit us: --profile-test
         // hung inside testCopilotBudget via setPaused → isConfigured).
-        if ProcessInfo.processInfo.arguments.contains("--profile-test") { return nil }
+        // --help-shots too: screenshots never read a key or call a service.
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--profile-test") || args.contains("--help-shots") { return nil }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
