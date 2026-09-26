@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="ask, search, memory, question, past meetings, last call, promised, history, chat, follow-up, saved chats, rename chat, delete chat, stop, this week, last month, ollama, local, free, which ai, beta, feedback, how many meetings, longest meetings, time in meetings, meetings with, count, turkish, türkçe, kaç toplantı, en uzun, bu hafta, geçen ay, last 30 days, monday, weekday, pazartesi, dünkü, did i meet">
+<meta name="keywords" content="ask, search, memory, question, past meetings, last call, promised, history, chat, follow-up, saved chats, rename chat, delete chat, stop, this week, last month, ollama, local, free, which ai, claude, api key, subscription, custom server, openai, beta, feedback, how many meetings, longest meetings, time in meetings, meetings with, count, turkish, türkçe, kaç toplantı, en uzun, bu hafta, geçen ay, last 30 days, monday, weekday, pazartesi, dünkü, did i meet">
 <title>Ask Parrot</title>
 <link rel="canonical" href="https://openparrot.app/help/ask.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -49,7 +49,7 @@ means that meeting is gone.</p>
 
 <h2>Ask about one meeting by name</h2>
 <p>Name a meeting in your question, like <em>"What did we decide in the
-Revolut call?"</em>, and Parrot reads that whole meeting to answer. This works
+Northwind call?"</em>, and Parrot reads that whole meeting to answer. This works
 for meetings you've given a name; ones still called "Meeting Sep 23…" are
 easier to reach with <strong>Ask</strong> on their meeting page.</p>
 
@@ -60,8 +60,8 @@ with no AI:</p>
   <li><em>"How many meetings did I have last month?"</em></li>
   <li><em>"My 5 longest meetings"</em></li>
   <li><em>"How much time did I spend in meetings this week?"</em></li>
-  <li><em>"Did I meet with Revolut?"</em> or <em>"How many meetings with
-  Complycube?"</em>: Parrot counts the meetings where the name appears in the
+  <li><em>"Did I meet with Northwind?"</em> or <em>"How many meetings with
+  Acme?"</em>: Parrot counts the meetings where the name appears in the
   title, the people, the report or what was said.</li>
 </ul>
 <p>These answers say <strong>Counted on this Mac</strong>. Each meeting in the
@@ -79,13 +79,25 @@ most recent Monday) narrow the search to that period.</p>
 in. Turkish time words work too: bugün, dün, bu hafta, geçen hafta, bu ay,
 geçen ay, son 30 gün, weekdays like pazartesi, and forms like dünkü or geçen
 haftaki. Counts work in Turkish as well, like <em>"Geçen ay kaç toplantı
-yaptım?"</em>, <em>"Kerem'le kaç toplantı yaptım?"</em> or <em>"En uzun
+yaptım?"</em>, <em>"Ahmet'le kaç toplantı yaptım?"</em> or <em>"En uzun
 toplantılarım"</em>.</p>
 
 <h2>Which AI answers</h2>
-<p>The name in the top-right corner of the chat says which AI is writing the
-answer. Switch it there, or in <strong>Settings → Copilot → Model → Ask
-Parrot</strong>. Pick Ollama to keep it free and on your Mac.</p>
+<p>Ask Parrot can use one of three AIs:</p>
+<ul>
+  <li><strong>Claude (cloud)</strong>: Anthropic's Claude, with your own API
+  key from console.anthropic.com. You pay Anthropic per use, usually a fraction
+  of a cent per question. A Claude.ai Pro or Max subscription can't be used
+  here; it needs an API key.</li>
+  <li><strong>Ollama (local)</strong>: a free model that runs on your Mac.
+  Nothing leaves it.</li>
+  <li><strong>Custom server</strong>: any OpenAI-style server, like OpenAI,
+  Groq or LM Studio, with its address (and a key if it needs one).</li>
+</ul>
+<p>It uses your reports AI unless you pick another. The name in the top-right
+corner of the chat says which AI is writing the answer. Switch it there, or in
+<strong>Settings → Copilot → Model → Ask Parrot</strong>. Whichever you pick,
+the search itself runs on your Mac.</p>
 
 <p>Which to pick: Claude gives the best answers, especially for questions
 across many meetings. A small local model through Ollama is good for questions
