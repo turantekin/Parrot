@@ -1,28 +1,19 @@
 import SwiftUI
 
-/// Lives under the Ollama model picker in Settings → Copilot: shows whether the
-/// selected model is ready on this Mac and offers a one-click download when it
-/// isn't. Talks only to the local Ollama server (localhost:11434) — checking
-/// installed models via /api/tags and pulling with streamed progress via
-/// /api/pull. Never touches the network beyond loopback.
+/// Lives under the Ollama model picker in Settings → Copilot, and at the top
+/// of an Ask Parrot chat that uses Ollama (`hideWhenReady`): whether the
+/// selected model is ready on this Mac, with a one-click download when it
+/// isn't. A thin view over `OllamaService`, so a pull started in onboarding
+/// shows here too and never starts twice.
 struct OllamaModelStatusView: View {
     let model: String
+    /// Ask Parrot shows this only when something needs fixing.
     var hideWhenReady = false
-
-    private enum Status: Equatable {
-        case checking
-        case serverDown
-        case missing
-        case pulling
-        case ready
-        case failed(String)
-    }
-
-    @State private var status: Status = .checking
-    /// nil while pulling = size not known yet (manifest phase).
-    @State private var progress: Double?
+    @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
+        let ollama = recordingManager.ollama
+        let status = ollama.status(for: model)
         HStack(spacing: 8) {
             switch status {
             case .checking:
@@ -34,7 +25,7 @@ struct OllamaModelStatusView: View {
                     .foregroundStyle(Theme.Colors.warn)
                 Text("Ollama isn't open. Get it free at ollama.com, open it, then check again.")
                     .foregroundStyle(Theme.Colors.ink2)
-                Button("Check Again") { Task { await refresh() } }
+                Button("Check Again") { Task { await ollama.refresh(model: model) } }
                     .buttonStyle(.link)
 
             case .missing:
@@ -43,11 +34,13 @@ struct OllamaModelStatusView: View {
                 Text("Model not downloaded yet.")
                     .foregroundStyle(Theme.Colors.ink2)
                 Button("Download (\(OllamaCatalog.sizeLabel(for: model) ?? "size varies"))") {
-                    Task { await pull() }
+                    ollama.pull(model)
                 }
                 .controlSize(.small)
+                .disabled(ollama.isPulling)  // one pull at a time
+                waitingNote(ollama)
 
-            case .pulling:
+            case .pulling(let progress):
                 ProgressView(value: progress)
                     .frame(width: 140)
                 Text(progress.map { "\(Int($0 * 100))%" } ?? "Starting…")
@@ -68,59 +61,23 @@ struct OllamaModelStatusView: View {
                 Text("Download failed: \(message)")
                     .foregroundStyle(Theme.Colors.ink2)
                     .lineLimit(2)
-                Button("Retry") { Task { await pull() } }
+                Button("Retry") { ollama.pull(model) }
                     .buttonStyle(.link)
+                    .disabled(ollama.isPulling)
+                waitingNote(ollama)
             }
         }
         .font(Theme.Typography.caption)
         // Re-check whenever the selected model changes (also fires on appear).
-        .task(id: model) { await refresh() }
+        .task(id: model) { await ollama.refresh(model: model) }
     }
 
-    // MARK: - Local Ollama API
-
-    private func refresh() async {
-        status = .checking
-        guard let installed = await OllamaProbe.installedModels() else {
-            status = .serverDown
-            return
-        }
-        status = OllamaProbe.isInstalled(model, in: installed) ? .ready : .missing
-    }
-
-    private func pull() async {
-        status = .pulling
-        progress = nil
-        struct Line: Decodable {
-            let status: String?
-            let total: Int64?
-            let completed: Int64?
-            let error: String?
-        }
-        do {
-            var request = URLRequest(url: URL(string: "http://localhost:11434/api/pull")!)
-            request.httpMethod = "POST"
-            request.timeoutInterval = 3600  // multi-GB download
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["model": model])
-            let (bytes, _) = try await URLSession.shared.bytes(for: request)
-            for try await line in bytes.lines {
-                guard let data = line.data(using: .utf8),
-                      let update = try? JSONDecoder().decode(Line.self, from: data) else { continue }
-                if let message = update.error {
-                    status = .failed(message)
-                    return
-                }
-                if let total = update.total, let completed = update.completed, total > 0 {
-                    progress = Double(completed) / Double(total)
-                }
-                if update.status == "success" {
-                    status = .ready
-                    return
-                }
-            }
-            await refresh()  // stream ended without an explicit success line
-        } catch {
-            status = .failed(error.localizedDescription)
+    /// Ollama pulls one model at a time; say why the button is off.
+    @ViewBuilder
+    private func waitingNote(_ ollama: OllamaService) -> some View {
+        if let other = ollama.pullingModel, other != model {
+            Text("Waiting for \(other) to finish downloading.")
+                .foregroundStyle(Theme.Colors.ink3)
         }
     }
 }

@@ -1,439 +1,60 @@
 import SwiftUI
-import AVFoundation
 
 struct OnboardingView: View {
-    @Environment(RecordingManager.self) private var recordingManager
     @Binding var isPresented: Bool
-    // Persisted so the flow survives the quit-and-reopen macOS may require
-    // after granting Screen Recording — the user lands back on this step.
-    @AppStorage("onboardingStep") private var currentStep = 0
+    /// Rebuilt each time the sheet is presented, so it reads the current
+    /// mode (full tour or Set up Copilot) and saved step.
+    @State private var model = OnboardingModel()
 
     var body: some View {
         VStack(spacing: 0) {
-            // Content
             Group {
-                switch currentStep {
-                case 0: welcomeStep
-                case 1: permissionsStep
-                case 2: modelStep
-                case 3: automaticStep
-                case 4: readyStep
-                default: welcomeStep
+                switch model.step {
+                case .welcome: WelcomeStep()
+                case .permissions: PermissionsStep()
+                case .meetCopilot: MeetCopilotStep()
+                case .copilotPath: CopilotPathStep()
+                case .speechModel: SpeechModelStep()
+                case .copilotSetup: CopilotSetupStep()
+                case .automatic: AutomaticStep()
+                case .ready: ReadyStep()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(model)
 
             Divider()
 
-            // Navigation
             HStack {
-                if currentStep > 0 {
-                    Button("Back") {
-                        withAnimation { currentStep -= 1 }
-                    }
-                    .buttonStyle(.plain)
+                if !model.isFirst {
+                    Button("Back") { withAnimation { model.move(-1) } }
+                        .buttonStyle(.plain)
                 }
-
                 Spacer()
-
-                // Step indicators
                 HStack(spacing: 6) {
-                    ForEach(0..<Self.stepCount, id: \.self) { step in
+                    ForEach(model.steps, id: \.self) { step in
                         Circle()
-                            .fill(step == currentStep ? Theme.Colors.accent : Theme.Colors.chip)
+                            .fill(step == model.step ? Theme.Colors.accent : Theme.Colors.chip)
                             .frame(width: 8, height: 8)
                     }
                 }
-
                 Spacer()
-
-                if currentStep < Self.stepCount - 1 {
-                    Button("Continue") {
-                        withAnimation { currentStep += 1 }
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
+                if model.isLast {
                     // Dismissal marks completion: the app-side binding writes
                     // hasCompletedOnboarding when this flips to false.
-                    Button("Let's start") {
+                    Button(model.mode == .copilot ? "Done" : "Let's start") {
+                        model.finish()
                         isPresented = false
                     }
                     .buttonStyle(.borderedProminent)
+                } else {
+                    Button("Continue") { withAnimation { model.move(1) } }
+                        .buttonStyle(.borderedProminent)
                 }
             }
             .padding(Theme.Metrics.pad)
         }
-        // 600, not 540: the model step lists five models now, and at 540 the
-        // intro line truncated and the Back/Continue row was clipped.
-        .frame(width: 500, height: 600)
-    }
-
-    // MARK: - Step 1: Welcome
-
-    private var welcomeStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Image(systemName: "bird")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.Colors.accent)
-
-            Text("Meet Parrot")
-                .font(.appLargeTitle)
-                .fontWeight(.bold)
-
-            Text("Your private, on-device meeting recorder.\nParrot listens, transcribes, and remembers — all locally on your Mac.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-    }
-
-    // MARK: - Step 2: Permissions
-
-    @State private var micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-    @State private var screenGranted = false
-    @State private var screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
-
-    // CGPreflight is side-effect-free — querying SCShareableContent instead
-    // triggered the macOS permission prompt before the user hit Grant.
-    private func refreshPermissions() {
-        // Harness seam: --help-shots sets this (the register(defaults:) trick)
-        // to render the granted look without touching this Mac's real grants.
-        if UserDefaults.standard.bool(forKey: "onboardingSnapshotGranted") {
-            micGranted = true
-            screenGranted = true
-            return
-        }
-        micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        if #available(macOS 15.0, *) {
-            // Audio-only tap permission. "Granted" is inferred (proven audio or
-            // a Screen Recording grant) — there is no status API to ask.
-            screenGranted = PermissionFlow.systemAudioLooksGranted()
-            screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.tapAskedKey)
-        } else {
-            screenGranted = CGPreflightScreenCaptureAccess()
-            screenAsked = UserDefaults.standard.bool(forKey: PermissionFlow.screenAskedKey)
-        }
-    }
-
-    /// The subtitle keeps the real macOS permission name so people can match
-    /// it to the System Settings pane. On 15+ that's the audio-only category.
-    private var systemAudioSubtitle: String {
-        if #available(macOS 15.0, *) {
-            return "System Audio Recording, the other side of the call"
-        }
-        return "Screen Recording, the other side of the call"
-    }
-
-    private var systemAudioPendingHint: String {
-        if #available(macOS 15.0, *) {
-            return "Clicked Allow on the macOS prompt? You're set — this row turns green the first time Parrot hears meeting audio. No restart needed."
-        }
-        return "Already flipped the switch? macOS applies Screen Recording when Parrot restarts — quit and reopen Parrot, and this page will pick up right here."
-    }
-
-    private var permissionsStep: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Text("Start with permissions")
-                .font(Theme.Typography.title())
-
-            Text("Parrot needs two macOS permissions to hear your calls. Audio only: it never sees your screen, and nothing leaves your Mac.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 380)
-
-            VStack(alignment: .leading, spacing: 10) {
-                PermissionRow(
-                    icon: "mic",
-                    askTitle: "Help Parrot hear you",
-                    grantedTitle: "Parrot can hear you",
-                    subtitle: "Microphone, your side of the call",
-                    isGranted: micGranted,
-                    action: {
-                        Task { @MainActor in
-                            micGranted = await PermissionFlow.requestMicrophone()
-                        }
-                    }
-                )
-
-                PermissionRow(
-                    icon: "speaker.wave.2",
-                    askTitle: "Help Parrot hear your meeting",
-                    grantedTitle: "Parrot can hear your meeting",
-                    subtitle: systemAudioSubtitle,
-                    isGranted: screenGranted,
-                    action: {
-                        if #available(macOS 15.0, *) {
-                            if PermissionFlow.requestSystemAudioCapture() == .granted {
-                                screenGranted = true
-                            }
-                        } else if PermissionFlow.requestScreenCapture() == .granted {
-                            screenGranted = true
-                        }
-                        screenAsked = true
-                    }
-                )
-
-                if screenAsked && !screenGranted {
-                    Text(systemAudioPendingHint)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.ink2)
-                }
-            }
-            .frame(maxWidth: 380)
-            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: micGranted)
-            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: screenGranted)
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-        .onAppear(perform: refreshPermissions)
-        // Rows flip to their granted look on their own: returning from System
-        // Settings fires didBecomeActive, and the 1 s poll catches grants made
-        // while the OS dialog (a separate process) had focus.
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshPermissions()
-        }
-        .task {
-            while !Task.isCancelled {
-                refreshPermissions()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-        }
-    }
-
-    // MARK: - Step 3: Model Download
-
-    /// Same five the Settings picker offers, same order. Sizes are what the
-    /// hub actually serves, not what the folder is called.
-    private static let modelChoices: [(tag: String, size: String, blurb: String)] = [
-        ("tiny", "~40 MB", "Fastest, basic accuracy"),
-        ("base", "~140 MB", "Good balance of speed and accuracy"),
-        ("small", "~460 MB", "Better accuracy, moderate speed"),
-        ("large-v3-v20240930_626MB", "~626 MB", "Near-best accuracy, light on memory"),
-        ("large-v3-turbo", "~1.6 GB", "Best accuracy, needs more RAM"),
-    ]
-
-    private var modelStep: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Text("Choose a Model")
-                .font(Theme.Typography.title())
-
-            Text("Parrot uses WhisperKit for transcription.\nLarger models are more accurate but use more memory.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                // Without this the VStack compresses it to one truncated line
-                // ("…for transcription….") — it lost to the cards for height.
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 380)
-
-            VStack(spacing: 8) {
-                ForEach(Self.modelChoices, id: \.tag) { choice in
-                    ModelOption(
-                        tag: choice.tag,
-                        size: choice.size,
-                        description: choice.blurb,
-                        isSelected: selectedModel == choice.tag,
-                        action: { selectModel(choice.tag) }
-                    )
-                }
-            }
-            .frame(maxWidth: 380)
-
-            // Model loading status
-            modelLoadingStatus
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-    }
-
-    @AppStorage("whisperModel") private var selectedModel = "base"
-
-    private func selectModel(_ model: String) {
-        selectedModel = model
-        Task {
-            await recordingManager.transcriptionEngine.loadModel(model)
-        }
-    }
-
-    @ViewBuilder
-    private var modelLoadingStatus: some View {
-        switch recordingManager.transcriptionEngine.modelState {
-        case .loading:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Preparing model...")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink2)
-            }
-        case .downloading(let progress):
-            ModelDownloadProgressView(progress: progress,
-                                      modelName: recordingManager.transcriptionEngine.loadingModelName)
-        case .ready:
-            Label("Model ready!", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(Theme.Colors.good)
-                .font(Theme.Typography.secondary)
-        case .error(let msg):
-            Label(msg, systemImage: "xmark.circle")
-                .foregroundStyle(Theme.Colors.stop)
-                .font(Theme.Typography.caption)
-        default:
-            Button("Download Model") {
-                selectModel(selectedModel)
-            }
-            .buttonStyle(.bordered)
-        }
-    }
-
-    // MARK: - Step 4: Make it automatic
-
-    static let stepCount = 5
-    @AppStorage(AutoRecordMode.defaultsKey) private var autoRecordRaw = AutoRecordMode.ask.rawValue
-    @State private var calendarConnecting = false
-    @State private var notifications: NotificationAccess.State = .notAsked
-    @State private var loginItemOn = LoginItem.state == .on || LoginItem.state == .needsApproval
-
-    private var automaticStep: some View {
-        let calendar = recordingManager.calendar
-        return VStack(spacing: 20) {
-            Spacer()
-
-            Text("Make it automatic")
-                .font(Theme.Typography.title())
-
-            Text("All optional, all on your Mac. Change any of it later in Settings.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 380)
-
-            VStack(alignment: .leading, spacing: 14) {
-                PermissionRow(
-                    icon: "calendar",
-                    askTitle: calendarConnecting ? "Connecting…" : "Connect your calendar",
-                    grantedTitle: "Calendar connected",
-                    subtitle: "Names meetings and knows who's invited. Read-only.",
-                    isGranted: calendar.isConnected,
-                    action: {
-                        guard !calendarConnecting else { return }
-                        calendarConnecting = true
-                        Task { @MainActor in
-                            await calendar.connect()
-                            calendarConnecting = false
-                        }
-                    }
-                )
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("When a call starts in Zoom, Meet or Teams")
-                        .font(Theme.Typography.cardTitle)
-                    Picker("", selection: $autoRecordRaw) {
-                        ForEach(AutoRecordMode.allCases) { mode in
-                            Text(mode.label).tag(mode.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    Text(autoRecordRaw == AutoRecordMode.auto.rawValue
-                         ? "Records by itself. Many places require telling everyone on the call."
-                         : "Parrot only notices the mic is in use, never the audio.")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                // The "record this call?" offer is a notification: without
-                // the permission, call detection quietly does nothing.
-                if autoRecordRaw != AutoRecordMode.off.rawValue {
-                    PermissionRow(
-                        icon: "bell.badge",
-                        askTitle: notifications == .off ? "Turn on notifications in Settings" : "Allow notifications",
-                        grantedTitle: "Notifications on",
-                        subtitle: "So Parrot can ask to record when a call starts.",
-                        isGranted: notifications == .on,
-                        action: { Task { notifications = await NotificationAccess.turnOn() } }
-                    )
-                }
-
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Open Parrot at login")
-                            .font(Theme.Typography.cardTitle)
-                        Text("So it's ready for your first call of the day.")
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.ink2)
-                    }
-                    Spacer(minLength: 0)
-                    Toggle("Open Parrot at login", isOn: Binding(
-                        get: { loginItemOn },
-                        set: { newValue in
-                            let state = LoginItem.set(newValue).state
-                            loginItemOn = state == .on || state == .needsApproval
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .disabled(LoginItem.state == .unavailable)
-                }
-            }
-            .frame(maxWidth: 380)
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-        .task { notifications = await NotificationAccess.state() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { notifications = await NotificationAccess.state() }
-        }
-    }
-
-    // MARK: - Step 5: Ready
-
-    @State private var celebrate = false
-
-    private var readyStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Text("🎉")
-                .font(.system(size: 72))
-                .scaleEffect(celebrate ? 1.0 : 0.4)
-                .opacity(celebrate ? 1 : 0)
-
-            Text("Ready to go!")
-                .font(.appLargeTitle)
-                .fontWeight(.bold)
-
-            Text("Parrot is set up. Open your next call, hit record, and the transcript stays right here on your Mac.")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.ink2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 360)
-
-            Spacer()
-        }
-        .padding(Theme.Metrics.pad)
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.55).delay(0.05)) {
-                celebrate = true
-            }
-        }
-        .onDisappear { celebrate = false }
+        .frame(width: 600, height: 680)
     }
 }
 
@@ -463,9 +84,11 @@ struct PermissionRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(grantedTitle)
                         .font(Theme.Typography.cardTitle)
-                    Text(subtitle)
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.ink3)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Colors.ink3)
+                    }
                 }
 
                 Spacer()
@@ -483,9 +106,11 @@ struct PermissionRow: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(askTitle)
                             .font(Theme.Typography.cardTitle)
-                        Text(subtitle)
-                            .font(Theme.Typography.caption)
-                            .opacity(0.75)
+                        if !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(Theme.Typography.caption)
+                                .opacity(0.75)
+                        }
                     }
 
                     Spacer()
@@ -515,14 +140,25 @@ struct ModelOption: View {
     let size: String
     let description: String
     let isSelected: Bool
+    var isRecommended = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(TranscriptionEngine.displayName(for: tag))
-                        .font(Theme.Typography.cardTitle)
+                    HStack(spacing: 6) {
+                        Text(TranscriptionEngine.displayName(for: tag))
+                            .font(Theme.Typography.cardTitle)
+                        if isRecommended {
+                            Text("Best for your Mac")
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.accent)
+                                .padding(.horizontal, Theme.Metrics.chipInsetH)
+                                .padding(.vertical, Theme.Metrics.chipInsetV)
+                                .background(Theme.Colors.spotlight, in: Capsule())
+                        }
+                    }
                     Text("\(description) (\(size))")
                         .font(Theme.Typography.caption)
                         .foregroundStyle(Theme.Colors.ink2)

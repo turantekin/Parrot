@@ -26,6 +26,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Models/SpeakerProfile.swift` | 30 | Remembered voice: name + running-mean embedding (opt-in, local) |
 | `Models/Bookmark.swift` | 50 | A marked moment (time + label); merge window, prompt line |
 | `Models/Consent.swift` | 45 | How the other side was told it's recorded; notice text |
+| `Models/OnboardingFlow.swift` | 79 | Setup steps per mode and path, named-step migration, memory-based model picks |
 
 ## Services
 
@@ -68,6 +69,10 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/Redactor.swift` | 200 | Hide emails/phones/cards/IBANs/names from cloud AI and restore them; request/result helpers |
 | `Services/Retention.swift` | 55 | Automatic clean-up rules (audio / whole meetings after N days) |
 | `Services/RecordingManager+Privacy.swift` | 100 | Consent recording, retention run, PrivacyLedger ("what left this Mac") |
+| `Services/CopilotSetupState.swift` | 91 | Settings each Copilot path writes, auto-enable when the Ollama model lands, Copilot status for Ready and Home |
+| `Services/ProviderKeyCheck.swift` | 56 | One-request Claude and Deepgram key checks |
+| `Services/OllamaService.swift` | 134 | App-wide Ollama server state and the one model pull; resumes at launch |
+| `Services/OllamaInstaller.swift` | 133 | Downloads, unpacks, signature-checks and opens the official Ollama app |
 
 ## Views
 
@@ -76,6 +81,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/ContentView.swift` | 190 | Root split view (`MainPage`: dashboard/settings/ask/meeting) + empty state + corner bug button |
 | `Views/SidebarView.swift` | 361 | Meeting list, rows, talk-ratio strip |
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
+| `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
 | `Views/LiveRecordingView.swift` | 549 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
@@ -86,9 +92,20 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |
 | `Views/SettingsView.swift` | 970 | All settings sections, provider keys, KB docs |
 | `Views/ProfilesSettingsView.swift` | 720 | Call-profile editor: kinds, gauges, icon picker |
-| `Views/OnboardingView.swift` | 340 | Permission walkthrough + model choice |
+| `Views/OnboardingView.swift` | 182 | Setup sheet shell: step routing, footer, 600×680; PermissionRow, ModelOption |
+| `Views/Onboarding/OnboardingModel.swift` | 81 | Sheet state (mode, path, step, switch, key results); move/decide later/finish |
+| `Views/Onboarding/OnboardingParts.swift` | 140 | Shared rows and cards: StepHeader, CopilotHeroCard, DownloadRow, PendingRow, SpeechDownloadRow |
+| `Views/Onboarding/WelcomeStep.swift` | 22 | Welcome step |
+| `Views/Onboarding/PermissionsStep.swift` | 120 | Permissions step |
+| `Views/Onboarding/MeetCopilotStep.swift` | 111 | Meet Copilot step: example call + benefits |
+| `Views/Onboarding/CopilotPathStep.swift` | 86 | Private / Balanced / Cloud / Decide later choice |
+| `Views/Onboarding/SpeechModelStep.swift` | 74 | Speech model step (memory-based pick, starts download) |
+| `Views/Onboarding/CopilotSetupStep.swift` | 164 | Copilot path setup: Ollama install/pull, Claude/Deepgram key fields |
+| `Views/Onboarding/KeyCheckField.swift` | 83 | One provider key field + Check key button and result |
+| `Views/Onboarding/AutomaticStep.swift` | 104 | In-progress step while a path finishes on its own |
+| `Views/Onboarding/ReadyStep.swift` | 70 | Final "Ready" screen |
 | `Views/ModelDownloadProgressView.swift` | 34 | Whisper model download progress bar |
-| `Views/OllamaModelStatusView.swift` | 136 | Local model presence/pull status |
+| `Views/OllamaModelStatusView.swift` | 65 | Settings → Copilot model status, a thin view over OllamaService |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 253 | `AppSession`, menu commands, context menus, notifications |
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |

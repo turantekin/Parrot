@@ -267,8 +267,12 @@ struct SettingsView: View {
                 SettingsLabeledRow(title: "User guide", detail: "Every screen explained, with setup and troubleshooting.") {
                     Button("Open User Guide") { NSApp.showHelp(nil) }
                 }
-                SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions and model choice.") {
-                    Button("Show Welcome Tour") { MeetingActions.showWelcomeTour() }
+                SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions, Copilot and speech model.") {
+                    Button("Show Welcome Tour") {
+                        MeetingActions.showWelcomeTour()
+                        // The tour is a sheet on the main window; get out of its way.
+                        if !isEmbedded { NSApp.keyWindow?.performClose(nil) }
+                    }
                 }
                 SettingsLabeledRow(title: "Website", detail: "The landing page, with a demo you can scroll and the honest privacy list.") {
                     Button("Open openparrot.app") { MeetingActions.open(MeetingActions.websiteURL) }
@@ -506,6 +510,12 @@ struct SettingsView: View {
                     first: true,
                     isOn: $copilotEnabled
                 )
+                SettingsLabeledRow(title: "Guided setup", detail: "Pick Private, Balanced or Cloud and get Copilot running.") {
+                    Button("Set up Copilot") {
+                        MeetingActions.showCopilotSetup()
+                        if !isEmbedded { NSApp.keyWindow?.performClose(nil) }
+                    }
+                }
                 SettingsLabeledRow(title: "Call profiles", detail: "What it says and watches for is set per call profile.") {
                     Button("Open Profiles") { section = .profiles }
                 }

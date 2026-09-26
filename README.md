@@ -33,7 +33,7 @@ So here's the deal. I'm Uygar, and I'm trying to build my own meeting recorder f
 
 I'm building this with the help of [Claude](https://claude.ai) (yes, the AI, we've had a lot of late-night coding sessions together), and honestly, it's been one of the most fun projects I've worked on. It's not perfect yet: there are still bugs I'm chasing, permissions that are being annoying, and features I haven't figured out. But the core works, and it's on every one of my client calls now.
 
-**This is a personal project. I'm learning as I go.** If there are any crazy coders out there who stumble upon this and want to help improve it, I would really, truly appreciate it. Fixing a bug, improving the speaker detection, or just telling me I'm doing something wrong: all of it helps. Open a PR, open an issue, or just say hi. 🙌
+**This is a personal project. I'm learning as I go.** If there are any crazy coders out there who stumble upon this and want to help improve it, I would really, truly appreciate it. Fixing a bug, improving the speaker detection, or just telling me I'm doing something wrong: all of it helps. Open a PR, open an issue, or just [say hi](mailto:squawk@openparrot.app). 🙌
 
 If you find this useful or just think the idea is cool, give it a star. It'll make my day.
 
@@ -108,7 +108,7 @@ Tell Parrot what kind of call it is, and the profile decides what the copilot wa
 | Copilot and reports | What it is | What leaves your Mac |
 |---|---|---|
 | **Claude** (`claude-haiku-4-5`) | Sharpest cards. Your own key. About $0.07 per call hour. | Transcript text, to Anthropic. Never audio. |
-| **Ollama** (local) | `llama3.2:3b`, `gemma3:4b`, or any model you like. Parrot can pull it for you. Free. | Nothing. Works with the Wi-Fi off. |
+| **Ollama** (local) | `llama3.2:3b`, `gemma3:4b`, or any model you like. Parrot can install Ollama and pull the model for you. Free. | Nothing. Works with the Wi-Fi off. |
 | **Custom server** | Anything OpenAI-compatible: OpenAI, Gemini, Groq, OpenRouter, LM Studio. | Transcript text, to the server you picked. |
 
 Live cards and post-call reports can use different brains (say, Ollama live and Claude for the report).
@@ -176,24 +176,28 @@ Found something that contradicts any of this? That's a security issue, see [SECU
 
 ## Getting started
 
-> 📖 **[Parrot Help](https://turantekin.github.io/Parrot/help/)** walks through every feature. The same pages ship inside the app under **Help > Parrot Help**.
+> 📖 **[Parrot Help](https://openparrot.app/help)** walks through every feature. The same pages ship inside the app under **Help > Parrot Help**.
 
 1. **Download** the notarized `.dmg` from the **[Releases page](https://github.com/turantekin/Parrot/releases)** (or the button on [openparrot.app](https://openparrot.app)) and drag Parrot into Applications. Needs macOS 14 (Sonoma) or later on Apple Silicon.
 2. **Allow two permissions.** The welcome tour shows live status for each and deep-links to the right Settings pane:
    - **System Audio Recording** for the other side of the call. On macOS 15+ this is the audio-only permission. On macOS 14 it's Screen Recording instead (that's how older macOS exposes system audio; Parrot only ever captures audio) and takes effect after you reopen Parrot.
    - **Microphone** for your side.
-3. **Pick a Whisper model.** It downloads once, with a progress bar:
+3. **Choose how the Copilot works.** The tour shows what it does, then asks:
+   - **Private**: everything on your Mac. Parrot installs [Ollama](https://ollama.com) for you and downloads the model. Free.
+   - **Balanced** (recommended): audio stays on your Mac, only text goes to Claude. Paste a key from [console.anthropic.com](https://console.anthropic.com) and press **Check key**.
+   - **Cloud**: Deepgram writes the words live, Claude runs the Copilot. Both keys are checked before they're saved.
+   - Or **Decide later**: a card on Home and **Settings > Copilot > Set up Copilot** bring you back.
+4. **Speech to text.** Parrot picks the Whisper model that fits your Mac's memory and starts the download right away. It carries on after you close the tour:
 
    | Model | Size | Good for |
    |---|---|---|
    | Tiny | 40 MB | Fastest |
-   | Base | 140 MB | A good default |
+   | Base | 140 MB | Picked on Macs under 12 GB |
    | Small | 460 MB | Better accuracy |
-   | Large V3 Turbo Compressed | 626 MB | Near-best, low memory. The sweet spot |
-   | Large V3 Turbo | 1.6 GB | Best accuracy, and best for non-English calls |
+   | Large V3 Turbo Compressed | 626 MB | Near-best, low memory |
+   | Large V3 Turbo | 1.6 GB | Best accuracy, and best for non-English calls. Picked on 12 GB and up |
 
-4. **Hit record** on your next call. That's it for a private recorder. For the copilot:
-5. **Turn on the Copilot** (optional) in **Settings > Copilot**: pick Claude (paste a key from [console.anthropic.com](https://console.anthropic.com) under Settings > API Keys), Ollama ([install it](https://ollama.com), Parrot pulls the model), or your own server.
+5. **Hit record** on your next call.
 6. **Feed it your knowledge** (optional) in **Settings > Knowledge**, and pick or build a profile in **Settings > Profiles**.
 
 Want the tour again? **Help > Show Welcome Tour**.

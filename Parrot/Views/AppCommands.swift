@@ -100,9 +100,17 @@ enum MeetingActions {
 
     /// Re-runs first-run onboarding. ParrotApp's sheet is derived from the
     /// hasCompletedOnboarding key, so clearing it presents the tour right
-    /// away — no relaunch. Step goes first so the flag flip lands on Welcome.
+    /// away — no relaunch. Mode and step go first so the flip lands on them.
     static func showWelcomeTour() {
-        UserDefaults.standard.set(0, forKey: "onboardingStep")
+        UserDefaults.standard.set(OnboardingMode.full.rawValue, forKey: OnboardingMode.defaultsKey)
+        UserDefaults.standard.set(OnboardingStep.welcome.rawValue, forKey: OnboardingFlow.stepKey)
+        UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+    }
+
+    /// The short tour from Home or Settings: Meet Copilot → path → setup → Ready.
+    static func showCopilotSetup() {
+        UserDefaults.standard.set(OnboardingMode.copilot.rawValue, forKey: OnboardingMode.defaultsKey)
+        UserDefaults.standard.set(OnboardingStep.meetCopilot.rawValue, forKey: OnboardingFlow.stepKey)
         UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
     }
 }

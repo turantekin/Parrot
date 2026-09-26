@@ -1,6 +1,6 @@
 # Contributing to Parrot
 
-First: there's no formal process here. Open an issue, open a PR, or just say hi — we'll figure it out together. This file is only the 60-second orientation so you don't have to reverse-engineer the repo.
+First: there's no formal process here. Open an issue, open a PR, or just [say hi](mailto:squawk@openparrot.app) — we'll figure it out together. This file is only the 60-second orientation so you don't have to reverse-engineer the repo.
 
 ## Build & test
 

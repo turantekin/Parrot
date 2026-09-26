@@ -37,6 +37,11 @@ final class RecordingManager {
     let chats: AskChatStore
     /// Next steps → Apple Reminders (asks for access on first use).
     let reminders = RemindersService()
+    /// The local Ollama server and its one model pull, shared by onboarding,
+    /// Settings and the Home card.
+    let ollama = OllamaService()
+    /// Installs the Ollama app from inside Parrot (onboarding, private path).
+    let ollamaInstaller = OllamaInstaller()
 
     /// Optional one-line context for the next call, set from the dashboard.
     var nextCallBrief = ""
@@ -132,6 +137,8 @@ final class RecordingManager {
         // Catch the memory up with meetings finished before it existed (or
         // changed since): background, low priority, local only.
         Task { await syncMemory() }
+        // A private-path setup whose model download never finished.
+        Task { await ollama.resumeIfNeeded() }
         await transcriptionEngine.loadModel(
             UserDefaults.standard.string(forKey: "whisperModel") ?? "base"
         )

@@ -225,9 +225,11 @@ enum HelpShots {
             "copilotEnabled": true,
             "copilotProvider": "claude",
             "whisperModel": "large-v3-turbo",
-            // Onboarding renders whichever step this points at; the onboarding
-            // shots below re-register it per step (1 permissions, 2 models).
-            "onboardingStep": 2,
+            "onboardingStillFrame": true,
+            // SpeechModelStep starts a real WhisperKit download on appear;
+            // this keeps a screenshot from kicking one off.
+            "onboardingNoAutoDownload": true,
+            // Help shots never read the Keychain or call a cloud service.
         ])
 
         // A live-looking meeting for the call screen.
@@ -338,31 +340,40 @@ enum HelpShots {
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
 
-        // Onboarding, real sheet geometry (500x600): if a step ever outgrows
+        // Onboarding, real sheet geometry (600x680): if a step ever outgrows
         // it, these shots show the clipping before a user does. Repeated
-        // register(defaults:) calls replace the key, picking the step.
-        UserDefaults.standard.register(defaults: ["onboardingStep": 1])
-        shot("onboarding-permissions.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
-
-        UserDefaults.standard.register(defaults: ["onboardingStep": 2])
-        shot("onboarding-model.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
-
-        UserDefaults.standard.register(defaults: ["onboardingStep": 3])
-        shot("onboarding-automatic.png", size: .init(width: 500, height: 600),
-             OnboardingView(isPresented: .constant(true))
-                .environment(rm).environment(rm.profileStore)
-                .modelContainer(container))
+        // register(defaults:) calls replace the keys, picking step and path.
+        func onboarding(_ file: String, _ step: OnboardingStep, path: CopilotPath? = nil) {
+            UserDefaults.standard.register(defaults: [
+                OnboardingMode.defaultsKey: OnboardingMode.full.rawValue,
+                OnboardingFlow.stepKey: step.rawValue,
+                CopilotPath.defaultsKey: path?.rawValue ?? "",
+            ])
+            shot(file, size: .init(width: 600, height: 680),
+                 OnboardingView(isPresented: .constant(true))
+                    .environment(rm).environment(rm.profileStore)
+                    .modelContainer(container))
+        }
+        onboarding("onboarding-permissions.png", .permissions)
+        onboarding("onboarding-meet-copilot.png", .meetCopilot)
+        onboarding("onboarding-path.png", .copilotPath, path: .balanced)
+        onboarding("onboarding-model.png", .speechModel, path: .balanced)
+        onboarding("onboarding-setup-private.png", .copilotSetup, path: .private)
+        onboarding("onboarding-setup-balanced.png", .copilotSetup, path: .balanced)
+        onboarding("onboarding-setup-cloud.png", .copilotSetup, path: .cloud)
+        onboarding("onboarding-automatic.png", .automatic)
+        onboarding("onboarding-ready.png", .ready, path: .balanced)
 
         // Reuses the dashboard shot just written as the attached screenshot, so
         // the guide shows the sheet the way a user meets it.
         shot("bug-report.png", size: .init(width: 460, height: 470),
              BugReportSheet(screenshot: NSImage(contentsOf: dir.appendingPathComponent("dashboard.png"))))
+
+        // Home card as a new user who chose Decide later sees it. Last,
+        // because it flips copilotEnabled off for everything after it.
+        UserDefaults.standard.register(defaults: ["copilotEnabled": false, CopilotPath.defaultsKey: "later"])
+        shot("home-copilot-card.png", size: .init(width: 600, height: 260),
+             CopilotHomeCard().environment(rm).padding(Theme.Metrics.pad))
 
         print("help-shots: wrote \(made.count) → \(dir.path)")
         exit(made.count >= 12 ? 0 : 1)
@@ -376,8 +387,14 @@ enum HelpShots {
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.colorSpace = .sRGB
-        window.appearance = NSAppearance(named: .aqua)
-        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+        // `--dark` renders the same shots in dark mode, for checking a PR; the
+        // user guide ships the light set.
+        let dark = ProcessInfo.processInfo.arguments.contains("--dark")
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        // The bitmap cache skips the window's own background, so dark shots
+        // paint it explicitly (light ones keep the white the guide ships with).
+        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height)
+            .background(dark ? Theme.Colors.panel : .clear))
         host.frame = NSRect(origin: .zero, size: size)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
