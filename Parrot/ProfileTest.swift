@@ -72,6 +72,7 @@ enum ProfileTest {
         testFollowUpEmail()
         testWebhook()
         testMCPServer()
+        testProfileFile()
         testCloudGate()
         testRedactor()
         testRetention()
@@ -2735,6 +2736,7 @@ enum ProfileTest {
                 coaching: "Commitments & follow-ups:\n- You send the proposal [01:00]", notes: "", bookmarks: []),
         ]
         let betaLines: [ReceiptIndex.Line] = [.init(start: 60, end: 64, speaker: "Me", text: "I'll send the proposal tomorrow."),
+                                              .init(start: 62, end: 66, speaker: "Me", text: "Could you share the budget by Friday?"),
                                               .init(start: 120, end: 125, speaker: "Priya", text: "I'll share the budget sheet.")]
         func chunk(_ id: UUID, _ text: String) -> MemoryChunk {
             MeetingMemory.buildChunks(meetingID: id, lines: [.init(start: 30, end: 33, speaker: "Jeremy", text: text)],
@@ -2756,6 +2758,7 @@ enum ProfileTest {
                 transcript: { $0 == a ? [.init(start: 30, end: 33, speaker: "Jeremy", text: "Send the contract.")]
                                       : $0 == old ? long : [] },
                 receipts: { ReceiptIndex(lines: $0 == beta ? betaLines : []) },
+                cards: { _ in [] }, profiles: { ProfilePresets.all() },
                 export: { _, _, _ in nil }, exportFolder: exportFolder,
                 search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
         func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
@@ -2771,7 +2774,7 @@ enum ProfileTest {
         check("mcp: ping", call("ping")?["result"] != nil)
         let tools = (call("tools/list")?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         check("mcp: read-only tools listed", tools?.compactMap { $0["name"] as? String }
-              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments", "export_meeting"])
+              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments", "export_meeting", "meeting_stats", "list_profiles", "get_profile"])
         func text(_ reply: [String: Any]?) -> String {
             (((reply?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         }
@@ -2852,6 +2855,26 @@ enum ProfileTest {
             return hints?["readOnlyHint"] as? Bool == true && hints?["destructiveHint"] as? Bool == false
                 && hints?["openWorldHint"] as? Bool == false && !((t["title"] as? String) ?? "").isEmpty
         } == true)
+        let stats = tool("meeting_stats", ["id": beta.uuidString])
+        check("mcp: talk time per speaker, overlaps counted once", stats.contains("- Me: 0:06 (55%), 1 question\n- Priya: 0:05 (45%), 0 questions"))
+        check("mcp: longest stretch", stats.contains("Longest stretch by one speaker: Me, 0:06 from 01:00."))
+        let thirds = MCPServer.talkStats(["A", "B", "C"].enumerated().map { i, who in
+            ReceiptIndex.Line(start: Double(i) * 10, end: Double(i) * 10 + 10, speaker: who, text: "x") })
+        check("mcp: shares always add up to 100", thirds.speakers.map(\.percent).reduce(0, +) == 100)
+        check("mcp: stats without a transcript", tool("meeting_stats", ["id": old.uuidString]).hasPrefix("This meeting has no transcript"))
+        check("mcp: no cards unless shared", !tool("get_meeting", ["id": a.uuidString]).contains("Copilot cards"))
+        source.cards = { $0 == a ? ["00:40 Objection: Price too high (open)"] : [] }
+        check("mcp: cards when shared", tool("get_meeting", ["id": a.uuidString])
+              .contains("## Copilot cards from the live call\n- 00:40 Objection: Price too high (open)"))
+        source.cards = { _ in [] }
+        let profileList = tool("list_profiles", [:])
+        check("mcp: list_profiles", profileList.contains("## Vendor call") && profileList.contains("Other side: the vendor")
+              && profileList.contains("(pinned)"))
+        let vendorJSON = tool("get_profile", ["name": "vendor CALL"])
+        let vendorFile = try? ProfileFile.decode(Data(vendorJSON.utf8))
+        check("mcp: get_profile is a profile file", vendorFile?.profile.name == "Vendor call"
+              && vendorFile?.sharedID == UUID(uuidString: "00000000-0000-0000-0000-0000000000C6"))
+        check("mcp: get_profile unknown name", tool("get_profile", ["name": "nope"]).hasPrefix("No profile"))
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26
@@ -2896,6 +2919,83 @@ enum ProfileTest {
         check("mcp: saving again overwrites the same file", files.filter { $0.hasSuffix(".md") }.count == 1 && files.count == 2)
         check("mcp: export bad id", tool("export_meeting", ["id": secret.id.uuidString]) == "No meeting with that id.")
         check("mcp: export bad format", tool("export_meeting", ["id": open.id.uuidString, "format": "pdf"]).hasPrefix("Format is"))
+    }
+
+    @MainActor
+    static func testProfileFile() {
+        for p in ProfilePresets.all() {
+            let file = try? ProfileFile.decode(ProfileFile.encode(p))
+            let kinds = p.kinds.map { ProfileFile.Kind(key: $0.key, label: $0.label, color: $0.colorHex, icon: $0.iconSystemName,
+                                                       trigger: $0.triggerDescription, pinned: $0.isPinned, priority: $0.priority) }
+            let gauges = p.gauges.map { ProfileFile.Gauge(key: $0.key, label: $0.label, low: $0.lowLabel, high: $0.highLabel, color: $0.colorHex) }
+            let f = file?.profile
+            check("profile file: \(p.name) round-trips", f?.name == p.name && f?.icon == p.iconSystemName && f?.summary == p.summary
+                  && f?.persona == p.persona && f?.tone == p.tone && f?.counterpart == p.counterpart
+                  && f?.allowGeneralKnowledge == p.allowGeneralKnowledge && f?.kinds == kinds && f?.gauges == gauges
+                  && file?.sharedID == p.id && file?.version == ProfilePresets.presetVersion && file?.meta?.source == "builtin"
+                  && f?.report == nil)
+            check("profile file: \(p.name) decodes the same twice", (try? ProfileFile.decode(file?.data() ?? Data()))?.profile == f)
+        }
+        let tuned = ProfilePresets.all()[1]
+        tuned.isUserModified = true
+        tuned.onDeviceOnly = true
+        let tunedFile = try? ProfileFile.decode(ProfileFile.encode(tuned))
+        check("profile file: a tuned built-in isn't the built-in", tunedFile?.sharedID == nil
+              && tunedFile?.meta?.basedOn?.sharedID == tuned.id && tunedFile?.meta?.source == "user")
+        check("profile file: on-device only is recommended", tunedFile?.privacy?.recommendOnDeviceOnly == true)
+        check("profile file: no local id for a profile made here", (try? ProfileFile.decode(ProfileFile.encode(CallProfile(
+            name: "Mine", iconSystemName: "star", summary: "", isBuiltIn: false, sortOrder: 9, persona: "", tone: "",
+            allowGeneralKnowledge: true, kinds: [], gauges: []))))?.sharedID == nil)
+
+        let base = (try? JSONSerialization.jsonObject(with: ProfileFile.encode(ProfilePresets.all()[1]))) as? [String: Any] ?? [:]
+        func file(_ change: (inout [String: Any], inout [String: Any]) -> Void) -> Data {
+            var top = base
+            var profile = top["profile"] as? [String: Any] ?? [:]
+            change(&top, &profile)
+            top["profile"] = profile
+            return (try? JSONSerialization.data(withJSONObject: top)) ?? Data()
+        }
+        func refusal(_ data: Data) -> String? {
+            do { _ = try ProfileFile.decode(data); return nil } catch { return (error as? ProfileFile.Refused)?.reason }
+        }
+        let aKind = (base["profile"] as? [String: Any])?["kinds"] as? [[String: Any]] ?? []
+        check("profile file: 21 card types refused", refusal(file { _, p in p["kinds"] = Array(repeating: aKind[0], count: 21) })?
+              .contains("20 card types") == true)
+        check("profile file: 7 gauges refused", refusal(file { _, p in
+            p["gauges"] = Array(repeating: ["key": "k", "label": "l", "low": "a", "high": "b", "color": "5F6470"], count: 7) }) != nil)
+        check("profile file: long persona refused", refusal(file { _, p in p["persona"] = String(repeating: "x", count: 4001) })?
+              .contains("persona") == true)
+        check("profile file: long trigger refused", refusal(file { _, p in
+            var k = aKind[0]; k["trigger"] = String(repeating: "x", count: 301); p["kinds"] = [k] }) != nil)
+        check("profile file: not a profile", refusal(file { t, _ in t["format"] = "something.else" }) == "This isn't a Parrot profile.")
+        check("profile file: from a newer Parrot", refusal(file { t, _ in t["formatVersion"] = 2 }) == "This profile needs a newer Parrot.")
+        check("profile file: over 64 KB refused", refusal(file { t, _ in t["padding"] = String(repeating: "x", count: 70_000) })?
+              .contains("64 KB") == true)
+        check("profile file: garbage refused", refusal(Data("not json".utf8)) != nil)
+        let section: [String: Any] = ["key": "o", "title": "Overview", "type": "prose", "guide": "2-3 sentences."]
+        check("profile file: 9 report sections refused", refusal(file { _, p in p["report"] = ["sections": Array(repeating: section, count: 9)] }) != nil)
+        check("profile file: unknown section type refused", refusal(file { _, p in
+            p["report"] = ["sections": [["key": "x", "title": "X", "type": "video"]]] }) != nil)
+        check("profile file: empty scorecard refused", refusal(file { _, p in
+            p["report"] = ["sections": [["key": "fit", "title": "Fit", "type": "scorecard", "criteria": [[String: Any]]()]]] }) != nil)
+        let withReport = try? ProfileFile.decode(file { _, p in
+            p["report"] = ["sections": [section, ["key": "next", "title": "Next steps", "type": "bullets", "commitments": true],
+                                        ["key": "fit", "title": "Fit", "type": "scorecard", "criteria": [["key": "stage", "label": "Stage fit"]]]],
+                           "coaching": ["enabled": true, "role": "pitch coach"]] })
+        check("profile file: a report template decodes", withReport?.profile.report?.sections.map(\.type) == ["prose", "bullets", "scorecard"]
+              && withReport?.profile.report?.sections[1].commitments == true)
+        let fixed = try? ProfileFile.decode(file { _, p in
+            var k = aKind[0]; k["color"] = "not-a-color"; k["icon"] = "no.such.symbol.anywhere"; p["kinds"] = [k] })
+        check("profile file: a bad color gets the default", fixed?.profile.kinds.first?.color == ProfileFile.defaultColor)
+        check("profile file: an unknown icon gets the default", fixed?.profile.kinds.first?.icon == ProfileFile.defaultKindIcon)
+        let future = try? ProfileFile.decode(file { t, p in
+            t["price"] = 5
+            var meta = t["meta"] as? [String: Any] ?? [:]; meta["creatorID"] = "c-42"; t["meta"] = meta
+            var k = aKind[0]; k["sound"] = "chirp"; p["kinds"] = [k] })
+        let again = (future?.data()).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        check("profile file: unknown fields survive", again?["price"] as? Int == 5
+              && (again?["meta"] as? [String: Any])?["creatorID"] as? String == "c-42"
+              && (((again?["profile"] as? [String: Any])?["kinds"] as? [[String: Any]])?.first?["sound"] as? String) == "chirp")
     }
 
     // MARK: - Phase 5: privacy

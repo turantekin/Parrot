@@ -40,6 +40,10 @@ enum MCPServer {
         /// The transcript as a receipts index, for commitment owners (only
         /// list_commitments pays for it). Names and times, no text leaves.
         var receipts: (UUID) -> ReceiptIndex
+        /// Copilot cards from the live call, one line each; empty unless shared.
+        var cards: (UUID) -> [String]
+        /// Call profiles (config, not meeting content), in the app's order.
+        var profiles: () -> [CallProfile]
         /// The meeting as an in-app export would write it, only these parts.
         var export: (UUID, ExportService.Format, ExportService.Parts) -> String?
         /// Where export_meeting saves (Downloads/Parrot Exports in the app).
@@ -94,6 +98,9 @@ enum MCPServer {
                     meetings: { snapshot(context) },
                     transcript: { shareable($0)?.receiptIndex.lines ?? [] },
                     receipts: { shareable($0)?.receiptIndex ?? .empty },
+                    // ponytail: cards stay off until the share settings land (Task 7).
+                    cards: { _ in [] },
+                    profiles: { (try? context.fetch(FetchDescriptor<CallProfile>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? [] },
                     export: { id, format, parts in shareable(id).map { ExportService.content(for: $0, format: format, parts: parts) } },
                     exportFolder: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
                         .appendingPathComponent("Parrot Exports", isDirectory: true),
@@ -270,6 +277,32 @@ enum MCPServer {
                 "required": ["id"],
             ],
         ],
+        [
+            "name": "meeting_stats",
+            "title": "Talk time",
+            "description": "Talk time per speaker (minutes and share), questions each asked, and the longest stretch one person talked. For coaching: who dominated, who listened.",
+            "inputSchema": [
+                "type": "object",
+                "properties": ["id": ["type": "string", "description": "Meeting id."]],
+                "required": ["id"],
+            ],
+        ],
+        [
+            "name": "list_profiles",
+            "title": "List call profiles",
+            "description": "The user's call profiles (sales, interview…): what each is for, what it calls the other side, the Copilot card types with what triggers them, and the gauges.",
+            "inputSchema": ["type": "object", "properties": [String: Any]()],
+        ],
+        [
+            "name": "get_profile",
+            "title": "Read a call profile",
+            "description": "One call profile in full, as a portable .parrotprofile JSON file (read-only).",
+            "inputSchema": [
+                "type": "object",
+                "properties": ["name": ["type": "string", "description": "Profile name, as list_profiles shows it."]],
+                "required": ["name"],
+            ],
+        ],
     ]
 
     /// Narrowing shared by the tools that list or search meetings.
@@ -328,7 +361,7 @@ enum MCPServer {
     static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
         guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments",
-           "export_meeting"].contains(name)
+           "export_meeting", "meeting_stats", "list_profiles", "get_profile"].contains(name)
         else { return nil }
         let meetings = source.meetings()
         switch name {
@@ -357,6 +390,8 @@ enum MCPServer {
             if let coaching = m.coaching { out += "\n\n## Coaching\n\(coaching)" }
             if !m.bookmarks.isEmpty { out += "\n\n## Moments the user marked\n" + m.bookmarks.map { "- \($0)" }.joined(separator: "\n") }
             if !m.notes.isEmpty { out += "\n\n## User's notes\n\(m.notes)" }
+            let cards = source.cards(m.id)
+            if !cards.isEmpty { out += "\n\n## Copilot cards from the live call\n" + cards.map { "- \($0)" }.joined(separator: "\n") }
             if (args["include_transcript"] as? Bool) == true {
                 let page = transcriptPage(source.transcript(m.id), from: 0, to: nil, maxLines: defaultPageLines)
                 out += "\n\n## Transcript\n" + page.lines.map(lineText).joined(separator: "\n")
@@ -438,9 +473,95 @@ enum MCPServer {
             }
             return "Saved to \(url.path)"
 
+        case "meeting_stats":
+            guard let raw = args["id"] as? String, let id = UUID(uuidString: raw),
+                  let m = meetings.first(where: { $0.id == id }) else {
+                return "No meeting with that id."
+            }
+            let stats = talkStats(source.receipts(id).lines)
+            guard !stats.speakers.isEmpty else { return "This meeting has no transcript to measure." }
+            func clock(_ t: TimeInterval) -> String { String(format: "%d:%02d", Int(t) / 60, Int(t) % 60) }
+            var out = "\(m.title) · \(m.durationMinutes) min\nTalk time:\n" + stats.speakers.map { s in
+                "- \(s.name): \(clock(s.seconds)) (\(s.percent)%), \(s.questions) question\(s.questions == 1 ? "" : "s")"
+            }.joined(separator: "\n")
+            if let run = stats.longest {
+                out += "\nLongest stretch by one speaker: \(run.name), \(clock(run.seconds)) from \(Receipts.stamp(run.start))."
+            }
+            return out
+
+        case "list_profiles":
+            let profiles = source.profiles()
+            guard !profiles.isEmpty else { return "No profiles yet." }
+            return profiles.map { p in
+                var out = "## \(p.name)\n\(p.summary)\nOther side: \(p.counterpart)"
+                if p.onDeviceOnly { out += "\nOn-device only: its meetings are never shown to AI apps." }
+                out += "\nCards:\n" + p.kinds.map { "- \($0.label)\($0.isPinned ? " (pinned)" : ""): \($0.triggerDescription)" }
+                    .joined(separator: "\n")
+                if !p.gauges.isEmpty {
+                    out += "\nGauges: " + p.gauges.map { "\($0.label) (\($0.lowLabel) to \($0.highLabel))" }.joined(separator: ", ")
+                }
+                return out
+            }.joined(separator: "\n\n")
+
+        case "get_profile":
+            let wanted = ((args["name"] as? String) ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            guard let p = source.profiles().first(where: { $0.name.lowercased() == wanted }) else {
+                return "No profile with that name. list_profiles shows them."
+            }
+            return String(decoding: ProfileFile.encode(p), as: UTF8.self)
+
         default:
             return nil
         }
+    }
+
+    struct TalkStats {
+        struct Speaker { var name: String; var seconds: TimeInterval; var percent: Int; var questions: Int }
+        var speakers: [Speaker]
+        var longest: (name: String, seconds: TimeInterval, start: TimeInterval)?
+    }
+
+    /// Talk time per speaker (a speaker's overlapping lines count once),
+    /// shares that add up to exactly 100, questions asked (lines ending in
+    /// "?") and the longest run of consecutive lines by one speaker.
+    static func talkStats(_ lines: [ReceiptIndex.Line]) -> TalkStats {
+        let sorted = lines.sorted { $0.start < $1.start }
+        var seconds: [String: TimeInterval] = [:], questions: [String: Int] = [:]
+        for (name, own) in Dictionary(grouping: sorted, by: \.speaker) {
+            var total: TimeInterval = 0, spanStart = -Double.infinity, spanEnd = -Double.infinity
+            for line in own {
+                if line.start > spanEnd {
+                    total += max(0, spanEnd - spanStart)
+                    (spanStart, spanEnd) = (line.start, line.end)
+                } else {
+                    spanEnd = max(spanEnd, line.end)
+                }
+            }
+            seconds[name] = total + max(0, spanEnd - spanStart)
+            questions[name] = own.filter { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") }.count
+        }
+        let total = seconds.values.reduce(0, +)
+        // Largest remainder, so rounded shares still add up to 100.
+        let exact = seconds.mapValues { total > 0 ? $0 / total * 100 : 0 }
+        var percent = exact.mapValues { Int($0) }
+        let short = total > 0 ? 100 - percent.values.reduce(0, +) : 0
+        func rest(_ name: String) -> Double { exact[name]! - Double(percent[name]!) }
+        for name in exact.keys.sorted(by: { rest($0) != rest($1) ? rest($0) > rest($1) : $0 < $1 }).prefix(short) {
+            percent[name]! += 1
+        }
+        var longest: (name: String, seconds: TimeInterval, start: TimeInterval)?
+        var i = 0
+        while i < sorted.count {
+            var j = i, end = sorted[i].end
+            while j + 1 < sorted.count, sorted[j + 1].speaker == sorted[i].speaker { j += 1; end = max(end, sorted[j].end) }
+            let run = end - sorted[i].start
+            if run > (longest?.seconds ?? 0) { longest = (sorted[i].speaker, run, sorted[i].start) }
+            i = j + 1
+        }
+        let speakers = seconds.keys.sorted { seconds[$0]! > seconds[$1]! }.map {
+            TalkStats.Speaker(name: $0, seconds: seconds[$0]!, percent: percent[$0]!, questions: questions[$0]!)
+        }
+        return TalkStats(speakers: speakers, longest: longest)
     }
 
     static let defaultPageLines = 400
