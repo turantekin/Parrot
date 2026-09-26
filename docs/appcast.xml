@@ -3,14 +3,14 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.22.0</title>
-            <pubDate>Sat, 26 Sep 2026 12:33:24 +0100</pubDate>
+            <title>0.22.1</title>
+            <pubDate>Sat, 26 Sep 2026 13:01:42 +0100</pubDate>
             <sparkle:fullReleaseNotesLink>https://github.com/turantekin/Parrot/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202609261231</sparkle:version>
-            <sparkle:shortVersionString>0.22.0</sparkle:shortVersionString>
+            <sparkle:version>202609261300</sparkle:version>
+            <sparkle:shortVersionString>0.22.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.22.0/Parrot-0.22.0.dmg" length="21674542" type="application/octet-stream" sparkle:edSignature="aYtgyY+9Be7bz24Cw7oWK3HbzZKad8O5PjUxzGqacO0Zcj3ATyp8ejRvONQUJefC5dRLJ4Epj96Zm98dHfRJDw=="/>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.22.1/Parrot-0.22.1.dmg" length="21687938" type="application/octet-stream" sparkle:edSignature="zdwZMIpFH1sDFrRtOEG/oN8GkUdJiqA5biucV2/kkTjM22/tFP0wO3DH5jmsn62xiInXGn2z/97Sb1FlwJ3eBg=="/>
         </item>
     </channel>
 </rss>
