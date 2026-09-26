@@ -43,16 +43,37 @@ check after you granted it, quit Parrot and open it again. macOS is just like
 that. On macOS 15+ there's no restart; the row confirms itself the first time
 Parrot hears meeting audio.</div>
 
-<h2>Pick a model</h2>
-<img src="img/onboarding-model.png" alt="The model picker during onboarding">
-<p>Transcription happens on your Mac with Whisper, so you pick which model to
-use during onboarding. <strong>Base</strong> is a good start: small, quick,
-decent accuracy. If your Mac has Apple Silicon and some room to spare,
-<strong>Large V3 Turbo Compressed</strong> is the sweet spot: nearly the
-accuracy of the big one at a third of the download and memory.
-<strong>Large V3 Turbo</strong> is the most accurate of the lot if you have
-the RAM to spare. The model downloads once on first use, with a progress bar
-so you can see it happening, and lives on your disk after that, so
+<h2>Meet Copilot</h2>
+<img src="img/onboarding-meet-copilot.png" alt="The Meet Copilot step: an example call and four benefits">
+<p>Next, a short example of what Copilot does during a call: when the other
+side asks something, it suggests an answer from your own documents, pins
+deal-breakers until you handle them, keeps a live score, and writes a report
+after. Only you see it; no bot joins your call.</p>
+
+<h2>Choose how Copilot works</h2>
+<img src="img/onboarding-path.png" alt="Private, Balanced and Cloud choices">
+<ul>
+  <li><strong>Private.</strong> Everything stays on your Mac and it's free.
+  Parrot installs the Ollama app for you (about 200 MB; macOS asks you to
+  confirm once) and downloads a model. You can keep going while it
+  downloads; Copilot turns on by itself when it's done.</li>
+  <li><strong>Balanced.</strong> Recommended. Audio stays on your Mac, only
+  the text goes to Claude. Paste a Claude key and press Check key.</li>
+  <li><strong>Cloud.</strong> Deepgram writes the words live and Claude runs
+  Copilot. Needs both keys; Deepgram is optional.</li>
+</ul>
+<p>Not sure yet? Pick <strong>Decide later</strong>. A card on Home lets you
+set Copilot up any time, and so does Settings → Copilot → Set up Copilot.</p>
+
+<h2>Speech to text</h2>
+<img src="img/onboarding-model.png" alt="The speech model picker">
+<p>Transcription happens on your Mac with Whisper. Parrot picks the model
+that fits your Mac's memory and starts downloading it right away:
+<strong>Large V3 Turbo</strong> on Macs with 12 GB or more,
+<strong>Base</strong> on smaller ones. <strong>Large V3 Turbo
+Compressed</strong> is the in-between: nearly the accuracy of the big one at
+a third of the download. The download carries on after you close the setup
+window, and the record button waits until it's done. After that,
 transcription works offline.</p>
 
 <p>You can switch models any time in Settings → Transcription.</p>
