@@ -53,7 +53,7 @@ final class OllamaService {
             statuses[model] = .serverDown
             return
         }
-        statuses[model] = installed.contains(model) ? .ready : .missing
+        statuses[model] = OllamaProbe.isInstalled(model, in: installed) ? .ready : .missing
         if statuses[model] == .ready { CopilotPathSettings.ollamaModelReady(model, in: defaults) }
     }
 
@@ -129,16 +129,8 @@ final class OllamaService {
         return nil
     }
 
+    /// One shared check (Ask Parrot uses it too).
     nonisolated private static func installedModels() async -> [String]? {
-        struct Tags: Decodable {
-            struct Entry: Decodable { let name: String }
-            let models: [Entry]
-        }
-        var request = URLRequest(url: base.appendingPathComponent("api/tags"))
-        request.timeoutInterval = 3
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let tags = try? JSONDecoder().decode(Tags.self, from: data) else { return nil }
-        return tags.models.map(\.name)
+        await OllamaProbe.installedModels()
     }
 }

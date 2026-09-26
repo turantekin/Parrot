@@ -21,7 +21,7 @@ final class RecordingManager {
     /// the user confirms post-call.
     private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
-    let callAnalysisEngine = CallAnalysisEngine(provider: SwitchingAnalysisProvider())
+    let callAnalysisEngine: CallAnalysisEngine
     let knowledgeBase = KnowledgeBaseService()
     /// TypeSafe client for the copilot's "From your docs" excerpts; inert
     /// without a key (see CallAnalysisEngine.fastPathAvailable).
@@ -32,7 +32,9 @@ final class RecordingManager {
     /// Notices calls in other apps and offers to record them.
     let callWatcher = CallWatcher()
     /// Every finished meeting, searchable on the Mac (Ask Parrot).
-    let memory = MeetingMemory()
+    let memory: MeetingMemory
+    /// Ask Parrot's saved chats.
+    let chats: AskChatStore
     /// Next steps → Apple Reminders (asks for access on first use).
     let reminders = RemindersService()
     /// The local Ollama server and its one model pull, shared by onboarding,
@@ -96,7 +98,16 @@ final class RecordingManager {
         }
     }
 
-    init() {
+    /// `memory`/`chats` are overridable so the `--ask-chat-test` harness can
+    /// point them at a scratch directory instead of the real Application
+    /// Support store — normal app code keeps calling `RecordingManager()`.
+    /// (nil defaults, not `= MeetingMemory()`: a default-argument expression
+    /// isn't MainActor-isolated, so it can't call these actor-isolated inits.)
+    /// `provider` too: the Ask routing test records every prompt with a stub.
+    init(memory: MeetingMemory? = nil, chats: AskChatStore? = nil, provider: AnalysisProvider? = nil) {
+        callAnalysisEngine = CallAnalysisEngine(provider: provider ?? SwitchingAnalysisProvider())
+        self.memory = memory ?? MeetingMemory()
+        self.chats = chats ?? AskChatStore()
         callAnalysisEngine.knowledgeBase = knowledgeBase
         callAnalysisEngine.docMatcher = docMatcher
     }
@@ -109,6 +120,11 @@ final class RecordingManager {
         elapsedTime = elapsed
         recordingStartTime = Date().addingTimeInterval(-elapsed)
         isRecording = true
+    }
+
+    /// Dev-harness only (--ask-chat-test): a store to ask against, no recording.
+    func attachForHarness(modelContext: ModelContext) {
+        self.modelContext = modelContext
     }
 
     /// Initialize and load the default WhisperKit model

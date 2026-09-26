@@ -1,13 +1,16 @@
 import SwiftUI
 import SwiftData
 
+/// What the main window's detail area shows. One value instead of flags,
+/// so two pages can never both be "on".
+enum MainPage: Equatable { case dashboard, settings, ask, meeting }
+
 struct ContentView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSession.self) private var appSession
     @Environment(\.modelContext) private var modelContext
     @State private var selectedMeeting: Meeting?
-    @State private var showDashboard = true
-    @State private var showSettings = false
+    @State private var page: MainPage = .dashboard
     @State private var searchText = ""
     @State private var hasLoadedModel = false
     /// File → Import Audio… (⌘O); the dashboard has its own importer button.
@@ -21,21 +24,19 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(
                 selectedMeeting: $selectedMeeting,
-                showDashboard: $showDashboard,
-                showSettings: $showSettings,
+                page: $page,
                 searchText: $searchText
             )
             .navigationSplitViewColumnWidth(min: 215, ideal: 236, max: 320)
         } detail: {
-            if recordingManager.isRecording {
+            if page == .ask {
+                AskPageView()
+            } else if recordingManager.isRecording {
                 LiveRecordingView()
-            } else if showSettings {
+            } else if page == .settings {
                 settingsPane
-            } else if showDashboard {
-                DashboardView(
-                    selectedMeeting: $selectedMeeting,
-                    showDashboard: $showDashboard
-                )
+            } else if page == .dashboard {
+                DashboardView(selectedMeeting: $selectedMeeting, page: $page)
             } else if let meeting = selectedMeeting {
                 // .id forces a fresh view identity per meeting: @State (title/name
                 // drafts, audio players, tab) must not leak from one meeting to the
@@ -44,7 +45,7 @@ struct ContentView: View {
                     // Clear the selection first so the detail view is gone
                     // before its model object is deleted.
                     selectedMeeting = nil
-                    showDashboard = true
+                    page = .dashboard
                     recordingManager.delete(meeting)
                 })
                 .id(meeting.id)
@@ -89,16 +90,19 @@ struct ContentView: View {
         .sheet(isPresented: $showBugReport) {
             BugReportSheet(screenshot: reportScreenshot)
         }
-        .sheet(item: Binding(get: { appSession.askRequest }, set: { appSession.askRequest = $0 })) { request in
-            AskView(request: request)
-                .environment(recordingManager)
-                .environment(appSession)
+        // ⌘K, the menu and "Ask about this meeting" open the Ask page.
+        .onChange(of: appSession.askRequest) { _, request in
+            if request != nil { page = .ask }
+        }
+        // A recording that starts while Ask is open shows the call screen.
+        .onChange(of: recordingManager.isRecording) { _, recording in
+            if recording, page == .ask { page = .dashboard }
         }
         .onReceive(NotificationCenter.default.publisher(for: .parrotMeetingWillDelete)) { note in
             guard let id = note.object as? UUID else { return }
             if selectedMeeting?.id == id {
                 selectedMeeting = nil
-                showDashboard = true
+                page = .dashboard
             }
             if appSession.selectedMeeting?.id == id { appSession.selectedMeeting = nil }
             if appSession.pendingJump?.meetingID == id { appSession.pendingJump = nil }
@@ -113,8 +117,7 @@ struct ContentView: View {
                 return
             }
             selectedMeeting = meeting
-            showDashboard = false
-            showSettings = false
+            page = .meeting
         }
         .onReceive(NotificationCenter.default.publisher(for: .parrotReportBug)) { _ in
             presentBugReport()
@@ -148,8 +151,7 @@ struct ContentView: View {
     private func startImport(_ url: URL) {
         guard let meeting = recordingManager.importAudioFile(from: url, modelContext: modelContext) else { return }
         selectedMeeting = meeting
-        showDashboard = false
-        showSettings = false
+        page = .meeting
     }
 
     /// Settings in the main pane — the old sheet was a cramped 520pt popup.

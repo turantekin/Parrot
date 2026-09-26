@@ -81,6 +81,8 @@ final class MeetingMemory {
     /// meetingID → fingerprint of what was indexed (see `fingerprint`).
     @ObservationIgnored private var fingerprints: [UUID: Int] = [:]
     @ObservationIgnored private var tokenCache: [UUID: [String]] = [:]
+    /// Whole lowercased words per chunk, unshortened, for the name boost.
+    @ObservationIgnored private var wordCache: [UUID: Set<String>] = [:]
     /// Meetings removed while an index pass was embedding them: the pass
     /// must not write them back.
     @ObservationIgnored private var removed = Set<UUID>()
@@ -226,7 +228,7 @@ final class MeetingMemory {
 
     func remove(meetingID: UUID) {
         removed.insert(meetingID)
-        for chunk in chunks where chunk.meetingID == meetingID { tokenCache[chunk.id] = nil }
+        for chunk in chunks where chunk.meetingID == meetingID { tokenCache[chunk.id] = nil; wordCache[chunk.id] = nil }
         chunks.removeAll { $0.meetingID == meetingID }
         fingerprints[meetingID] = nil
         if let directory {
@@ -236,7 +238,7 @@ final class MeetingMemory {
 
     /// Harness seam: index without a SwiftData meeting.
     func replace(meetingID: UUID, with newChunks: [MemoryChunk], fingerprint: Int) {
-        for chunk in chunks where chunk.meetingID == meetingID { tokenCache[chunk.id] = nil }
+        for chunk in chunks where chunk.meetingID == meetingID { tokenCache[chunk.id] = nil; wordCache[chunk.id] = nil }
         chunks.removeAll { $0.meetingID == meetingID }
         chunks.append(contentsOf: newChunks)
         fingerprints[meetingID] = fingerprint
@@ -258,8 +260,11 @@ final class MeetingMemory {
 
     /// Best chunks for `query`, optionally within some meetings and never
     /// from `excluding` (private meetings when the answer goes to a cloud AI).
+    /// `namedOnly`: when the question names someone rare, return only the
+    /// passages that mention them (a small local model mixes in the rest).
     func search(_ query: String, within meetingIDs: Set<UUID>? = nil,
-                excluding: Set<UUID> = [], topK: Int = 8) async -> [MemoryChunk] {
+                excluding: Set<UUID> = [], topK: Int = 8, names: Set<String> = [],
+                namedOnly: Bool = false) async -> [MemoryChunk] {
         let pool = chunks.filter {
             !excluding.contains($0.meetingID) && (meetingIDs?.contains($0.meetingID) ?? true)
         }
@@ -284,7 +289,69 @@ final class MeetingMemory {
             return Self.rank(queryTokens: KnowledgeBaseService.lexicalTokens(query),
                              chunkTokens: tokens, cosine: cosine, topK: topK)
         }.value
-        return order.map { pool[$0] }
+        return Self.promoteRare(queryWords: names, chunkWords: pool.map(cachedWords), order: order, topK: topK,
+                                namedOnly: namedOnly)
+            .map { pool[$0] }
+    }
+
+    /// Meetings whose passages say `word` (a whole lowercased word):
+    /// "How many meetings with Revolut?" is counted from this.
+    func meetingsMentioning(_ word: String) -> Set<UUID> {
+        Set(chunks.filter { cachedWords($0).contains(word) }.map(\.meetingID))
+    }
+
+    /// ponytail: built on the main actor, once per passage; move into the
+    /// detached ranking task if tens of thousands of passages ever stall it.
+    private func cachedWords(_ chunk: MemoryChunk) -> Set<String> {
+        if let cached = wordCache[chunk.id] { return cached }
+        let w = Self.words(chunk.text)
+        wordCache[chunk.id] = w
+        return w
+    }
+
+    /// Lowercased whole words (letters and digits), unshortened.
+    nonisolated static func words(_ text: String) -> Set<String> {
+        Set(text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty })
+    }
+
+    /// Words too common in questions to count as a name.
+    private nonisolated static let commonWords: Set<String> = [
+        "meeting", "meetings", "about", "which", "where", "there", "their", "would", "could", "should",
+        "anything", "something", "people", "talked", "discussed", "decide", "decided", "promise", "promised",
+        "toplantı", "toplantıda", "toplantısında", "toplantılar", "hangi", "neler", "konuşuldu", "görüşme",
+        // Capitalised, so `nameWords` picks them up, but never a name.
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "january", "february", "march", "april", "june", "july", "august", "september", "october",
+        "november", "december", "pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi", "pazar",
+        "ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül", "ekim",
+        "kasım", "aralık",
+    ]
+
+    /// The search shortens words to 5 letters, so "Complycube" is "compl"
+    /// and drowns among complete / complex / compliance. A rare name from the
+    /// question (`AskEngine.nameWords`: Complycube, Kerem, Dietify) pulls the
+    /// passages that contain it exactly to the top. Rare = in at most 3% of
+    /// the passages (at least 3), and in at least one: a misspelt name
+    /// matches nothing and must not empty a local model's passages.
+    nonisolated static func promoteRare(queryWords: Set<String>, chunkWords: [Set<String>],
+                                        order: [Int], topK: Int, namedOnly: Bool = false) -> [Int] {
+        let limit = max(3, chunkWords.count * 3 / 100)
+        let rare = queryWords.filter { word in
+            word.count >= 4 && !commonWords.contains(word) && !word.allSatisfy(\.isNumber)
+                && (1...limit).contains(chunkWords.lazy.filter { $0.contains(word) }.prefix(limit + 1).count)
+        }
+        guard !rare.isEmpty else { return order }
+        let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        var hits: [(index: Int, count: Int, rank: Int)] = []
+        for i in chunkWords.indices {
+            let count = chunkWords[i].intersection(rare).count
+            if count > 0 { hits.append((i, count, rank[i] ?? Int.max)) }
+        }
+        hits.sort { a, b in a.count != b.count ? a.count > b.count : a.rank < b.rank }
+        let named = hits.map(\.index)
+        let front = Array(named.prefix(topK))
+        if namedOnly { return front }
+        return Array((front + order.filter { !front.contains($0) }).prefix(topK))
     }
 
     // MARK: Persistence

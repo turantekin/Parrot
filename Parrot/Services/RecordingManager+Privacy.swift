@@ -29,6 +29,8 @@ extension RecordingManager {
         let audioDays = UserDefaults.standard.integer(forKey: Retention.audioDaysKey)
         let meetingDays = UserDefaults.standard.integer(forKey: Retention.meetingDaysKey)
         guard audioDays > 0 || meetingDays > 0, let modelContext else { return (0, 0) }
+        // Chats quote meetings: they follow the meeting clean-up period.
+        if meetingDays > 0 { chats.removeStale(olderThanDays: meetingDays, now: now) }
         let meetings = (try? modelContext.fetch(FetchDescriptor<Meeting>())) ?? []
         let items = meetings.map {
             Retention.Item(id: $0.id, date: $0.importedAt ?? $0.date,

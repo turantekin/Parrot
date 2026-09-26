@@ -50,6 +50,6 @@ bundle time by the Makefile, not by Xcode.
 - Test via the CLI harnesses in `SnapshotTool.swift` / `ProfileTest.swift` /
   `CopilotHarness.swift` (`--profile-test`, `--snapshot`, `--copilot-snapshot`,
   `--sidebar-snapshot`, `--transcribe-test`, `--analyze-test`, `--capture-test`,
-  `--kb-add`, `--doc-answer-eval`, `--copilot-replay`). There is no
+  `--kb-add`, `--doc-answer-eval`, `--copilot-replay`, `--ask-chat-test`). There is no
   XCTest target. `--capture-test` does live audio capture — run it from the
   signed `dist/Parrot.app` bundle (TCC keys grants to the bundle identity).

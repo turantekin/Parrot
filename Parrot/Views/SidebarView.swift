@@ -3,10 +3,7 @@ import SwiftData
 
 struct SidebarView: View {
     @Binding var selectedMeeting: Meeting?
-    @Binding var showDashboard: Bool
-    /// Settings render in the main detail pane (the old sheet was a cramped
-    /// 520pt popup that made the Profiles editor unusable).
-    @Binding var showSettings: Bool
+    @Binding var page: MainPage
     @Binding var searchText: String
 
     @Environment(RecordingManager.self) private var recordingManager
@@ -36,18 +33,16 @@ struct SidebarView: View {
 
             // Primary nav
             VStack(spacing: 2) {
-                NavRow(title: "Dashboard", icon: "house", selected: showDashboard && !showSettings) {
-                    showDashboard = true
+                NavRow(title: "Dashboard", icon: "house", selected: page == .dashboard) {
+                    page = .dashboard
                     selectedMeeting = nil
-                    showSettings = false
                 }
                 NavRow(title: "New recording", icon: "mic.circle", selected: false) {
-                    showDashboard = true
+                    page = .dashboard
                     selectedMeeting = nil
-                    showSettings = false
                 }
-                NavRow(title: "Ask Parrot", icon: "text.magnifyingglass", selected: false) {
-                    appSession.askRequest = AppSession.AskRequest(scope: nil, scopeTitle: nil)
+                NavRow(title: "Ask Parrot", icon: "sparkles", selected: page == .ask, beta: true) {
+                    page = .ask
                 }
                 .help("Ask anything about your past calls (⌘K)")
             }
@@ -75,16 +70,16 @@ struct SidebarView: View {
                                 .padding(.top, 8)
                                 .padding(.bottom, 2)
                             ForEach(rows) { meeting in
-                                MeetingRow(meeting: meeting, selected: selectedMeeting?.id == meeting.id)
+                                MeetingRow(meeting: meeting,
+                                           selected: page == .meeting && selectedMeeting?.id == meeting.id)
                                     .onTapGesture {
                                         selectedMeeting = meeting
-                                        showDashboard = false
-                                        showSettings = false
+                                        page = .meeting
                                     }
                                     .meetingContextMenu(meeting, onDeleted: {
                                         if selectedMeeting?.id == meeting.id {
                                             selectedMeeting = nil
-                                            showDashboard = true
+                                            page = .dashboard
                                         }
                                     })
                             }
@@ -97,9 +92,8 @@ struct SidebarView: View {
             // Footer: in-app Settings + account
             VStack(spacing: 2) {
                 Divider().padding(.horizontal, 8).padding(.bottom, 4)
-                NavRow(title: "Settings", icon: "gearshape", selected: showSettings) {
-                    showSettings = true
-                    showDashboard = false
+                NavRow(title: "Settings", icon: "gearshape", selected: page == .settings) {
+                    page = .settings
                     selectedMeeting = nil
                 }
                 AccountChip()
@@ -148,6 +142,7 @@ private struct NavRow: View {
     let title: String
     let icon: String
     let selected: Bool
+    var beta = false
     let action: () -> Void
 
     var body: some View {
@@ -160,6 +155,7 @@ private struct NavRow: View {
                 Text(title)
                     .font(Theme.Typography.sans(13, .medium))
                     .foregroundStyle(Theme.Colors.ink)
+                if beta { BetaTag() }
                 Spacer()
             }
             .padding(.horizontal, 8)

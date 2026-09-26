@@ -5,7 +5,7 @@ import AVFoundation
 
 struct DashboardView: View {
     @Binding var selectedMeeting: Meeting?
-    @Binding var showDashboard: Bool
+    @Binding var page: MainPage
 
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(ProfileStore.self) private var profileStore
@@ -123,7 +123,7 @@ struct DashboardView: View {
             return
         }
         selectedMeeting = meeting
-        showDashboard = false
+        page = .meeting
     }
 
     private var profilePicker: some View {
@@ -269,7 +269,7 @@ struct DashboardView: View {
             ForEach(recentMeetings) { meeting in
                 Button {
                     selectedMeeting = meeting
-                    showDashboard = false
+                    page = .meeting
                 } label: {
                     DashboardMeetingRow(meeting: meeting)
                 }

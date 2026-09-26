@@ -206,6 +206,10 @@ enum HelpShots {
     static func run(outputDir: String) {
         let dir = URL(fileURLWithPath: outputDir, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // The bare binary has no bundle icon; ParrotAvatar draws the app icon.
+        if let icon = NSImage(contentsOfFile: "Parrot/Assets.xcassets/AppIcon.appiconset/icon_128@2x.png") {
+            NSApplication.shared.applicationIconImage = icon
+        }
 
         // Shared world: in-memory store with the built-in profiles and a few
         // meetings, plus managers that look mid-flight.
@@ -300,8 +304,19 @@ enum HelpShots {
         shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
         shot("settings-connections.png", size: .init(width: 780, height: 620), settings(.connections))
         shot("settings-privacy.png", size: .init(width: 780, height: 620), settings(.privacy))
-        shot("ask.png", size: .init(width: 580, height: 540),
-             AskView(request: AppSession.AskRequest(scope: nil, scopeTitle: nil))
+        let acmeRef = AskEngine.MeetingRef(ref: "M1", meetingID: meeting.id, title: meeting.title,
+                                           date: meeting.date, people: ["Sam"])
+        var demo = AskChat(title: "What did Acme push back on?", scope: nil, scopeTitle: nil)
+        demo.messages = [AskMessage(role: .me, text: "What did Acme push back on?")]
+        var reply = AskMessage(role: .parrot, text: "")
+        reply.lines = [AskEngine.Line(text: "The annual price for ten seats; they want it before they commit.",
+                                      citations: [AskEngine.Citation(meetingID: meeting.id, time: 81)])]
+        reply.refs = [acmeRef]
+        reply.answeredByAI = true
+        demo.messages.append(reply)
+        rm.chats.seedForSnapshot([demo])
+        shot("ask.png", size: .init(width: 1000, height: 620),
+             AskPageView()
                 .environment(rm).environment(AppSession()).modelContainer(container))
 
         shot("settings-profiles.png", size: .init(width: 860, height: 640),
@@ -321,7 +336,7 @@ enum HelpShots {
                 .modelContainer(container))
 
         shot("dashboard.png", size: .init(width: 1000, height: 620),
-             DashboardView(selectedMeeting: .constant(nil), showDashboard: .constant(true))
+             DashboardView(selectedMeeting: .constant(nil), page: .constant(.dashboard))
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
 
@@ -815,6 +830,161 @@ enum AnalyzeTest {
         }
         sem.wait()
         exit(exitCode)
+    }
+}
+
+/// Dev only: Ask Parrot against the user's REAL meetings, read-only, for
+/// testing answer quality. Run from the signed bundle (the sandbox gives it
+/// the container): questions come from a file, one per line; a blank line
+/// starts a new chat; "@scope: <title words>" limits the next chat to the
+/// first meeting whose title contains those words. Chats are not saved.
+///   dist/Parrot.app/Contents/MacOS/Parrot --ask-real <claude|ollama> <questions-file> [model]
+@MainActor
+enum AskRealTest {
+    static func run(provider: String, path: String, model: String?) {
+        // The argument domain beats the app's saved settings (register(defaults:)
+        // would lose to an Ask AI the user picked in the app), and is never saved.
+        var overrides: [String: Any] = ["askProvider": provider]
+        if let model { overrides["copilotOllamaModel"] = model }
+        UserDefaults.standard.setVolatileDomain(overrides, forName: UserDefaults.argumentDomain)
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            print("ask-real: cannot read \(path)"); exit(1)
+        }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, allowsSave: false)]
+        ) else { print("ask-real: store failed (open Parrot once so it migrates)"); exit(1) }
+        let context = container.mainContext
+        let rm = RecordingManager(chats: AskChatStore(directory: nil))
+        rm.attachForHarness(modelContext: context)
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+
+        // Chats: split on blank lines; "@scope:" picks a meeting.
+        var chats: [(scope: Meeting?, questions: [String])] = [(nil, [])]
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                if !(chats.last?.questions.isEmpty ?? true) { chats.append((nil, [])) }
+            } else if line.lowercased().hasPrefix("@scope:") {
+                let words = line.dropFirst(7).trimmingCharacters(in: .whitespaces).lowercased()
+                chats[chats.count - 1].scope = meetings.first { $0.title.lowercased().contains(words) }
+            } else {
+                chats[chats.count - 1].questions.append(line)
+            }
+        }
+
+        Task { @MainActor in
+            print("ask-real: \(meetings.count) meetings, AI = \(provider)\(model.map { " " + $0 } ?? "")")
+            for (n, spec) in chats.enumerated() where !spec.questions.isEmpty {
+                var chat = AskChat(title: "real \(n + 1)", scope: spec.scope?.id, scopeTitle: spec.scope?.title)
+                print("\n=== CHAT \(n + 1)\(spec.scope.map { " (scope: \($0.title))" } ?? "")")
+                for q in spec.questions {
+                    let started = Date()
+                    let result = await rm.ask(q, in: chat)
+                    let secs = String(format: "%.1f", Date().timeIntervalSince(started))
+                    print("\nQ: \(q)   [\(secs)s · \(result.model ?? "no AI") · private=\(result.usedPrivate)]")
+                    if let s = result.searchedFor { print("   searched: \(s)") }
+                    let titles = Dictionary(meetings.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+                    if !result.sources.isEmpty {
+                        var seen: [String] = []
+                        for c in result.sources { let t = String((titles[c.meetingID] ?? "?").prefix(24)); if !seen.contains(t) { seen.append(t) } }
+                        print("   passages from: \(seen.joined(separator: " | "))")
+                    }
+                    let names = Dictionary(result.refs.map { ($0.meetingID, $0.title) }, uniquingKeysWith: { a, _ in a })
+                    for line in result.lines {
+                        let cites = line.citations.map { c in
+                            String((names[c.meetingID] ?? "?").prefix(28)) + (c.time.map { " @" + Receipts.stamp($0) } ?? "")
+                        }
+                        print("   A: \(line.text)" + (cites.isEmpty ? "" : "  \(cites)"))
+                    }
+                    if let note = result.note { print("   note: \(note)") }
+                    chat.messages.append(AskMessage(role: .me, text: q))
+                    chat.messages.append(AskMessage(answer: result))
+                }
+            }
+            exit(0)
+        }
+        RunLoop.main.run()
+    }
+}
+
+
+/// Ask Parrot end to end on a real AI: two made-up meetings, a question,
+/// then a follow-up that only makes sense with the first. Prints what was
+/// searched, the answers and their citations. Nothing is saved.
+///   Parrot --ask-chat-test [claude|ollama] [model]
+@MainActor
+enum AskChatTest {
+    static func run(provider: String?, model: String?) {
+        if let provider {
+            UserDefaults.standard.register(defaults: ["askProvider": provider, "copilotProvider": provider])
+        }
+        if let model {
+            UserDefaults.standard.register(defaults: ["copilotOllamaModel": model, "copilotCustomModel": model])
+        }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { print("ask-chat-test: container failed"); exit(1) }
+        let context = container.mainContext
+        // Fabricated meetings must never land in the real Application
+        // Support memory/chats store — use a scratch directory, wiped
+        // wholesale at the end so an interrupt or crash can't leave junk
+        // behind (unlike per-meeting removal, which a crash could skip).
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ask-chat-test-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let rm = RecordingManager(memory: MeetingMemory(directory: scratch), chats: AskChatStore(directory: nil))
+        rm.attachForHarness(modelContext: context)
+
+        func meeting(_ title: String, daysAgo: Double, _ lines: [(TimeInterval, String, String)], summary: String) -> Meeting {
+            let m = Meeting(title: title, date: Date.now.addingTimeInterval(-daysAgo * 86_400))
+            context.insert(m)
+            for (start, speaker, text) in lines {
+                let seg = TranscriptSegment(startTime: start, endTime: start + 5, text: text, speakerLabel: speaker, confidence: nil)
+                context.insert(seg)
+                seg.meeting = m
+            }
+            m.status = .done
+            m.summary = summary
+            return m
+        }
+        let acme = meeting("Acme renewal", daysAgo: 2, [
+            (12, "Sam", "Our main worry is pricing. The Enterprise plan went up twenty percent."),
+            (20, "Me", "If you sign for two years, we can hold this year's price."),
+            (30, "Sam", "Can you put that in writing?"),
+            (36, "Me", "Yes, I'll send the revised contract by Friday."),
+        ], summary: "Acme pushed back on the 20% Enterprise price rise. We offered a two-year price lock.")
+        let globex = meeting("Globex hiring sync", daysAgo: 1, [
+            (8, "Ana", "We need two backend engineers before March."),
+            (15, "Me", "I'll share the job description on Monday."),
+        ], summary: "Globex needs two backend engineers by March.")
+        try? context.save()
+
+        Task { @MainActor in
+            for m in [acme, globex] { await rm.memory.index(m) }
+            var chat = AskChat(title: "Harness", scope: nil, scopeTitle: nil)
+            for q in ["What did Acme push back on?", "And what did we offer them?", "What did I promise this week?",
+                      "How many meetings did I have this week?"] {
+                let started = Date()
+                let result = await rm.ask(q, in: chat)
+                let secs = String(format: "%.1f", Date().timeIntervalSince(started))
+                print("\nQ: \(q)  [\(secs)s · \(result.model ?? "no AI")]")
+                if let s = result.searchedFor { print("   searched: \(s)") }
+                for line in result.lines {
+                    let cites = line.citations.map { c in
+                        (c.meetingID == acme.id ? "Acme" : "Globex") + (c.time.map { " " + Receipts.stamp($0) } ?? "")
+                    }
+                    print("   A: \(line.text)  \(cites)")
+                }
+                if let note = result.note { print("   note: \(note)") }
+                chat.messages.append(AskMessage(role: .me, text: q))
+                chat.messages.append(AskMessage(answer: result))
+            }
+            try? FileManager.default.removeItem(at: scratch)
+            exit(0)
+        }
+        RunLoop.main.run()
     }
 }
 

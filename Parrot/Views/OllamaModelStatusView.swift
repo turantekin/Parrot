@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// Lives under the Ollama model picker in Settings → Copilot: whether the
+/// Lives under the Ollama model picker in Settings → Copilot, and at the top
+/// of an Ask Parrot chat that uses Ollama (`hideWhenReady`): whether the
 /// selected model is ready on this Mac, with a one-click download when it
 /// isn't. A thin view over `OllamaService`, so a pull started in onboarding
 /// shows here too and never starts twice.
 struct OllamaModelStatusView: View {
     let model: String
+    /// Ask Parrot shows this only when something needs fixing.
+    var hideWhenReady = false
     @Environment(RecordingManager.self) private var recordingManager
 
     var body: some View {
@@ -20,7 +23,7 @@ struct OllamaModelStatusView: View {
             case .serverDown:
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
-                Text("Ollama isn't running — install it from ollama.com, then open it.")
+                Text("Ollama isn't open. Get it free at ollama.com, open it, then check again.")
                     .foregroundStyle(Theme.Colors.ink2)
                 Button("Check Again") { Task { await ollama.refresh(model: model) } }
                     .buttonStyle(.link)
@@ -45,10 +48,12 @@ struct OllamaModelStatusView: View {
                     .font(Theme.Typography.mono(11))
 
             case .ready:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.Colors.good)
-                Text("Ready — runs on this Mac.")
-                    .foregroundStyle(Theme.Colors.ink2)
+                if !hideWhenReady {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.good)
+                    Text("Ready. Runs on this Mac.")
+                        .foregroundStyle(Theme.Colors.ink2)
+                }
 
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")

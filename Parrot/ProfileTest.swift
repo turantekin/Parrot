@@ -77,6 +77,17 @@ enum ProfileTest {
         testRetention()
         testPrivacyLedgerAndConsent()
         testLiveLabelStability()
+        testAskRoute()
+        testAskChatStore()
+        testAskNoAI()
+        testAskFollowUps()
+        testAskBroad()
+        testAskFinalFixes()
+        testAskRealTestFixes()
+        testAskMeetingQuestions()
+        testAskDeepTestFixes()
+        testAskReviewFixes()
+        testAskRouting()
         testOnboardingFlow()
         testCopilotSetupState()
         testProviderKeyCheck()
@@ -933,6 +944,608 @@ enum ProfileTest {
               window == ["Speaker 1": "Speaker 2", "Speaker 2": "Speaker 3"])
         let blip = M.windowMapping(newEmbeddings: ["Speaker 1": [0, 0, 1]], speech: ["Speaker 1": 1.5], anchors: known)
         check("window: a short unknown blip is left out", blip.isEmpty)
+    }
+
+    // MARK: - Ask Parrot chat
+
+    /// Runs `body` with these defaults set, then puts the old values back.
+    private static func withDefaults(_ values: [String: Any], _ body: () -> Void) {
+        let d = UserDefaults.standard
+        let old = values.keys.map { ($0, d.object(forKey: $0)) }
+        for (k, v) in values { d.set(v, forKey: k) }
+        body()
+        for (k, v) in old { if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) } }
+    }
+
+    @MainActor
+    static func testAskRoute() {
+        typealias S = SwitchingAnalysisProvider
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "", "onDeviceOnly": false]) {
+            check("ask route: same as reports by default", S.askKind == .claude)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "ollama", "askProvider": "", "onDeviceOnly": false]) {
+            check("ask route: follows the reports choice", S.askKind == .ollama)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "ollama", "onDeviceOnly": false]) {
+            check("ask route: its own choice wins", S.askKind == .ollama)
+        }
+        withDefaults(["copilotProvider": "claude", "reportsProvider": "", "askProvider": "claude", "onDeviceOnly": true]) {
+            check("ask route: on-device only forces Ollama", S.askKind == .ollama)
+        }
+        check("ask label: local model", S.askLabel(kind: .ollama, model: "gemma3:4b") == "gemma3:4b · on this Mac")
+        check("ask label: Claude", S.askLabel(kind: .claude, model: "claude-haiku-4-5") == "Claude Haiku · cloud")
+        check("ask label: custom server", S.askLabel(kind: .custom, model: "llama") == "llama · your server")
+    }
+
+    @MainActor
+    static func testAskChatStore() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("askchats-\(UUID().uuidString)")
+        let now = Date(timeIntervalSince1970: 1_790_300_000)
+        let store = AskChatStore(directory: dir)
+        check("chats: new store is empty", store.chats.isEmpty)
+
+        var chat = AskChat(title: AskChatStore.title(for: "  What did Acme push back on?\nmore "), scope: nil, scopeTitle: nil, now: now)
+        chat.messages.append(AskMessage(role: .me, text: "What did Acme push back on?"))
+        let meeting = UUID()
+        var answer = AskMessage(role: .parrot, text: "Price.")
+        answer.lines = [AskEngine.Line(text: "Price.", citations: [AskEngine.Citation(meetingID: meeting, time: 30)])]
+        answer.refs = [AskEngine.MeetingRef(ref: "M1", meetingID: meeting, title: "Acme renewal", date: now, people: ["Sam"])]
+        chat.messages.append(answer)
+        store.upsert(chat, now: now)
+        check("chats: title is the first line", chat.title == "What did Acme push back on?")
+
+        let reloaded = AskChatStore(directory: dir)
+        check("chats: saved and loaded", reloaded.chats == store.chats && reloaded.chats.count == 1)
+        check("chats: citations survive a reload", reloaded.chats.first?.messages.last?.lines.first?.citations.first?.time == 30)
+
+        var older = AskChat(title: "Old", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-40 * 86_400))
+        older.messages.append(AskMessage(role: .me, text: "Old"))
+        store.upsert(older, now: now.addingTimeInterval(-40 * 86_400))
+        check("chats: newest first", store.chats.first?.id == chat.id)
+        store.rename(chat.id, to: "Acme pricing")
+        check("chats: rename", store.chat(chat.id)?.title == "Acme pricing")
+        check("chats: stale sweep removes old chats", store.removeStale(olderThanDays: 30, now: now) == 1 && store.chats.count == 1)
+        store.delete(chat.id)
+        check("chats: delete", store.chats.isEmpty && AskChatStore(directory: dir).chats.isEmpty)
+
+        let long = AskChatStore.title(for: String(repeating: "a", count: 90))
+        check("chats: long titles are cut", long.count == 60 && long.hasSuffix("…"))
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let groups = AskChatStore.grouped([
+            AskChat(title: "a", scope: nil, scopeTitle: nil, now: now),
+            AskChat(title: "b", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-86_400)),
+            AskChat(title: "c", scope: nil, scopeTitle: nil, now: now.addingTimeInterval(-20 * 86_400)),
+        ], now: now, calendar: cal)
+        check("chats: day groups", groups.map(\.label).prefix(2) == ["Today", "Yesterday"] && groups.count == 3)
+
+        try? "not json".write(to: dir.appendingPathComponent("chats.json"), atomically: true, encoding: .utf8)
+        let broken = AskChatStore(directory: dir)
+        check("chats: a broken file starts empty and is kept aside",
+              broken.chats.isEmpty && FileManager.default.fileExists(atPath: dir.appendingPathComponent("chats.json.bad").path))
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    @MainActor
+    static func testAskNoAI() {
+        check("no AI: Ollama closed", AskEngine.ollamaNote(installed: nil, model: "gemma3:4b")
+              == "Ollama isn't open. Get it free at ollama.com, open it, then ask again. These are the closest moments.")
+        check("no AI: model missing", AskEngine.ollamaNote(installed: ["llama3.2:3b"], model: "gemma3:4b")
+              == "gemma3:4b isn't downloaded yet. Download it at the top of this chat. These are the closest moments.")
+        check("no AI: ready means no note", AskEngine.ollamaNote(installed: ["gemma3:4b"], model: "gemma3:4b") == nil)
+    }
+
+    @MainActor
+    static func testAskFollowUps() {
+        let acme = UUID()
+        let ref = AskEngine.MeetingRef(ref: "M1", meetingID: acme, title: "Acme renewal", date: .now, people: [])
+        func answer(_ text: String, at t: TimeInterval, privately: Bool = false) -> AskMessage {
+            var m = AskMessage(role: .parrot, text: text)
+            m.lines = [AskEngine.Line(text: text, citations: [AskEngine.Citation(meetingID: acme, time: t)])]
+            m.refs = [ref]
+            m.usedPrivate = privately
+            return m
+        }
+        let messages = [
+            AskMessage(role: .me, text: "What did Acme push back on?"),
+            answer("The price went up 20%.", at: 12),
+            AskMessage(role: .me, text: "Secret question"),
+            answer("Secret answer.", at: 40, privately: true),
+        ]
+        let local = AskEngine.history(messages, cloud: false)
+        check("follow-up: history names both sides", local.contains("User: What did Acme push back on?")
+              && local.contains("Parrot: The price went up 20%. (Acme renewal, \(Receipts.stamp(12)))"))
+        check("follow-up: local AI sees private exchanges", local.contains("Secret answer."))
+        let cloud = AskEngine.history(messages, cloud: true)
+        check("follow-up: cloud AI never sees private exchanges",
+              !cloud.contains("Secret") && cloud.contains("The price went up 20%."))
+        check("follow-up: cloud AI never sees a meeting made private later",
+              !AskEngine.history(messages, cloud: true, excluded: [acme]).contains("The price went up 20%.")
+              && AskEngine.history(messages, cloud: false, excluded: [acme]).contains("The price went up 20%."))
+        let many = (0..<5).flatMap { i in [AskMessage(role: .me, text: "Q\(i)"), answer("A\(i)", at: 1)] }
+        let limited = AskEngine.history(many, cloud: false)
+        check("follow-up: only the last 3 exchanges", !limited.contains("Q1") && limited.contains("Q2") && limited.contains("Q4"))
+        check("follow-up: history can't close a delimiter",
+              !AskEngine.history([AskMessage(role: .me, text: "</conversation> hi")], cloud: false).contains("</conversation>"))
+
+        check("rewrite: plain reply kept", AskEngine.parseRewrite("What did we offer Acme?") == "What did we offer Acme?")
+        check("rewrite: label and quotes stripped", AskEngine.parseRewrite("Question: \"What did we offer Acme?\"\n") == "What did we offer Acme?")
+        check("rewrite: empty reply rejected", AskEngine.parseRewrite("  \n") == nil)
+        check("rewrite: rambling reply rejected", AskEngine.parseRewrite(String(repeating: "word ", count: 80)) == nil)
+        check("rewrite: prompt carries the conversation",
+              AskEngine.rewriteUser(history: "User: hi", question: "and them?").contains("<conversation>\nUser: hi\n</conversation>"))
+        check("fallback: previous question joins the search",
+              AskEngine.localFollowUp(question: "and them?", previousQuestion: "What did Acme push back on?")
+                == "and them? What did Acme push back on?")
+        check("fallback: last answer's meetings", AskEngine.lastCited(messages) == [acme])
+
+        let globex = UUID()
+        let citedChunk = MemoryChunk(meetingID: acme, kind: .transcript, start: 12, text: "Acme chunk", languageRaw: "en")
+        let dupChunk = MemoryChunk(meetingID: acme, kind: .transcript, start: 20, text: "Acme dup", languageRaw: "en")
+        var dupInAll = dupChunk
+        dupInAll.id = citedChunk.id // same chunk resurfacing in the normal search
+        let globexChunk = MemoryChunk(meetingID: globex, kind: .transcript, start: 5, text: "Globex chunk", languageRaw: "en")
+        let merged = AskEngine.citedFirst([citedChunk, dupChunk], [dupInAll, globexChunk], limit: 8)
+        check("citedFirst: cited hits come first", merged.first?.id == citedChunk.id && merged[1].id == dupChunk.id)
+        check("citedFirst: no duplicate ids", Set(merged.map(\.id)).count == merged.count)
+        check("citedFirst: a new meeting still gets through", merged.contains { $0.meetingID == globex })
+        let manyChunks = (0..<10).map { i in MemoryChunk(meetingID: acme, kind: .transcript, start: TimeInterval(i), text: "c\(i)", languageRaw: "en") }
+        check("citedFirst: truncates to the limit", AskEngine.citedFirst(manyChunks, [], limit: 8).count == 8)
+
+        check("answer: no history, same prompt as before",
+              AskEngine.answerUser(question: "q", context: "c", history: "") == AskEngine.userContent(question: "q", context: "c"))
+        check("answer: history comes first",
+              AskEngine.answerUser(question: "q", context: "c", history: "User: hi").hasPrefix("<conversation>\nUser: hi\n</conversation>"))
+        check("answer: system prompt says history is context only", AskEngine.systemPrompt.contains("<conversation>"))
+        check("answer: never talks about excerpts", AskEngine.systemPrompt.contains("never mention"))
+        let colons = AskEngine.parse("Here is what happened:: [M1 00:12]", refs: [AskEngine.MeetingRef(ref: "M1", meetingID: UUID(), title: "Acme", date: .now, people: [])]) { _, _ in true }
+        check("answer: a doubled colon is tidied", colons.first?.text == "Here is what happened:")
+    }
+
+    @MainActor
+    static func testAskBroad() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.firstWeekday = 2   // Monday
+        // Friday 25 Sep 2026, 15:00 UTC
+        let now = Date(timeIntervalSince1970: 1_790_348_400)
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date { cal.date(from: DateComponents(year: y, month: m, day: d))! }
+        func range(_ q: String) -> DateInterval? { AskEngine.dateRange(in: q, now: now, calendar: cal) }
+
+        check("time words: today", range("what happened today?")?.start == day(2026, 9, 25))
+        check("time words: yesterday", range("Yesterday's call")?.start == day(2026, 9, 24))
+        check("time words: this week", range("promises this week")?.start == day(2026, 9, 21))
+        check("time words: last week", range("what about last week") == DateInterval(start: day(2026, 9, 14), end: day(2026, 9, 21)))
+        check("time words: this month", range("this month's calls")?.start == day(2026, 9, 1))
+        check("time words: last month", range("last month") == DateInterval(start: day(2026, 8, 1), end: day(2026, 9, 1)))
+        check("time words: none", range("what about pricing") == nil)
+        check("time words: whole words only", range("todays numbers") == nil)
+
+        let a = UUID(), b = UUID()
+        let chunks = (0..<5).map { MemoryChunk(meetingID: a, kind: .transcript, start: Double($0), text: "a\($0)", languageRaw: "en") }
+            + (0..<2).map { MemoryChunk(meetingID: b, kind: .transcript, start: Double($0), text: "b\($0)", languageRaw: "en") }
+        let capped = AskEngine.capped(chunks, perMeeting: 3, total: 12)
+        check("cap: at most 3 per meeting", capped.filter { $0.meetingID == a }.count == 3)
+        check("cap: other meetings get their turn", capped.filter { $0.meetingID == b }.count == 2)
+        check("cap: rank order kept", capped.map(\.text) == ["a0", "a1", "a2", "b0", "b1"])
+        check("cap: total limit", AskEngine.capped(chunks, perMeeting: 5, total: 4).count == 4)
+
+        // a's meeting is outside the range below; b's is inside.
+        let meetingDates: [(id: UUID, date: Date)] = [(a, day(2026, 9, 10)), (b, day(2026, 9, 22))]
+        let aRange = DateInterval(start: day(2026, 9, 20), end: day(2026, 9, 25))
+        check("scope: one-meeting chat ignores the date range",
+              AskEngine.searchScope(chatScope: a, range: aRange, meetings: meetingDates) == [a])
+        check("scope: all-meetings chat is narrowed to in-range meetings",
+              AskEngine.searchScope(chatScope: nil, range: aRange, meetings: meetingDates) == [b])
+        check("scope: no chat scope and no range gives nil",
+              AskEngine.searchScope(chatScope: nil, range: nil, meetings: meetingDates) == nil)
+    }
+
+    @MainActor
+    static func testAskFinalFixes() {
+        // 1. A local answer is private if its history carried a private exchange.
+        let pub = UUID(), secret = UUID()
+        func answer(_ text: String, cites id: UUID) -> AskMessage {
+            var m = AskMessage(role: .parrot, text: text)
+            m.lines = [AskEngine.Line(text: text, citations: [AskEngine.Citation(meetingID: id, time: 5)])]
+            m.refs = [AskEngine.MeetingRef(ref: "M1", meetingID: id, title: "t", date: .now, people: [])]
+            return m
+        }
+        let withSecret = [AskMessage(role: .me, text: "Secret?"), answer("Secret answer.", cites: secret)]
+        check("private: local turn with a private exchange in history is private",
+              AskEngine.answerIsPrivate(hitMeetingIDs: [pub], messages: withSecret, privateIDs: [secret], local: true))
+        check("private: local turn from a private hit is private",
+              AskEngine.answerIsPrivate(hitMeetingIDs: [secret], messages: [], privateIDs: [secret], local: true))
+        check("private: local turn with only public history and hits is not",
+              !AskEngine.answerIsPrivate(hitMeetingIDs: [pub], messages: [AskMessage(role: .me, text: "Q"), answer("A", cites: pub)],
+                                         privateIDs: [secret], local: true))
+        check("private: a cloud turn is never private",
+              !AskEngine.answerIsPrivate(hitMeetingIDs: [secret], messages: withSecret, privateIDs: [secret], local: false))
+
+        // 2. An unreadable chats.json is never replaced.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("askchats-locked-\(UUID().uuidString)")
+        let file = dir.appendingPathComponent("chats.json")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? "keep me".write(to: file, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        let locked = AskChatStore(directory: dir)
+        locked.upsert(AskChat(title: "New", scope: nil, scopeTitle: nil))
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        check("chats: an unreadable file is not overwritten", (try? String(contentsOf: file, encoding: .utf8)) == "keep me")
+        try? FileManager.default.removeItem(at: dir)
+
+        // 3. Ollama lists untagged models as "name:latest".
+        check("ollama: untagged name matches :latest", OllamaProbe.isInstalled("mistral", in: ["mistral:latest"]))
+        check("ollama: a different tag doesn't match", !OllamaProbe.isInstalled("gemma3:4b", in: ["gemma3:12b"]))
+        check("ollama: untagged model isn't reported missing", AskEngine.ollamaNote(installed: ["mistral:latest"], model: "mistral") == nil)
+
+        // 4. Rewrite: topic changes pass through; lead-in lines are skipped.
+        check("rewrite: prompt keeps unrelated follow-ups unchanged",
+              AskEngine.rewriteSystemPrompt.contains("If not, it stands on its own: reply with exactly SAME"))
+        check("rewrite: prompt shows a new-topic question kept as is",
+              AskEngine.rewriteSystemPrompt.contains("\"What did I promise this week?\" -> SAME"))
+        check("rewrite: SAME keeps the user's question",
+              AskEngine.parseRewrite("SAME", original: "What did I promise this week?") == "What did I promise this week?")
+        check("rewrite: SAME. with punctuation still counts", AskEngine.parseRewrite("Same.", original: "Q?") == "Q?")
+        check("rewrite: lead-in line skipped",
+              AskEngine.parseRewrite("Here is the standalone question:\nWhat did we offer Acme?") == "What did we offer Acme?")
+    }
+
+    /// The final review's wrong-answer phrasings.
+    static func testAskReviewFixes() {
+        func kind(_ q: String) -> AskEngine.MeetingQuestion? { AskEngine.meetingQuestion(q)?.kind }
+        check("count: 'meet with X' counts X", kind("Did I meet with Revolut?") == .countWith("revolut"))
+        check("count: 'met with X this month'", kind("Have I met with Kerem this month?") == .countWith("kerem"))
+        check("count: 'talk to X'", kind("Did I talk to Kerem this week?") == .countWith("kerem"))
+        check("count: 'go to last week' is a plain count", kind("How many meetings did I go to last week?") == .count)
+        check("count: 'have to cancel' goes to the AI", kind("how many meetings did I have to cancel?") == nil)
+        check("count: 'talk about X with Y' goes to the AI", kind("Did I talk about pricing with Acme?") == nil)
+        check("count: 'about pricing' goes to the AI", kind("How many meetings were about pricing?") == nil)
+        check("count: 'decide in my longest' goes to the AI", kind("What did we decide in my longest meeting?") == nil)
+        check("count: Turkish 'Kerem'le'", AskEngine.meetingQuestion("Kerem'le kaç toplantı yaptım?").map { $0.kind == .countWith("kerem") && $0.turkish } == true)
+        check("count: Turkish 'Revolut'la'", kind("Revolut'la kaç görüşme yaptım?") == .countWith("revolut"))
+        check("count: 'last 30 days' isn't 30 meetings", kind("My longest meetings in the last 30 days") == .longest(5))
+        check("count: '3 longest' still reads 3", kind("Show my 3 longest meetings") == .longest(3))
+        check("count: 'which was my longest' still counted", kind("Which was my longest meeting?") == .longest(5))
+
+        check("names: a word no passage has keeps the local model's passages",
+              MeetingMemory.promoteRare(queryWords: ["complycub"], chunkWords: [["a"], ["b"]], order: [1, 0],
+                                        topK: 2, namedOnly: true) == [1, 0])
+        check("names: a weekday is never a name",
+              MeetingMemory.promoteRare(queryWords: ["monday"], chunkWords: [["a"], ["monday"]], order: [0, 1],
+                                        topK: 2, namedOnly: true) == [0, 1])
+
+        let globex = UUID(), dietify = UUID()
+        let titles = [(id: globex, title: "Globex hiring sync"), (id: dietify, title: "Dietify demo")]
+        check("focus: a topic word searches everything", AskEngine.namedMeeting(in: "Any hiring updates?", titles: titles) == nil)
+        check("focus: a capitalised name focuses", AskEngine.namedMeeting(in: "What did Globex say?", titles: titles) == globex)
+        check("focus: 'the hiring call' focuses", AskEngine.namedMeeting(in: "What came up in the hiring call?", titles: titles) == globex)
+        check("focus: Turkish 'X toplantısında'", AskEngine.namedMeeting(in: "dietify toplantısında ne konuşuldu?", titles: titles) == dietify)
+
+        let now = Date()
+        let cal = Calendar.current
+        check("dates: Turkish 'dünkü'", AskEngine.dateRange(in: "Dünkü toplantıda ne oldu?", now: now)
+              == cal.date(byAdding: .day, value: -1, to: now).flatMap { cal.dateInterval(of: .day, for: $0) })
+        check("dates: Turkish 'geçen haftaki'", AskEngine.dateRange(in: "Geçen haftaki görüşmeler", now: now)?.end
+              == cal.dateInterval(of: .weekOfYear, for: now)?.start)
+        check("dates: Turkish 'bu ayki'", AskEngine.dateRange(in: "Bu ayki toplantılar", now: now) == cal.dateInterval(of: .month, for: now))
+        let thirty = AskEngine.dateRange(in: "my longest meetings in the last 30 days", now: now)
+        check("dates: 'last 30 days'", thirty?.end == now && thirty?.start == cal.date(byAdding: .day, value: -30, to: cal.startOfDay(for: now)))
+        // A fixed Saturday: Monday is 5 days back, Saturday is today.
+        let saturday = cal.date(from: DateComponents(year: 2026, month: 9, day: 26, hour: 15))!
+        check("dates: 'on Monday' is the latest Monday", AskEngine.dateRange(in: "What did we agree on Monday?", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 21)))
+        check("dates: Turkish 'pazartesi'", AskEngine.dateRange(in: "Pazartesi ne konuştuk?", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 21)))
+        check("dates: 'on Saturday' said on a Saturday is today", AskEngine.dateRange(in: "on saturday", now: saturday)
+              == cal.dateInterval(of: .day, for: saturday))
+        check("dates: 'next Monday' narrows nothing", AskEngine.dateRange(in: "What's planned for next Monday?", now: saturday) == nil)
+        check("dates: 'pazar' isn't 'pazartesi'", AskEngine.dateRange(in: "pazar günü", now: saturday)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 20)))
+    }
+
+    /// Records every prompt Ask Parrot sends, instead of sending it.
+    private final class PromptRecorder: AnalysisProvider, @unchecked Sendable {
+        var prompts: [String] = []
+        var isConfigured: Bool { true }
+        func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult { throw AnalysisError.missingAPIKey }
+        func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                       instructions: String, counterpart: String) async throws -> String { "" }
+        func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
+                            counterpart: String) async throws -> String { "" }
+        func complete(system: String, user: String, maxTokens: Int) async throws -> String {
+            prompts.append(system + "\n" + user)
+            return "SAME"
+        }
+    }
+
+    /// The whole `ask` path with a cloud AI: an on-device-only meeting never
+    /// reaches a prompt, and counts are done on the Mac with no AI at all.
+    @MainActor
+    static func testAskRouting() {
+        guard !CloudGate.forcesLocal else { print("  (skipped ask routing: on-device only is on)"); return }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { check("routing: container", false); return }
+        let context = container.mainContext
+        let recorder = PromptRecorder()
+        let rm = RecordingManager(memory: MeetingMemory(directory: nil), chats: AskChatStore(directory: nil), provider: recorder)
+        rm.attachForHarness(modelContext: context)
+        func add(_ title: String, _ text: String, onDeviceOnly: Bool) {
+            let m = Meeting(title: title, date: .now.addingTimeInterval(-3600))
+            m.status = .done
+            m.onDeviceOnly = onDeviceOnly
+            context.insert(m)
+            rm.memory.replace(meetingID: m.id, with: MeetingMemory.buildChunks(
+                meetingID: m.id, lines: [.init(start: 5, end: 9, speaker: "Sam", text: text)],
+                summary: nil, coaching: nil), fingerprint: 1)
+        }
+        add("Acme renewal", "The pricing went up twenty percent.", onDeviceOnly: false)
+        add("Zorblax merger", "The merger pricing is ninety million.", onDeviceOnly: true)
+        try? context.save()
+
+        let sem = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            let chat = AskChat(title: "Routing", scope: nil, scopeTitle: nil)
+            _ = await rm.ask("What happened with pricing?", in: chat)
+            _ = await rm.ask("What did Zorblax say about the merger?", in: chat)
+            let sent = recorder.prompts.joined(separator: "\n")
+            check("routing: the cloud AI was asked", !recorder.prompts.isEmpty)
+            check("routing: private passages never reach a prompt", !sent.contains("ninety million"))
+            check("routing: private titles never reach a prompt", !sent.contains("Zorblax merger"))
+            let before = recorder.prompts.count
+            let count = await rm.ask("How many meetings did I have today?", in: chat)
+            check("routing: counts never call the AI", recorder.prompts.count == before)
+            check("routing: counts say where they came from", count.model == "Counted on this Mac")
+            check("routing: a count that includes a private meeting is marked private", count.usedPrivate)
+            sem.signal()
+        }
+        while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: .now + 0.01) }
+    }
+
+    @MainActor
+    static func testAskDeepTestFixes() {
+        typealias E = AskEngine
+        // 1. Names beat the 5-letter stems.
+        let chunks: [Set<String>] = [
+            ["we", "must", "complete", "the", "compliance", "check"],
+            ["complex", "setup"],
+            ["milos", "from", "complycube", "offered", "an", "api"],
+            ["complete", "later"],
+        ]
+        let promoted = MeetingMemory.promoteRare(queryWords: ["did", "i", "meet", "complycube"], chunkWords: chunks,
+                                                 order: [0, 1, 3], topK: 3)
+        check("names: a rare name's passage comes first", promoted.first == 2 && promoted.count == 3)
+        check("names: common words change nothing",
+              MeetingMemory.promoteRare(queryWords: ["meetings", "about"], chunkWords: chunks, order: [0, 1], topK: 2) == [0, 1])
+        let many = Array(repeating: Set(["kerem", "said"]), count: 40) + [Set(["hello"])]
+        check("names: a word in many passages isn't a name",
+              MeetingMemory.promoteRare(queryWords: ["kerem"], chunkWords: many, order: [40, 0], topK: 2) == [40, 0])
+
+        // 2. A question naming one meeting.
+        let a = UUID(), b = UUID(), c = UUID()
+        let titles: [(id: UUID, title: String)] = [(a, "Dietify - Tasks Review"), (b, "Meeting Revolut Sep 23, 2026 at 10:59 am"),
+                                                   (c, "Meeting Jul 8, 2026 at 2:49 pm")]
+        check("named: Turkish question names Dietify", E.namedMeeting(in: "Dietify toplantısında hangi görevler konuşuldu?", titles: titles) == a)
+        check("named: the Revolut call", E.namedMeeting(in: "what did Mac say in the Revolut call?", titles: titles) == b)
+        check("named: auto titles name nothing", E.namedMeeting(in: "what happened in the meeting on Jul 8?", titles: titles) == nil)
+        check("named: two named meetings is not one", E.namedMeeting(in: "compare Dietify and Revolut", titles: titles) == nil)
+
+        // 3. Rewrite only when the follow-up points back.
+        check("points back: pronoun", E.pointsBack("and what did we offer them?"))
+        check("points back: Turkish pronoun", E.pointsBack("onlar ne dedi fiyat hakkında?"))
+        check("points back: very short", E.pointsBack("why?"))
+        check("points back: a new question doesn't", !E.pointsBack("Any hiring updates?") && !E.pointsBack("What did we agree with Google about the partnership?"))
+        check("rewrite: an answer instead of a question is refused",
+              E.parseRewrite("You had 19 meetings between 1 Aug and 31 Aug 2026.", original: "geçen ay kaç toplantı yaptım?") == nil)
+        check("rewrite: a statement for a question is refused", E.parseRewrite("Kerem is Uygar.", original: "Who is Kerem?") == nil)
+        check("language: Turkish question gets a Turkish hint",
+              E.languageHint(for: "Dietify toplantısında hangi görevler konuşuldu?") == "Answer in Turkish.\n")
+        check("language: English needs no hint", E.languageHint(for: "What did Acme push back on?") == "")
+        check("names: a local model gets only the named passages",
+              MeetingMemory.promoteRare(queryWords: ["complycube"], chunkWords: chunks, order: [0, 1, 3], topK: 3, namedOnly: true) == [2])
+        check("name words: capitalised mid-sentence", E.nameWords(in: "What did Milos from Complycube offer?", known: [])
+              == ["milos", "complycube"])
+        check("name words: ordinary words aren't names",
+              E.nameWords(in: "Emre ne satıyor ve neden UK şirketi istiyor?", known: []) == [] )
+        check("name words: a title word counts even lowercase or first",
+              E.nameWords(in: "Dietify toplantısında neler oldu", known: ["dietify"]) == ["dietify"])
+        let past = [AskMessage(role: .me, text: "What did Milos offer?"), AskMessage(role: .parrot, text: "An API.")]
+        check("history: questions only for a local model",
+              E.history(past, cloud: false, answers: false) == "User: What did Milos offer?")
+        check("answer: garbled lines don't mean refusing", E.systemPrompt.contains("don't refuse because others aren't"))
+        check("with: how many meetings with Revolut", E.meetingQuestion("How many meetings did I have with Revolut?")?.kind == .countWith("revolut"))
+        check("with: did I meet", E.meetingQuestion("Did I have any meetings with Complycube?")?.kind == .countWith("complycube"))
+        check("with: Turkish", E.meetingQuestion("Revolut ile kaç toplantı yaptım?").map { $0.kind == .countWith("revolut") && $0.turkish } == true)
+        check("with: 'my team' isn't a name", E.meetingQuestion("how many meetings with my team") == nil)
+        let one = [(id: a, title: "Meeting Revolut Sep 23", date: Date(timeIntervalSince1970: 1_790_000_000), duration: 1340.0)]
+        check("with: answer names the meetings",
+              E.meetingAnswer(.countWith("revolut"), turkish: false, items: one, range: nil).first?.text == "1 meeting mentions Revolut:")
+        check("with: none found", E.meetingAnswer(.countWith("google"), turkish: false, items: [], range: nil).first?.text == "No meetings mention Google.")
+        let long = (0..<20).map { MemoryChunk(meetingID: a, kind: .transcript, start: Double($0 * 60), text: "t\($0)", languageRaw: "tr") }
+        let spread = E.scopedHits(Array(long.prefix(3)), report: [], limit: 6, whole: long)
+        check("summary: no report spreads over the whole call",
+              spread.count == 6 && spread.contains { $0.start == 0 } && spread.contains { $0.start == 19 * 60 })
+        check("summary q: English and Turkish", E.isSummaryQuestion("summarise the meeting") && E.isSummaryQuestion("toplantıyı özetle")
+              && !E.isSummaryQuestion("what are the next steps?"))
+        let angle = E.parse("Emre sells textiles <M1 00:12>.", refs: [E.MeetingRef(ref: "M1", meetingID: a, title: "Jul 2", date: .now, people: [])]) { _, _ in true }
+        check("parse: <M1 00:12> is a citation", angle.first?.citations.count == 1 && angle.first?.text == "Emre sells textiles.")
+        check("summary hint: only for summaries", E.summaryHint(for: "summarise the meeting").hasPrefix("Summarise from the clear lines")
+              && E.summaryHint(for: "who is Kerem?") == "")
+        check("evenly: first and last", E.evenly(Array(0..<10), count: 3) == [0, 4, 9])
+        check("rewrite: a real rewrite passes",
+              E.parseRewrite("What did we offer Acme on pricing?", original: "and what did we offer them?") == "What did we offer Acme on pricing?")
+    }
+
+    @MainActor
+    static func testAskMeetingQuestions() {
+        typealias E = AskEngine
+        check("meeting q: how many", E.meetingQuestion("how many meetings did I do this week")?.kind == .count)
+        check("meeting q: Turkish count", E.meetingQuestion("bu hafta kaç toplantı yaptım?").map { $0.kind == .count && $0.turkish } == true)
+        check("meeting q: longest with a number", E.meetingQuestion("my top 3 longest meetings?")?.kind == .longest(3))
+        check("meeting q: longest defaults to 5", E.meetingQuestion("which were my longest calls")?.kind == .longest(5))
+        check("meeting q: Turkish longest", E.meetingQuestion("en uzun toplantılarım hangileri")?.kind == .longest(5))
+        check("meeting q: time spent", E.meetingQuestion("how much time did I spend in meetings last month")?.kind == .totalTime)
+        check("meeting q: longest with someone goes to the AI", E.meetingQuestion("my longest meetings with Revolut") == nil)
+        check("meeting q: other questions go to the AI", E.meetingQuestion("how many people were in the meeting?") == nil
+              && E.meetingQuestion("what did Acme push back on?") == nil)
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.firstWeekday = 2
+        let now = Date(timeIntervalSince1970: 1_790_348_400)   // Fri 25 Sep 2026
+        check("time words: Turkish this week", E.dateRange(in: "bu hafta kaç toplantı", now: now, calendar: cal)
+              == cal.dateInterval(of: .weekOfYear, for: now))
+        check("time words: Turkish yesterday", E.dateRange(in: "dün ne konuştuk", now: now, calendar: cal)?.start
+              == cal.date(from: DateComponents(year: 2026, month: 9, day: 24)))
+
+        let a = UUID(), b = UUID(), c = UUID()
+        let d = cal.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 11))!
+        let items: [(id: UUID, title: String, date: Date, duration: TimeInterval)] = [
+            (a, "Revolut", d, 22 * 60), (b, "Standup", d.addingTimeInterval(86_400), 30), (c, "Dietify", d.addingTimeInterval(-86_400 * 150), 103 * 60),
+        ]
+        let count = E.meetingAnswer(.count, turkish: false, items: items, range: nil)
+        check("meeting a: count and total", count.first?.text == "You had 3 meetings, 2 h 6 min in total.")
+        check("meeting a: newest listed first, as chips",
+              count.dropFirst().first?.citations == [E.Citation(meetingID: b, time: nil)] && count.count == 4)
+        let longest = E.meetingAnswer(.longest(2), turkish: false, items: items, range: nil)
+        check("meeting a: longest ranks by length", longest.map(\.text) == ["Your 2 longest meetings:",
+              "- Dietify: 1 h 43 min, 26 Apr 2026", "- Revolut: 22 min, 23 Sep 2026"])
+        check("meeting a: none", E.meetingAnswer(.count, turkish: false, items: [], range: nil).first?.text == "You had no meetings yet.")
+        check("meeting a: Turkish total time",
+              E.meetingAnswer(.totalTime, turkish: true, items: items, range: nil).first?.text == "3 toplantıda toplam 2 sa 6 dk geçirdin.")
+
+        let one = E.MeetingRef(ref: "M1", meetingID: a, title: "Acme", date: .now, people: [])
+        let two = E.MeetingRef(ref: "M2", meetingID: b, title: "Globex", date: .now, people: [])
+        let paren = E.parse("The contract comes by Friday (M1, M2).", refs: [one, two]) { _, _ in true }
+        check("parens: (M1, M2) become chips", paren.first?.citations.count == 2 && paren.first?.text == "The contract comes by Friday.")
+        let prose = E.parse("We meet at noon (10:59 am) (see above).", refs: [one, two]) { _, _ in true }
+        check("parens: ordinary brackets stay", prose.first?.text == "We meet at noon (10:59 am) (see above)." && prose.first?.citations.isEmpty == true)
+    }
+
+    static func testAskRealTestFixes() {
+        // 1. A one-meeting chat: report first, no duplicates, limit on the rest.
+        let one = UUID()
+        let report = (0..<4).map { i in MemoryChunk(meetingID: one, kind: .report, start: 0, text: "r\(i)", languageRaw: "en") }
+        let ranked = [report[1]] + (0..<20).map { i in
+            MemoryChunk(meetingID: one, kind: .transcript, start: TimeInterval(i), text: "t\(i)", languageRaw: "en") }
+        let scoped = AskEngine.scopedHits(ranked, report: report, limit: 5)
+        check("scoped: report chunks come first", scoped.prefix(3).map(\.id) == report.prefix(3).map(\.id))
+        check("scoped: no duplicate ids", Set(scoped.map(\.id)).count == scoped.count)
+        check("scoped: limit counts only the passages after the report", scoped.count == 3 + 5)
+        check("scoped: no report gives the first ranked chunks",
+              AskEngine.scopedHits(ranked, report: []).map(\.id) == ranked.prefix(12).map(\.id))
+
+        // 2. The meeting list.
+        let cal = Calendar.current
+        let sep23 = cal.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 10, minute: 59))!
+        let sep22 = cal.date(from: DateComponents(year: 2026, month: 9, day: 22, hour: 9, minute: 5))!
+        let sep21 = cal.date(from: DateComponents(year: 2026, month: 9, day: 21, hour: 14, minute: 0))!
+        let items: [(title: String, date: Date, duration: TimeInterval, people: [String])] = [
+            ("Standup", sep22, 30, []),
+            ("Meeting <Revolut>", sep23, 22 * 60 + 20, ["Mac", "Uygar", "Mac"]),
+            ("Old one", sep21, 3600, ["Ana"]),
+        ]
+        let list = AskEngine.meetingList(items, limit: 2)
+        let rows = list.components(separatedBy: "\n")
+        check("list: newest first, line format",
+              rows.first == "- Wed 23 Sep 2026 10:59, 22 min, \"Meeting ‹Revolut›\", with Mac, Uygar")
+        check("list: no people, under a minute", rows.dropFirst().first == "- Tue 22 Sep 2026 09:05, under 1 min, \"Standup\"")
+        check("list: cut list says how many are left out", rows.count == 3 && rows.last == "(1 older meeting not listed)")
+        check("list: several left out is plural",
+              AskEngine.meetingList(items, limit: 1).hasSuffix("(2 older meetings not listed)"))
+        check("list: full list has no cut line", !AskEngine.meetingList(items, limit: 3).contains("not listed"))
+        check("list: empty input gives nothing", AskEngine.meetingList([], limit: 5) == "")
+        let facts = AskEngine.meetingFacts(items, longest: 2).components(separatedBy: "\n")
+        check("facts: total counted on the Mac",
+              facts.first == "In total: 3 meetings, 1 h 23 min recorded (21 Sep 2026 to 23 Sep 2026).")
+        check("facts: longest first, by length not date",
+              facts.last == "Longest: \"Old one\" (1 h 0 min, 21 Sep 2026); \"Meeting ‹Revolut›\" (22 min, 23 Sep 2026)")
+        check("facts: one meeting is singular", AskEngine.meetingFacts([items[0]]).hasPrefix("In total: 1 meeting, under 1 min"))
+        check("facts: nothing for no meetings", AskEngine.meetingFacts([]) == "")
+        check("facts: system prompt says use them as they are", AskEngine.systemPrompt.contains("don't count again"))
+        let factsReq = AskEngine.answerUser(question: "how many?", context: "c", history: "", meetingList: "- m", facts: "In total: 2 meetings")
+        check("facts: sit right before the question",
+              factsReq.hasSuffix("Counted by Parrot from every meeting (exact):\nIn total: 2 meetings\n\nQuestion: how many?"))
+        let withList = AskEngine.answerUser(question: "q", context: "c", history: "", meetingList: "- a meeting")
+        check("list: request carries the list between excerpts and question",
+              withList.contains("</meeting_excerpts>\n\n<meeting_list>\n- a meeting\n</meeting_list>\n\nQuestion: q"))
+        check("list: no list, no block", !AskEngine.answerUser(question: "q", context: "c", history: "").contains("<meeting_list>"))
+        check("list: system prompt explains the list", AskEngine.systemPrompt.contains("<meeting_list>"))
+
+        // 3. Local-model stamps and junk brackets.
+        let solo = UUID(), other = UUID()
+        let soloRefs = [AskEngine.MeetingRef(ref: "M1", meetingID: solo, title: "t", date: .now, people: [])]
+        check("parse: bare stamps attach to the only meeting",
+              AskEngine.parseGroup("03:52, 04:04", refs: ["M1": solo])?.map { $0.1 } == [232, 244])
+        check("parse: bare stamps with several meetings are not citations",
+              AskEngine.parseGroup("03:52", refs: ["M1": solo, "M2": other]) == nil)
+        let gemma = AskEngine.parse("Pricing came up [03:52, 04:04]. See [Report - Various timestamps]. They said [sic] it.",
+                                    refs: soloRefs) { _, _ in true }
+        check("parse: bare stamps become citations", gemma.first?.citations.count == 2)
+        check("parse: junk citation-like bracket removed", gemma.first.map { !$0.text.contains("Report") } == true)
+        check("parse: other brackets kept", gemma.first?.text == "Pricing came up. See. They said [sic] it.")
+
+        // 3b. Titles as labels, tidy leftovers, whole-word junk rule.
+        let acmeID = UUID(), followID = UUID()
+        let titled = [AskEngine.MeetingRef(ref: "M1", meetingID: acmeID, title: "Acme renewal", date: .now, people: []),
+                      AskEngine.MeetingRef(ref: "M2", meetingID: followID, title: "Acme renewal follow-up", date: .now, people: [])]
+        let titleTable = ["M1": acmeID, "M2": followID]
+        let titles = titled.map { (title: $0.title, label: $0.ref) }
+        check("title: [Acme renewal, 00:12] cites Acme at 12 s",
+              AskEngine.parseGroup("Acme renewal, 00:12", refs: titleTable, titles: titles).map { $0.map { "\($0.0)\($0.1 ?? -1)" } }
+                == ["\(acmeID)12.0"])
+        check("title: the longest matching title wins",
+              AskEngine.parseGroup("Acme renewal follow-up 00:12, 00:36", refs: titleTable, titles: titles)?.map(\.0) == [followID, followID])
+        check("title: a title with commas and digits matches whole",
+              AskEngine.parseGroup("Meeting Sep 23, 2026 at 10:59 am, 01:05", refs: ["M1": acmeID],
+                                   titles: [("Meeting Sep 23, 2026 at 10:59 am", "M1")])?.map(\.1) == [65])
+        let gemmaRaw = AskEngine.parse("You had two meetings this week. [Acme renewal, 00:12; Acme renewal, 00:20] and [Acme renewal, 00:36].",
+                                       refs: titled) { _, _ in true }
+        check("title: gemma's title citations parse, no dangling and",
+              gemmaRaw.first?.text == "You had two meetings this week." && gemmaRaw.first?.citations.count == 3)
+        let unknownTitle = AskEngine.parse("See [Globex notes] [Globex sync, 00:12].", refs: titled) { _, _ in true }
+        check("title: an unknown title falls to the junk and keep rules",
+              unknownTitle.first?.text == "See [Globex notes]." && unknownTitle.first?.citations.isEmpty == true)
+        let joined = AskEngine.parse("Sam said X [M1 00:12] and [M1 00:36].\n- [M9 01:00]\nKeep this or that.", refs: titled) { _, _ in true }
+        check("tidy: no dangling joiner after removed citations", joined.first?.text == "Sam said X.")
+        check("tidy: a bullet emptied of content is dropped", joined.count == 2 && joined.last?.text == "Keep this or that.")
+        check("tidy: dangling comma dropped",
+              AskEngine.parse("Pricing and terms, [Report - notes].", refs: titled) { _, _ in true }.first?.text == "Pricing and terms.")
+        check("junk: whole words only, [unreported] kept",
+              AskEngine.parse("It was [unreported] then.", refs: titled) { _, _ in true }.first?.text == "It was [unreported] then.")
+
+        // 3c. Review fixes: shared titles, title-only brackets, "...", safe titles.
+        let weekly1 = UUID(), weekly2 = UUID()
+        let weeklies = [AskEngine.MeetingRef(ref: "M1", meetingID: weekly1, title: "Weekly sync", date: .now, people: []),
+                        AskEngine.MeetingRef(ref: "M2", meetingID: weekly2, title: "weekly sync", date: .now, people: [])]
+        let shared = AskEngine.parse("We agreed [Weekly sync, 12:03].", refs: weeklies) { _, _ in true }
+        check("title: a title two meetings share cites neither", shared.first?.citations.isEmpty == true)
+        let titleOnly = AskEngine.parse("I think [Acme renewal] is key.", refs: titled) { _, _ in true }
+        check("title: a title with no time stays as text",
+              titleOnly.first?.text == "I think [Acme renewal] is key." && titleOnly.first?.citations.isEmpty == true)
+        check("tidy: an ellipsis before a citation stays",
+              AskEngine.parse("and then... [M1 00:12]", refs: titled) { _, _ in true }.first?.text == "and then...")
+        let angled = [AskEngine.MeetingRef(ref: "M1", meetingID: acmeID, title: "Q3 <draft> review", date: .now, people: []),
+                      AskEngine.MeetingRef(ref: "M2", meetingID: followID, title: "Other", date: .now, people: [])]
+        check("title: a title with < > matches as the model saw it",
+              AskEngine.parse("Done [Q3 ‹draft› review, 00:12].", refs: angled) { _, _ in true }.first?.citations
+                == [AskEngine.Citation(meetingID: acmeID, time: 12)])
+
+        // 4. "That meeting" is the one just discussed.
+        check("rewrite: that call means the last one discussed",
+              AskEngine.rewriteSystemPrompt.contains("\"what did we decide in that call?\" -> What did we decide in the Acme pricing call?"))
+
+        // 5. The private-meeting note once per chat.
+        var noted = AskMessage(role: .parrot, text: "a")
+        noted.note = AskEngine.privateNoteText
+        check("note: first cloud answer gets the private note",
+              AskEngine.privateNote(skipsPrivate: true, messages: []) == AskEngine.privateNoteText)
+        check("note: not repeated in the same chat",
+              AskEngine.privateNote(skipsPrivate: true, messages: [AskMessage(role: .me, text: "q"), noted]) == nil)
+        check("note: none when nothing is skipped", AskEngine.privateNote(skipsPrivate: false, messages: []) == nil)
     }
 
     static func testDiarizedLabel() {

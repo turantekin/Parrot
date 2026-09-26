@@ -9,7 +9,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 178 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
 | `Parrot/ProfileTest.swift` | 1750 | `--profile-test`: headless logic harness, ~540 checks |
-| `Parrot/SnapshotTool.swift` | 954 | Offscreen PNG renderers + transcribe/analyze/capture harnesses |
+| `Parrot/SnapshotTool.swift` | 954 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama |
 | `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
 
 ## Models (SwiftData `@Model` + Codable values)
@@ -58,6 +58,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/CalendarService.swift` | 250 | EventKit read-only: current event match, notes cleaning, invite context, title → profile |
 | `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
 | `Services/MeetingMemory.swift` | 300 | Local index of finished meetings (chunks + on-device vectors, one file per meeting), hybrid search |
+| `Services/AskChatStore.swift` | 170 | Ask Parrot's saved chats: AskMessage/AskChat values, one JSON file, rename/delete/stale sweep, titles, day groups |
 | `Services/AskEngine.swift` | 260 | Ask Parrot prompt/context, `[M2 12:34]` citation parsing + checks; LastCallBrief (previous meeting, open items) |
 | `Services/RecordingManager+Memory.swift` | 110 | meetingFinished hook, memory sync, previous meeting, `ask()` |
 | `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
@@ -77,7 +78,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Views/ContentView.swift` | 190 | Root split view + empty state + corner bug button |
+| `Views/ContentView.swift` | 190 | Root split view (`MainPage`: dashboard/settings/ask/meeting) + empty state + corner bug button |
 | `Views/SidebarView.swift` | 361 | Meeting list, rows, talk-ratio strip |
 | `Views/DashboardView.swift` | 350 | Landing stats + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
@@ -110,7 +111,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/MenuBarView.swift` | 59 | Menu bar extra |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
-| `Views/AskView.swift` | 250 | Ask Parrot sheet: question, cited answer chips, sources, privacy line |
+| `Views/AskPageView.swift` | ~330 | Ask Parrot page: saved-chat list, conversation, AI menu, Stop |
+| `Views/AskAnswerView.swift` | ~130 | ParrotAvatar + AskAnswerView (answer lines, citation chips, sources) |
 | `Views/ConnectionsPrivacySettings.swift` | 260 | Settings → Connections (folder, email, webhook, MCP) and → Privacy (lock, redaction, consent, clean-up) |
 
 ## Build & non-source

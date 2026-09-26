@@ -59,6 +59,8 @@ struct SettingsView: View {
     @AppStorage("copilotWindow") private var copilotWindow = CopilotWindow.standard.rawValue
     /// "" = same backend as live cards.
     @AppStorage("reportsProvider") private var reportsProvider = ""
+    /// "" = same backend as reports.
+    @AppStorage("askProvider") private var askProvider = ""
     @AppStorage("copilotOllamaModel") private var copilotOllamaModel = "llama3.2:3b"
     @AppStorage("copilotCustomBaseURL") private var copilotCustomBaseURL = ""
     @AppStorage("copilotCustomModel") private var copilotCustomModel = ""
@@ -583,6 +585,26 @@ struct SettingsView: View {
 
                 if let reportsKind = CopilotProviderKind(rawValue: reportsProvider), reportsKind != liveKind {
                     providerConfig(for: reportsKind)
+                }
+
+                SettingsLabeledRow(
+                    title: "Ask Parrot",
+                    detail: "Answers questions about your past calls. Pick Ollama to keep them free and on this Mac. If this one isn't set up, Ask uses the reports AI."
+                ) {
+                    Picker("", selection: $askProvider) {
+                        Text("Same as reports").tag("")
+                        ForEach(CopilotProviderKind.allCases) { kind in
+                            Text(kind.label).tag(kind.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+
+                if let askKind = CopilotProviderKind(rawValue: askProvider), askKind != liveKind,
+                   askKind.rawValue != reportsProvider {
+                    providerConfig(for: askKind)
                 }
             }
         }
