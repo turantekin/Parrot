@@ -373,8 +373,14 @@ enum HelpShots {
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.colorSpace = .sRGB
-        window.appearance = NSAppearance(named: .aqua)
-        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
+        // `--dark` renders the same shots in dark mode, for checking a PR; the
+        // user guide ships the light set.
+        let dark = ProcessInfo.processInfo.arguments.contains("--dark")
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        // The bitmap cache skips the window's own background, so dark shots
+        // paint it explicitly (light ones keep the white the guide ships with).
+        let host = NSHostingView(rootView: view.frame(width: size.width, height: size.height)
+            .background(dark ? Theme.Colors.panel : .clear))
         host.frame = NSRect(origin: .zero, size: size)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
