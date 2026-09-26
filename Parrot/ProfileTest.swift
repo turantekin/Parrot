@@ -2718,7 +2718,7 @@ enum ProfileTest {
 
     @MainActor
     static func testMCPServer() {
-        let a = UUID(), old = UUID(), hidden = UUID()
+        let a = UUID(), old = UUID(), hidden = UUID(), beta = UUID()
         let day: TimeInterval = 86_400
         let meetings = [
             MCPServer.MeetingInfo(
@@ -2728,7 +2728,14 @@ enum ProfileTest {
             MCPServer.MeetingInfo(
                 id: old, title: "Globex kickoff", date: Date().addingTimeInterval(-40 * day), durationMinutes: 20,
                 people: ["Sarah Lee"], profile: nil, summary: nil, coaching: nil, notes: "", bookmarks: []),
+            MCPServer.MeetingInfo(
+                id: beta, title: "Beta sync", date: Date().addingTimeInterval(-3 * day), durationMinutes: 15,
+                people: ["Priya"], profile: nil,
+                summary: "Good call.\n\nNext steps:\n- I send the proposal [01:00]\n- Priya shares the budget sheet [02:00]\n- Book a demo\n- None",
+                coaching: "Commitments & follow-ups:\n- You send the proposal [01:00]", notes: "", bookmarks: []),
         ]
+        let betaLines: [ReceiptIndex.Line] = [.init(start: 60, end: 64, speaker: "Me", text: "I'll send the proposal tomorrow."),
+                                              .init(start: 120, end: 125, speaker: "Priya", text: "I'll share the budget sheet.")]
         func chunk(_ id: UUID, _ text: String) -> MemoryChunk {
             MeetingMemory.buildChunks(meetingID: id, lines: [.init(start: 30, end: 33, speaker: "Jeremy", text: text)],
                                       summary: nil, coaching: nil)[0]
@@ -2749,6 +2756,7 @@ enum ProfileTest {
                 meetings: { meetings },
                 transcript: { $0 == a ? [.init(start: 30, end: 33, speaker: "Jeremy", text: "Send the contract.")]
                                       : $0 == old ? long : [] },
+                receipts: { ReceiptIndex(lines: $0 == beta ? betaLines : []) },
                 search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
             return awaitMain { await MCPServer.handle(msg, source: source) }
         }
@@ -2759,7 +2767,7 @@ enum ProfileTest {
         check("mcp: ping", call("ping")?["result"] != nil)
         let tools = (call("tools/list")?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         check("mcp: read-only tools listed", tools?.compactMap { $0["name"] as? String }
-              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript"])
+              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments"])
         func text(_ reply: [String: Any]?) -> String {
             (((reply?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         }
@@ -2806,6 +2814,19 @@ enum ProfileTest {
         let firstPage = tool("get_meeting", ["id": old.uuidString, "include_transcript": true])
         check("mcp: get_meeting gives the first page and a pointer", firstPage.contains("line 0\n")
               && !firstPage.contains("line 999") && firstPage.contains("call get_transcript"))
+        let mine = tool("list_commitments", ["owner": "me"])
+        check("mcp: my commitments", mine.hasPrefix("- I send the proposal | owner: me | at 01:00 | Beta sync")
+              && !mine.contains("budget"))
+        check("mcp: a restated promise counts once", mine.components(separatedBy: "\n").count == 1)
+        let priyas = tool("list_commitments", ["owner": "priya"])
+        check("mcp: someone else's commitments", priyas.contains("Priya shares the budget sheet | owner: Priya | at 02:00")
+              && !priyas.contains("proposal"))
+        check("mcp: others", tool("list_commitments", ["owner": "others"]) == priyas)
+        let all = tool("list_commitments", [:])
+        check("mcp: no receipt, owner unclear", all.contains("- Book a demo | owner: unclear | Beta sync"))
+        check("mcp: placeholders skipped", !all.contains("None"))
+        check("mcp: commitments honour the date filter", tool("list_commitments", ["since": twentyDaysAgo, "until": "2000-01-01"])
+              == "No commitments found.")
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26

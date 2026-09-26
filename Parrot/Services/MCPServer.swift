@@ -37,6 +37,9 @@ enum MCPServer {
         var meetings: () -> [MeetingInfo]
         /// Time-sorted lines with speaker names; empty when not shareable.
         var transcript: (UUID) -> [ReceiptIndex.Line]
+        /// The transcript as a receipts index, for commitment owners (only
+        /// list_commitments pays for it). Names and times, no text leaves.
+        var receipts: (UUID) -> ReceiptIndex
         /// Hybrid search (exact words + on-device meaning) within these meetings.
         var search: @MainActor (String, Set<UUID>, Int) async -> [MemoryChunk]
     }
@@ -77,13 +80,16 @@ enum MCPServer {
                 // A fresh context and memory per request: a call recorded (or a
                 // report finished) while the AI app is open shows up right away.
                 let context = ModelContext(container)
+                func shareable(_ id: UUID) -> Meeting? {
+                    let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
+                    guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m), m.profile?.onDeviceOnly != true
+                    else { return nil }
+                    return m
+                }
                 let source = DataSource(
                     meetings: { snapshot(context) },
-                    transcript: { id in
-                        let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
-                        guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m) else { return [] }
-                        return m.receiptIndex.lines
-                    },
+                    transcript: { shareable($0)?.receiptIndex.lines ?? [] },
+                    receipts: { shareable($0)?.receiptIndex ?? .empty },
                     // ponytail: loads every meeting's chunks from disk per search;
                     // keep one MeetingMemory alive if long histories feel slow.
                     search: { query, ids, limit in await MeetingMemory().search(query, within: ids, topK: limit) })
@@ -213,6 +219,17 @@ enum MCPServer {
                 "required": ["id"],
             ],
         ],
+        [
+            "name": "list_commitments",
+            "description": "What people promised: the next steps and commitments from meeting reports, newest meeting first, each with its owner, meeting and time. Owner is who said the line the report cites (\"unclear\" when it cites none); check the time in get_transcript when it matters.",
+            "inputSchema": [
+                "type": "object",
+                "properties": filterProperties.merging([
+                    "owner": ["type": "string", "description": "\"me\", \"others\", or a name."],
+                    "limit": ["type": "integer", "description": "How many (default 30, max 100)."],
+                ]) { a, _ in a },
+            ],
+        ],
     ]
 
     /// Narrowing shared by the tools that list or search meetings.
@@ -270,7 +287,8 @@ enum MCPServer {
     @MainActor
     static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
-        guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript"].contains(name) else { return nil }
+        guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments"].contains(name)
+        else { return nil }
         let meetings = source.meetings()
         switch name {
         case "list_meetings":
@@ -338,6 +356,24 @@ enum MCPServer {
                 let when = c.kind == .transcript ? " at \(Receipts.stamp(c.start))" : " (report)"
                 return "\(m.title) — \(m.date.formatted(dateFormat))\(when) — id \(m.id.uuidString)\n\(c.text)"
             }.joined(separator: "\n\n---\n\n")
+
+        case "list_commitments":
+            guard let meetings = filtered(meetings, args: args) else { return badWhen }
+            let owner = (args["owner"] as? String) ?? ""
+            let limit = min(max((args["limit"] as? Int) ?? 30, 1), 100)
+            var found: [MCPCommitments.Item] = []
+            for m in meetings where found.count < limit && (m.summary != nil || m.coaching != nil) {
+                found += MCPCommitments.items(meetingID: m.id, title: m.title, date: m.date,
+                                              reports: [m.summary, m.coaching], index: source.receipts(m.id))
+                    .filter { MCPCommitments.matches($0, owner: owner) }
+            }
+            guard !found.isEmpty else { return "No commitments found." }
+            let dayFormat = Date.FormatStyle(date: .abbreviated, time: .omitted)
+            return found.prefix(limit).map { c in
+                "- \(c.text) | owner: \(c.owner.map { $0 == "Me" ? "me" : $0 } ?? "unclear")"
+                    + (c.stamp.map { " | at \($0)" } ?? "")
+                    + " | \(c.title), \(c.date.formatted(dayFormat)) | id \(c.meetingID.uuidString)"
+            }.joined(separator: "\n")
 
         default:
             return nil
