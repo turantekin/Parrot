@@ -43,7 +43,9 @@ struct ReadyStep: View {
         .frame(maxWidth: 480)
         .padding(Theme.Metrics.pad)
         .onAppear {
-            hasClaudeKey = APIKeyStore.load() != nil
+            if !UserDefaults.standard.bool(forKey: "onboardingNoKeyPrefill") {
+                hasClaudeKey = APIKeyStore.load() != nil
+            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.55).delay(0.05)) { celebrate = true }
         }
     }
