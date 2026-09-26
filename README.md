@@ -66,7 +66,7 @@ An always-on assistant that watches the conversation and puts the right thing on
 
 ### 🔎 Ask Parrot: a memory of every call
 
-Ask across all your calls (⌘K): *"What did I promise Acme?"*, *"What objections came up about pricing?"*. Every fact in the answer is a chip that opens the meeting at that second. Search runs on your Mac; with Ollama the answer is written there too. When a call starts with people you've met before, the Copilot's brief shows the open items from last time. And if you use Claude Desktop or another MCP app, you can let it read your meetings (read-only, off by default).
+Chat with all your calls (⌘K): *"What did I promise Acme?"*, then *"and what did we offer them?"*. Chats are saved, follow-ups work, and every fact in the answer is a chip that opens the meeting at that second. Counts like *"How many meetings did I have last week?"* are worked out exactly on your Mac. Ask Parrot has its own AI choice: search always runs on your Mac, and with Ollama the answer is written there too. It works in English and Turkish, and it's in beta. When a call starts with people you've met before, the Copilot's brief shows the open items from last time. And if you use Claude Desktop or another MCP app, you can let it read your meetings (read-only, off by default).
 
 ### 🎭 Call profiles: one app, every kind of call
 
@@ -159,7 +159,7 @@ This is a microphone-and-system-audio app, so you shouldn't have to take my word
 | Calendar | Nothing (read locally through macOS's calendar store) | No one | Only if you connect it |
 | Calendar invite for the Copilot | Event title, guest names, notes (dial-in details removed) | Anthropic, or the server you picked | Only if you turn on "Brief the copilot from the invite" |
 | Call detection | Nothing (asks macOS which apps use the mic) | No one | Unless you turn it off |
-| Ask Parrot | The few best-matching excerpts | Your reports AI | Only with a cloud reports AI; nothing with Ollama |
+| Ask Parrot | The few best-matching excerpts and the chat's recent messages (never on-device-only meetings) | The AI you pick for Ask Parrot (your reports AI by default) | Only with a cloud AI; nothing with Ollama |
 | Follow-up email | The meeting's transcript | Your reports AI | Only when you draft one |
 | Webhook | Summary, next steps, notes (transcript if allowed) | The address you paste | Only if you set one; never for on-device-only meetings |
 | AI apps (MCP) | Whatever the app reads when you ask it | That app (often its cloud) | Only if you turn it on; never on-device-only meetings |
@@ -279,6 +279,7 @@ The easiest way to report anything: click the little ladybug in the bottom right
 - **Audio permissions reset on ad-hoc source builds.** Identity-less builds look like a new app every time. `make signing-help` shows two fixes. Downloaded release builds keep the grant across updates.
 - **Models need internet once.** Whisper, voice-detection and speaker-detection models download on first use, and macOS fetches a language model the first time you add an Arabic, Indic or (on some Macs) Cyrillic document. After that, everything runs offline.
 - **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign.
+- **Ask Parrot on a small local model.** With a small Ollama model (like gemma3:4b), answers that span many meetings can skip sources or mix up details. Answers about one meeting are fine, and Claude handles the broad ones well.
 - **Mic bleed on speakers.** Without headphones, a loud call can still leak into your mic now and then. Headphones fix it.
 
 ## Similar projects
