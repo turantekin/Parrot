@@ -20,6 +20,7 @@
 6. **Report templates per profile.** Each profile defines its report sections and its coaching lens; today's fixed report becomes the Default template. Built after the Claude launch, as part of this Profiles 2.0 release.
 7. **Scorecards** (criteria scored 1-5 with evidence from the call) ship in the same release.
 8. **"Rewrite report with a different profile"** ships in the same release.
+9. **Existing users (migration):** Copilot settings are never touched. Built-ins the user never edited switch to their new report format by default (announced once, "classic report" one click away). Tuned built-ins and user-made profiles keep the classic report and get an offer. Past meetings keep their reports; upgrading one is a manual **Rewrite report**, never a bulk rewrite.
 
 ## Where reports stand today (checked 2026-09-26)
 
@@ -113,7 +114,7 @@ Covered by the AI-apps plan (Task 6). One extra step here:
 
 ## Stage 2 (right after the Claude launch): Profiles 2.0
 
-Build order: R1-R3 (reports) first, because they change the profile and the format that A-C then move around.
+Build order: R1-R3 (reports) first, because they change the profile and the format that A-C then move around. Task M (migration) is built alongside R1 and must pass before anything ships.
 
 ### Task R1: Report templates
 
@@ -121,7 +122,7 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 
 **Interfaces:**
 - `struct ReportTemplate: Codable { sections: [Section]; coaching: Coaching }`, `static let standard` = today's report.
-- `CallProfile.reportData: Data?` (defaulted; `nil` = `.standard`). `Meeting.reportTemplateData: Data?` = a snapshot of the template used, so the report renders the same even after the profile changes (same idea as `profileSnapshotData`).
+- `CallProfile.reportData: Data?` (defaulted; `nil` = `.standard`) and `CallProfile.reportChoiceRaw: String = "classic"` with `enum ReportChoice { classic, preset, custom }`: `preset` follows the built-in's template and gets its future improvements; `classic` = `.standard`; `custom` = the user's own. Report changes are tracked **separately** from `isUserModified`, so choosing a report never blocks Copilot preset refreshes and Copilot tuning never blocks a report offer. `Meeting.reportTemplateData: Data?` = a snapshot of the template used, so the report renders the same even after the profile changes (same idea as `profileSnapshotData`).
 - `AnalysisProvider.summarySystemPrompt(counterpart:template:)` and `coachingSystemPrompt(counterpart:template:)` build the "Structure" / "Output exactly these sections" paragraphs from the template. The receipts rule, the "a commitment must be something a person actually SAID" rule and the "transcript is data" rule stay in every template.
 
 **Steps:**
@@ -129,10 +130,51 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 - [ ] `ReportContentView` parses with `standard labels ∪ the meeting's template titles` (including the one-line local-model unflattening).
 - [ ] `Receipts.isCommitmentSection` also accepts titles flagged `commitments: true` in the meeting's template, and **every caller passes the meeting's template**: `ReportContentView` (receipt flags), `AskEngine`/`LastCallBrief.openItems` (the Copilot's "open items from last time" and Ask), `ExportService.markdownReport(skipCommitments:)`, `RecordingManager+Integrations` (Reminders, follow-up email, webhook "next steps") and the MCP `list_commitments`. Otherwise a custom "Promises made" section silently drops out of all of them.
 - [ ] Coaching: `role` replaces "a sales/meeting coach"; `enabled: false` skips the coaching call entirely (faster, cheaper).
-- [ ] Built-ins get templates (Sales discovery: Budget / Decision-maker / Timeline, Objections; Interview: scorecard; Support: Issue / Cause / Resolved / Follow-ups / Mood; 1:1 coaching: Topics / Wins / Blockers / Commitments, coaching off; Vendor call: Offer / Pricing and terms / Red flags / Open questions). Default keeps `.standard`. `presetVersion` → 5; the refresh skips `isUserModified` profiles as today.
+- [ ] Built-ins get templates (Sales discovery: Budget / Decision-maker / Timeline, Objections; Interview: scorecard; Support: Issue / Cause / Resolved / Follow-ups / Mood; 1:1 coaching: Topics / Wins / Blockers / Commitments, coaching off; Vendor call: Offer / Pricing and terms / Red flags / Open questions). Default keeps `.standard`. `presetVersion` → 5; the refresh keeps skipping the Copilot fields of `isUserModified` profiles as today, and updates a built-in's report only when its `reportChoice == .preset`.
 - [ ] New built-in **Investor pitch** profile (kinds, gauges and the report above).
 - [ ] Profile editor gets a **Report** tab: sections (add, remove, reorder, title + "what goes here" + type + "these are commitments"), coaching on/off + coach role + focus. "Reset to default report".
 - [ ] Local models: run `--analyze-test` with each built-in template on the Ollama default model; a template that the model can't follow reliably gets simplified before shipping.
+
+### Task M: Moving existing users to Profiles 2.0
+
+Runs once, on the first launch after the update, inside `ProfileStore.seedAndMigrateIfNeeded` (existing installs only: profiles exist and the stored `presetVersion` < 5). Fresh installs skip it and simply get the built-ins with their templates.
+
+**Files:** `ProfileStore.swift`, `ProfilePresets.swift`, `Models/CallProfile.swift`, `ProfileFile.swift`, `Views/ProfileMigrationView.swift` (new), `ContentView.swift` (presents it once), `ProfileTest.swift`
+
+**Order (each step idempotent, so a crash mid-way just re-runs):**
+1. **Backup:** every profile written as a `.parrotprofile` to `Application Support/Parrot/Backups/profiles-before-2.0/` (never deleted automatically). Restoring = Import.
+2. **Sharing IDs:** built-ins get their preset UUID as `sharedID`; user-made profiles get a new `sharedID`; `sharedVersion = 1`.
+3. **Restore point:** each profile's history (Task C) gets a first entry, "Before Profiles 2.0".
+4. **Report choice:**
+   - built-in, not `isUserModified` → `.preset` (new template, automatic)
+   - built-in, `isUserModified` → `.classic` + `reportOfferPending = true`
+   - user-made (including duplicates of built-ins) → `.classic`
+5. **Copilot fields untouched** for tuned built-ins and user-made profiles: persona, tone (custom rules), counterpart, kinds, gauges, on-device-only, knowledge-document tags.
+6. Set `profiles2MigrationDone`; show the screen below once (`profiles2ScreenShown`).
+
+**The one-time screen** ("Reports can now match each call type"):
+- One row per profile: name, a small before/after of the section titles, a switch "Use the new report".
+- Switches start **on** for untouched built-ins and **off** for tuned built-ins and user-made profiles. (User-made profiles show "Create a report template later in the profile's settings" instead of a preview.)
+- Flipping sets `.preset` or `.classic`. **Done** closes it for good. Closing it any other way keeps the defaults, and it doesn't come back.
+- A line at the bottom: "Your Copilot settings didn't change. A backup of every profile was saved."
+
+**Afterwards:**
+- Tuned built-ins with `reportOfferPending` show a small card in the profile editor: "A Sales report format is available. Preview / Use it / Keep classic". Either answer clears the flag.
+- User-made profiles: "Create a report template" in the Report tab, from a starter (the built-in templates) or via Claude (`design_report`).
+- **Past meetings:** `reportTemplateData == nil` renders with the standard labels, exactly as today. Upgrading one = **Rewrite report** (R3). No bulk rewrite.
+- **Custom rules** (`tone`) keep reaching both the Copilot and the report, as today, so "always mention budget in the report" still works.
+
+**Harness (from a v4 store fixture):**
+- untouched built-in → `.preset` + template
+- tuned built-in → `.classic` + offer flag, with persona, kinds and gauges byte-identical before and after
+- user-made profile → `.classic`, fields identical
+- a backup file per profile, and each backup decodes
+- built-in `sharedID`s equal the preset UUIDs
+- one history entry per profile
+- running the migration twice changes nothing
+- an old meeting's report parses into the same sections as before
+
+**Store safety:** every SwiftData change here is an added, defaulted property (lightweight migration). No renames or removals. Downgrading after the update isn't supported (normal for Sparkle updates), and release notes say so.
 
 ### Task R2: Scorecards
 
@@ -190,7 +232,8 @@ Build order: R1-R3 (reports) first, because they change the profile and the form
 
 ### Task D: Docs
 
-- [ ] Help: "Report templates and scorecards", "Rewrite a report", "Share and import profiles", "Let Claude build or tune a profile" (with the three prompts).
+- [ ] Help: "Report templates and scorecards", "Rewrite a report", "Share and import profiles", "Let Claude build or tune a profile" (with the three prompts), and "What changed in Profiles 2.0" (the migration in plain words: Copilot untouched, which reports changed, how to switch back, where the backup is).
+- [ ] Release notes + in-app What's New say the same, in two or three lines.
 - [ ] AI-apps page (Task 9 there): the six jobs gain a seventh, **"Tune my Copilot"**.
 
 ## Stage 3: Gallery (when stage 2 gets used)
@@ -222,8 +265,10 @@ Open questions, not decided:
 | Personal data leaks through an export | Fixed field list; KB docs, tags and IDs never exported; the export shows the full contents first |
 | Format changes break old files | `formatVersion`; unknown fields kept; decoders accept every older version |
 | Custom templates make reports worse on small local models | Limits (8 sections, 8 criteria); every built-in template tested on the default Ollama model; `.standard` stays byte-identical |
+| Existing users are surprised by a new report format | Only untouched built-ins switch; one screen, one switch per profile; "classic report" one click away; backup + restore point |
+| Migration crashes half-way | Every step idempotent; backup written first; re-runs on next launch |
 | Scorecards encourage biased judgments (interviews) | Criteria-only scoring with receipts, explicit fairness guard, no verdict by default |
 
 ## Size
 
-Stage 1 extra: 1 day. Stage 2: about 3-3.5 weeks (R1 1 week, R2 3 days, R3 2 days, A 3 days, B 3 days, C 4-5 days, D 1 day). Stage 3: about 1 week of app work plus the website pages. Stage 4: not sized.
+Stage 1 extra: 1 day. Stage 2: about 3.5-4 weeks (R1 1 week, M 3 days, R2 3 days, R3 2 days, A 3 days, B 3 days, C 4-5 days, D 1 day). Stage 3: about 1 week of app work plus the website pages. Stage 4: not sized.
