@@ -35,7 +35,8 @@ enum MCPServer {
     /// include_transcript builds a transcript).
     struct DataSource {
         var meetings: () -> [MeetingInfo]
-        var transcript: (UUID) -> [String]
+        /// Time-sorted lines with speaker names; empty when not shareable.
+        var transcript: (UUID) -> [ReceiptIndex.Line]
         /// Hybrid search (exact words + on-device meaning) within these meetings.
         var search: @MainActor (String, Set<UUID>, Int) async -> [MemoryChunk]
     }
@@ -81,7 +82,7 @@ enum MCPServer {
                     transcript: { id in
                         let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
                         guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m) else { return [] }
-                        return m.transcriptLines
+                        return m.receiptIndex.lines
                     },
                     // ponytail: loads every meeting's chunks from disk per search;
                     // keep one MeetingMemory alive if long histories feel slow.
@@ -176,7 +177,7 @@ enum MCPServer {
         ],
         [
             "name": "get_meeting",
-            "description": "One meeting: summary, next steps, coaching, marked moments, notes, and optionally the full transcript.",
+            "description": "One meeting: summary, next steps, coaching, marked moments, notes, and optionally the transcript (long ones: the first page, then use get_transcript).",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -196,6 +197,20 @@ enum MCPServer {
                     "limit": ["type": "integer", "description": "How many excerpts (default 8, max 30)."],
                 ]) { a, _ in a },
                 "required": ["query"],
+            ],
+        ],
+        [
+            "name": "get_transcript",
+            "description": "A meeting's transcript with speaker names, one \"[mm:ss] Name: text\" line each. Long meetings come in pages; call again with from = next_from.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "id": ["type": "string", "description": "Meeting id."],
+                    "from": ["type": "string", "description": "Start at this call time, mm:ss (default the start)."],
+                    "to": ["type": "string", "description": "Stop at this call time, mm:ss (default the end)."],
+                    "max_lines": ["type": "integer", "description": "Lines per page (default 400, max 1000)."],
+                ],
+                "required": ["id"],
             ],
         ],
     ]
@@ -255,7 +270,7 @@ enum MCPServer {
     @MainActor
     static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
-        guard ["list_meetings", "get_meeting", "search_meetings"].contains(name) else { return nil }
+        guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript"].contains(name) else { return nil }
         let meetings = source.meetings()
         switch name {
         case "list_meetings":
@@ -284,8 +299,29 @@ enum MCPServer {
             if !m.bookmarks.isEmpty { out += "\n\n## Moments the user marked\n" + m.bookmarks.map { "- \($0)" }.joined(separator: "\n") }
             if !m.notes.isEmpty { out += "\n\n## User's notes\n\(m.notes)" }
             if (args["include_transcript"] as? Bool) == true {
-                out += "\n\n## Transcript\n" + source.transcript(m.id).joined(separator: "\n")
+                let page = transcriptPage(source.transcript(m.id), from: 0, to: nil, maxLines: defaultPageLines)
+                out += "\n\n## Transcript\n" + page.lines.map(lineText).joined(separator: "\n")
+                if let next = page.nextFrom {
+                    out += "\n\n(The transcript goes on: call get_transcript with this id and from = \(Receipts.stamp(next)).)"
+                }
             }
+            return out
+
+        case "get_transcript":
+            guard let raw = args["id"] as? String, let id = UUID(uuidString: raw),
+                  meetings.contains(where: { $0.id == id }) else {
+                return "No meeting with that id."
+            }
+            let from = (args["from"] as? String).map { Receipts.parseStamp($0) }
+            let to = (args["to"] as? String).map { Receipts.parseStamp($0) }
+            if from == .some(nil) || to == .some(nil) { return "Write from and to as mm:ss, e.g. 12:30." }
+            let lines = source.transcript(id)
+            guard !lines.isEmpty else { return "This meeting has no transcript." }
+            let limit = min(max((args["max_lines"] as? Int) ?? defaultPageLines, 1), 1000)
+            let page = transcriptPage(lines, from: from.flatMap { $0 } ?? 0, to: to.flatMap { $0 }, maxLines: limit)
+            guard !page.lines.isEmpty else { return "No more transcript." }
+            var out = page.lines.map(lineText).joined(separator: "\n")
+            if let next = page.nextFrom { out += "\n\nnext_from: \(Receipts.stamp(next))" }
             return out
 
         case "search_meetings":
@@ -306,6 +342,36 @@ enum MCPServer {
         default:
             return nil
         }
+    }
+
+    static let defaultPageLines = 400
+
+    static func lineText(_ line: ReceiptIndex.Line) -> String {
+        "[\(Receipts.stamp(line.start))] \(line.speaker): \(line.text)"
+    }
+
+    /// One page of time-sorted lines: from `from` (whole seconds, inclusive)
+    /// up to `to`, at most `maxLines` and `maxChars`, plus where the next page
+    /// starts. A page never ends inside a second: the next `from` is whole
+    /// seconds, so lines sharing it would come back twice.
+    static func transcriptPage(_ lines: [ReceiptIndex.Line], from: TimeInterval, to: TimeInterval?,
+                               maxLines: Int, maxChars: Int = 50_000)
+        -> (lines: [ReceiptIndex.Line], nextFrom: TimeInterval?) {
+        let pool = lines.filter { line in
+            line.start.rounded(.down) >= from && (to.map { line.start.rounded(.down) <= $0 } ?? true)
+        }
+        var cut = 0, chars = 0
+        while cut < pool.count, cut < maxLines {
+            chars += lineText(pool[cut]).count + 1
+            if chars > maxChars, cut > 0 { break }
+            cut += 1
+        }
+        guard cut < pool.count else { return (pool, nil) }
+        let second = pool[cut].start.rounded(.down)
+        let kept = pool[..<cut].lastIndex { $0.start.rounded(.down) < second }.map { $0 + 1 }
+        // One second holding more than a page: take that whole second.
+        let end = kept ?? (pool.firstIndex { $0.start.rounded(.down) > second } ?? pool.count)
+        return (Array(pool[..<end]), end < pool.count ? pool[end].start.rounded(.down) : nil)
     }
 
     /// What to paste into Claude Desktop's config (claude_desktop_config.json).

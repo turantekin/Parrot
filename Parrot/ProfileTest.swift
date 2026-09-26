@@ -2738,12 +2738,17 @@ enum ProfileTest {
         let chunks = [chunk(a, "Send the contract."), chunk(a, "That's too expensive for us."),
                       chunk(hidden, "The secret budget is ninety million.")]
         var searchedIDs: Set<UUID> = []
+        // Three lines a second, so a page boundary can fall inside a second.
+        let long = (0..<1000).map { i in
+            ReceiptIndex.Line(start: Double(i) / 3, end: Double(i) / 3 + 0.3, speaker: i % 2 == 0 ? "Me" : "Sarah", text: "line \(i)")
+        }
         func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
             var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
             if let id { msg["id"] = id }
             let source = MCPServer.DataSource(
                 meetings: { meetings },
-                transcript: { $0 == a ? ["[00:30] Jeremy: Send the contract."] : [] },
+                transcript: { $0 == a ? [.init(start: 30, end: 33, speaker: "Jeremy", text: "Send the contract.")]
+                                      : $0 == old ? long : [] },
                 search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
             return awaitMain { await MCPServer.handle(msg, source: source) }
         }
@@ -2753,8 +2758,8 @@ enum ProfileTest {
         check("mcp: notifications get no reply", call("notifications/initialized", id: nil) == nil)
         check("mcp: ping", call("ping")?["result"] != nil)
         let tools = (call("tools/list")?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
-        check("mcp: three read-only tools", tools?.compactMap { $0["name"] as? String }
-              == ["list_meetings", "get_meeting", "search_meetings"])
+        check("mcp: read-only tools listed", tools?.compactMap { $0["name"] as? String }
+              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript"])
         func text(_ reply: [String: Any]?) -> String {
             (((reply?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         }
@@ -2784,6 +2789,23 @@ enum ProfileTest {
         check("mcp: since keeps only newer meetings", tool("list_meetings", ["since": twentyDaysAgo]).hasPrefix(a.uuidString))
         check("mcp: person filter", tool("list_meetings", ["person": "Lee"]).contains("Globex")
               && !tool("list_meetings", ["person": "Lee"]).contains("Acme"))
+        var pages: [String] = [], next: String? = "00:00"
+        while let from = next, pages.count < 10 {
+            let page = tool("get_transcript", ["id": old.uuidString, "from": from])
+            pages.append(page)
+            next = page.components(separatedBy: "\n").last { $0.hasPrefix("next_from: ") }.map { String($0.dropFirst(11)) }
+        }
+        let paged = pages.flatMap { $0.components(separatedBy: "\n").filter { $0.hasPrefix("[") } }
+        check("mcp: 1,000 lines come in three pages", pages.count == 3)
+        check("mcp: pages have no gap and no overlap", paged == long.map(MCPServer.lineText))
+        check("mcp: from past the end", tool("get_transcript", ["id": old.uuidString, "from": "99:00"]) == "No more transcript.")
+        check("mcp: to stops the page", tool("get_transcript", ["id": old.uuidString, "to": "00:01"])
+              .components(separatedBy: "\n") == Array(long.prefix(6).map(MCPServer.lineText)))
+        check("mcp: bad stamp says how", tool("get_transcript", ["id": old.uuidString, "from": "soon"]).hasPrefix("Write from"))
+        check("mcp: transcript of a hidden meeting", tool("get_transcript", ["id": hidden.uuidString]) == "No meeting with that id.")
+        let firstPage = tool("get_meeting", ["id": old.uuidString, "include_transcript": true])
+        check("mcp: get_meeting gives the first page and a pointer", firstPage.contains("line 0\n")
+              && !firstPage.contains("line 999") && firstPage.contains("call get_transcript"))
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26
