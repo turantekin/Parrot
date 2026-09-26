@@ -355,6 +355,12 @@ enum HelpShots {
         shot("bug-report.png", size: .init(width: 460, height: 470),
              BugReportSheet(screenshot: NSImage(contentsOf: dir.appendingPathComponent("dashboard.png"))))
 
+        // Home card as a new user who chose Decide later sees it. Last,
+        // because it flips copilotEnabled off for everything after it.
+        UserDefaults.standard.register(defaults: ["copilotEnabled": false, CopilotPath.defaultsKey: "later"])
+        shot("home-copilot-card.png", size: .init(width: 600, height: 260),
+             CopilotHomeCard().environment(rm).padding(Theme.Metrics.pad))
+
         print("help-shots: wrote \(made.count) → \(dir.path)")
         exit(made.count >= 12 ? 0 : 1)
     }

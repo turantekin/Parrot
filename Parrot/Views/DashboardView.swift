@@ -23,6 +23,8 @@ struct DashboardView: View {
                 recordButton
                     .padding(.top, 44)
 
+                CopilotHomeCard()
+
                 modelStatus
 
                 statsRow
