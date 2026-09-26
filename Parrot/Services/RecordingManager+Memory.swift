@@ -63,6 +63,8 @@ extension RecordingManager {
         let privateIDs = Set(meetings.filter { !CloudGate.mayLeaveMac($0) }.map(\.id))
         let excluded: Set<UUID> = local ? [] : privateIDs
         let history = AskEngine.history(chat.messages, cloud: !local, excluded: excluded)
+        // The answer request: a local model sees the earlier questions only.
+        let answerHistory = local ? AskEngine.history(chat.messages, cloud: false, answers: false) : history
         progress("Thinking…")
         // Ollama counts as set up whenever it's picked; check it's really
         // there before sending anything (Task 5).
@@ -83,11 +85,44 @@ extension RecordingManager {
         // A follow-up is searched as a standalone question: the AI rewrites
         // it; without an AI (or on a bad reply) the previous question rides
         // along and the last answer's meetings are tried first.
+        // "How many / longest / time in meetings": counted here, exactly,
+        // with no AI and nothing sent anywhere.
+        func counted(_ mq: (kind: AskEngine.MeetingQuestion, turkish: Bool), range: DateInterval?,
+                     searchedFor: String?) -> AskEngine.Result {
+            var done = meetings.filter { $0.status == .done && (range?.contains($0.date) ?? true) }
+            if case .countWith(let who) = mq.kind {
+                // Where the name appears: title, people, report, or what was said.
+                let saidIn = Set(memory.chunks.filter { MeetingMemory.words($0.text).contains(who) }.map(\.meetingID))
+                done = done.filter { m in
+                    saidIn.contains(m.id)
+                        || MeetingMemory.words(([m.title] + people(m) + [m.summary ?? ""]).joined(separator: " ")).contains(who)
+                }
+            }
+            let lines = AskEngine.meetingAnswer(mq.kind, turkish: mq.turkish,
+                                                items: done.map { ($0.id, $0.title, $0.date, $0.duration) }, range: range)
+            let cited = Set(lines.flatMap { $0.citations.map(\.meetingID) })
+            let refs = done.filter { cited.contains($0.id) }.map {
+                AskEngine.MeetingRef(ref: "", meetingID: $0.id, title: $0.title, date: $0.date, people: [])
+            }
+            return AskEngine.Result(lines: lines, sources: [], refs: refs, answeredByAI: true, note: nil,
+                                    usedPrivate: done.contains { privateIDs.contains($0.id) },
+                                    model: "Counted on this Mac", searchedFor: searchedFor)
+        }
+        // Checked on the user's own words first: a rewrite can mangle them.
+        if chat.scope == nil, let mq = AskEngine.meetingQuestion(question) {
+            return counted(mq, range: AskEngine.dateRange(in: question, now: .now), searchedFor: nil)
+        }
+
         var searchQuestion = question
         var citedFirst: Set<UUID> = []
-        // The AI said the follow-up stands on its own (SAME): a new topic.
+        // The AI said the follow-up stands on its own (SAME), or it doesn't
+        // point back at all: a new topic, answered without old answers.
         var newTopic = false
-        if !history.isEmpty {
+        if !history.isEmpty, !AskEngine.pointsBack(question) {
+            // Searched as asked: small local models rewrite a standalone
+            // question badly (into an answer, or towards the last topic).
+            newTopic = true
+        } else if !history.isEmpty {
             if aiUsable,
                let reply = try? await complete(AskEngine.rewriteSystemPrompt,
                                                AskEngine.rewriteUser(history: history, question: question), 120),
@@ -106,26 +141,32 @@ extension RecordingManager {
         // what the question says about when.
         progress("Reading your meetings…")
         let range = AskEngine.dateRange(in: searchQuestion, now: .now)
-        // "How many / longest / time in meetings": counted here, exactly,
-        // with no AI and nothing sent anywhere.
         if chat.scope == nil, let mq = AskEngine.meetingQuestion(searchQuestion) {
-            let done = meetings.filter { $0.status == .done && (range?.contains($0.date) ?? true) }
-            let lines = AskEngine.meetingAnswer(mq.kind, turkish: mq.turkish,
-                                                items: done.map { ($0.id, $0.title, $0.date, $0.duration) }, range: range)
-            let cited = Set(lines.flatMap { $0.citations.map(\.meetingID) })
-            let refs = done.filter { cited.contains($0.id) }.map {
-                AskEngine.MeetingRef(ref: "", meetingID: $0.id, title: $0.title, date: $0.date, people: [])
-            }
-            return AskEngine.Result(lines: lines, sources: [], refs: refs, answeredByAI: true, note: nil,
-                                    usedPrivate: done.contains { privateIDs.contains($0.id) },
-                                    model: "Counted on this Mac",
-                                    searchedFor: searchQuestion == question ? nil : searchQuestion)
+            return counted(mq, range: range, searchedFor: searchQuestion == question ? nil : searchQuestion)
         }
-        let scope = AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
+        // A question that names one meeting ("Dietify toplantısında…") is
+        // answered from that whole meeting, like a one-meeting chat.
+        let focus = chat.scope != nil ? nil : AskEngine.namedMeeting(
+            in: searchQuestion,
+            titles: meetings.filter { $0.status == .done && !excluded.contains($0.id) }.map { ($0.id, $0.title) })
+        let scope = focus.map { [$0] }
+            ?? AskEngine.searchScope(chatScope: chat.scope, range: range, meetings: meetings.map { ($0.id, $0.date) })
+        // Names in the question (capitalised, or a title / person word):
+        // their passages come first, and for a local model, only them.
+        var known = Set<String>()
+        for m in meetings where m.status == .done {
+            known.formUnion(MeetingMemory.words(([m.title] + people(m)).joined(separator: " ")).filter { $0.count >= 4 })
+        }
+        known.subtract(["meeting", "minutes", "interview", "review", "tasks", "launchese"])
+        let names = AskEngine.nameWords(in: question, known: known)
+            .union(AskEngine.nameWords(in: searchQuestion, known: known))
         // Rank wide, put the last answer's meetings first (follow-up
         // fallback), then cap below.
         func search(_ within: Set<UUID>?) async -> [MemoryChunk] {
-            await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36)
+            await memory.search(searchQuestion, within: within, excluding: excluded, topK: 36,
+                                // Focused on one meeting already: the name was its
+                                // title, not something said in it.
+                                names: names, namedOnly: local && chat.scope == nil && focus == nil)
         }
         let all = await search(scope)
         let ranked = citedFirst.isEmpty ? all
@@ -133,10 +174,13 @@ extension RecordingManager {
         // A one-meeting chat gets that meeting's report plus up to 12
         // passages of it; a broad one at most 3 passages per meeting.
         let hits: [MemoryChunk]
-        if let one = chat.scope {
+        if let one = chat.scope ?? focus {
             let report = excluded.contains(one) ? []
                 : memory.chunks.filter { $0.meetingID == one && $0.kind == .report }
-            hits = AskEngine.scopedHits(ranked, report: report)
+            // "Summarise it" without a report: spread over the whole call.
+            let whole = excluded.contains(one) || !AskEngine.isSummaryQuestion(searchQuestion) ? []
+                : memory.chunks.filter { $0.meetingID == one && $0.kind == .transcript }
+            hits = AskEngine.scopedHits(ranked, report: report, whole: whole)
         } else {
             hits = AskEngine.capped(ranked)
         }
@@ -182,7 +226,7 @@ extension RecordingManager {
             let answer = try await complete(AskEngine.systemPrompt,
                                             AskEngine.answerUser(question: question, context: context,
                                                                  // A new topic gets no old answers to copy from.
-                                                                 history: newTopic ? "" : history,
+                                                                 history: newTopic ? "" : answerHistory,
                                                                  meetingList: meetingList,
                                                                  facts: meetingFacts), 700)
             let lines = AskEngine.parse(answer, refs: refs) { id, time in

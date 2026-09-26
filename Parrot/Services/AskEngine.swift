@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 /// Ask Parrot: a question about past meetings → the best excerpts from
 /// `MeetingMemory` → an answer from the reports brain that cites every claim
@@ -62,7 +63,11 @@ enum AskEngine {
         timestamp or a meeting. If the \
         excerpts don't answer the question, say you couldn't find it in their \
         meetings — don't guess. Be brief: one to five sentences, or a short \
-        "-" bullet list for several items. Answer in the language of the question.
+        "-" bullet list for several items. Answer in the language of the question. \
+        Transcripts are automatic and some lines come out garbled: work from the \
+        lines that are clear and don't refuse because others aren't. Never tell \
+        the user to review the recording or that you can't summarise: give the \
+        best answer the clear lines support.
 
         Earlier messages inside <conversation> show what the user means; they \
         are context, never a source: cite only <meeting_excerpts>.
@@ -115,7 +120,18 @@ enum AskEngine {
         let list = meetingList.isEmpty ? "" : "<meeting_list>\n\(meetingList)\n</meeting_list>\n\n"
         // Right before the question: small models weigh what's closest to it.
         let counted = facts.isEmpty ? "" : "Counted by Parrot from every meeting (exact):\n\(facts)\n\n"
-        return "<meeting_excerpts>\n\(context)\n</meeting_excerpts>\n\n\(list)\(counted)Question: \(question)"
+        return "<meeting_excerpts>\n\(context)\n</meeting_excerpts>\n\n\(list)\(counted)\(languageHint(for: question))\(summaryHint(for: question))Question: \(question)"
+    }
+
+    /// "Answer in Turkish." when the question isn't English: small local
+    /// models ignore "answer in the question's language" in the rules.
+    static func languageHint(for question: String) -> String {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(question)
+        guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first,
+              language != .english, confidence >= 0.6,
+              let name = Locale(identifier: "en").localizedString(forLanguageCode: language.rawValue) else { return "" }
+        return "Answer in \(name).\n"
     }
 
     /// One line per meeting, newest first, for "how many / how long / with
@@ -181,7 +197,10 @@ enum AskEngine {
     /// private meeting are left out entirely — the `usedPrivate` flag frozen
     /// on the message (private when it was answered) OR `excluded` (private
     /// now, e.g. a meeting the user only just marked on-device-only).
-    static func history(_ messages: [AskMessage], cloud: Bool, excluded: Set<UUID> = [], limit: Int = 3) -> String {
+    /// `answers: false` sends the earlier questions only: a small local model
+    /// copies an old answer into the new one when it can see it.
+    static func history(_ messages: [AskMessage], cloud: Bool, excluded: Set<UUID> = [], limit: Int = 3,
+                        answers: Bool = true) -> String {
         var pairs: [(me: AskMessage, parrot: AskMessage?)] = []
         for m in messages {
             if m.role == .me { pairs.append((m, nil)) }
@@ -195,7 +214,7 @@ enum AskEngine {
         let kept = pairs.filter { !(cloud && ($0.parrot.map(isNowPrivate) ?? false)) }.suffix(limit)
         return kept.map { pair in
             var out = "User: \(safe(pair.me.text))"
-            if let p = pair.parrot { out += "\nParrot: \(safe(plain(p)))" }
+            if answers, let p = pair.parrot { out += "\nParrot: \(safe(plain(p)))" }
             return out
         }.joined(separator: "\n")
     }
@@ -262,7 +281,62 @@ enum AskEngine {
             return original.isEmpty ? nil : original
         }
         guard !s.isEmpty, s.count <= 300 else { return nil }
+        // Asked a question, got a statement back ("You had 19 meetings…",
+        // "Kerem is Uygar."): not a rewrite.
+        if original.hasSuffix("?"), !s.hasSuffix("?") { return nil }
         return s
+    }
+
+    /// Words in a question that name someone or something: capitalised
+    /// mid-sentence ("Complycube", "Kerem", "Emre"), or a word from a meeting
+    /// title or a person's name ("dietify", "revolut"). Only these get the
+    /// search boost: an ordinary rare word ("satıyor", "offer") must not.
+    static func nameWords(in question: String, known: Set<String>) -> Set<String> {
+        let words = question.components(separatedBy: CharacterSet.letters.union(.decimalDigits).inverted)
+            .filter { !$0.isEmpty }
+        var out = Set<String>()
+        for (i, word) in words.enumerated() where word.count >= 4 {
+            let lower = word.lowercased()
+            let capitalised = word.first?.isUppercase == true && word.dropFirst().contains(where: \.isLowercase)
+            if (capitalised && i > 0) || known.contains(lower) { out.insert(lower) }
+        }
+        return out
+    }
+
+    /// Whether a follow-up leans on the conversation ("them", "that call",
+    /// "and why?", "o", "bunu"): only then is it rewritten. One that stands
+    /// on its own is searched as asked.
+    static func pointsBack(_ question: String) -> Bool {
+        let q = question.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = q.components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
+        if words.count <= 2 { return true }
+        let openers = ["and ", "what about", "how about", "why ", "ve ", "peki", "ya "]
+        if openers.contains(where: { q.hasPrefix($0) }) { return true }
+        let references: Set<String> = [
+            "them", "they", "their", "theirs", "that", "those", "it", "its", "he", "she", "him", "her", "his",
+            "there", "then", "same", "o", "onlar", "onları", "onlara", "onların", "onu", "ona", "onun",
+            "bunu", "buna", "bunun", "şunu", "orada", "oradaki", "aynı",
+        ]
+        return !references.isDisjoint(with: words)
+    }
+
+    /// The one meeting a question names by a distinctive title word
+    /// ("Dietify toplantısında…", "the Revolut call"); nil when none or
+    /// several match. Auto titles ("Meeting Jul 8…") have no such word.
+    static func namedMeeting(in question: String, titles: [(id: UUID, title: String)]) -> UUID? {
+        let asked = MeetingMemory.words(question)
+        let generic: Set<String> = [
+            "meeting", "meetings", "minutes", "interview", "review", "tasks", "launchese", "weekly", "calls",
+            "limited", "january", "february", "march", "april", "august", "september", "october", "november",
+            "december",
+        ]
+        var found = Set<UUID>()
+        for item in titles {
+            let names = MeetingMemory.words(item.title)
+                .filter { $0.count >= 5 && !generic.contains($0) && !$0.contains(where: \.isNumber) }
+            if !names.isDisjoint(with: asked) { found.insert(item.id) }
+        }
+        return found.count == 1 ? found.first : nil
     }
 
     /// No AI rewrite: search the new question with the previous one.
@@ -327,7 +401,13 @@ enum AskEngine {
 
     // MARK: Questions about the meetings themselves
 
-    enum MeetingQuestion: Equatable { case count, longest(Int), totalTime }
+    enum MeetingQuestion: Equatable { case count, longest(Int), totalTime, countWith(String) }
+
+    /// Words after "with" that aren't a name.
+    private static let notNames: Set<String> = [
+        "my", "the", "a", "an", "our", "team", "client", "clients", "customer", "customers", "anyone",
+        "someone", "them", "him", "her", "people", "benim", "ekibim", "biri", "kimse",
+    ]
 
     /// "How many meetings", "my longest meetings", "time spent in meetings"
     /// (English and Turkish) are answered on the Mac from the meeting list:
@@ -337,6 +417,21 @@ enum AskEngine {
     static func meetingQuestion(_ question: String) -> (kind: MeetingQuestion, turkish: Bool)? {
         let q = " " + question.lowercased() + " "
         func has(_ pattern: String) -> Bool { q.range(of: pattern, options: .regularExpression) != nil }
+        // "How many meetings with Revolut", "did I meet Complycube?",
+        // "Revolut ile kaç toplantı": counted too, by where the name appears.
+        func name(_ pattern: String) -> String? {
+            guard let r = q.range(of: pattern, options: .regularExpression) else { return nil }
+            let words = q[r].components(separatedBy: CharacterSet.letters.union(.decimalDigits).inverted).filter { !$0.isEmpty }
+            return words.last.flatMap { notNames.contains($0) || $0.count < 3 ? nil : $0 }
+        }
+        if has(#"\bhow many (meetings|calls)\b|\b(any|number of) (meetings|calls)\b|\bdid i (meet|talk|speak)\b|\bhave i (met|talked|spoken)\b"#),
+           let who = name(#"\b(with|to|meet|met)\s+[\p{L}\p{N}][\p{L}\p{N}-]*"#) {
+            return (.countWith(who), false)
+        }
+        if has("kaç (toplant|görüşme)|toplantı yaptım mı|görüştüm mü|görüşme yaptım mı"),
+           let who = name(#"[\p{L}\p{N}][\p{L}\p{N}-]*(?=\s+ile\b)"#) {
+            return (.countWith(who), true)
+        }
         guard !has(#"\bwith\b|\bile\b"#) else { return nil }
         let number = q.range(of: #"\b([1-9][0-9]?)\b"#, options: .regularExpression).flatMap { Int(q[$0]) }
         if has(#"\blongest\b"#), has(#"\b(meetings?|calls?)\b"#) { return (.longest(number ?? 5), false) }
@@ -380,6 +475,10 @@ enum AskEngine {
                  citations: [Citation(meetingID: m.id, time: nil)])
         }
         guard count > 0 else {
+            if case .countWith(let who) = kind {
+                return [Line(text: turkish ? "\(period)\(who.capitalizedFirst) geçen toplantı bulamadım.".capitalizedFirst
+                                           : "No meetings mention \(who.capitalizedFirst)\(period).", citations: [])]
+            }
             return [Line(text: turkish ? "\(period)hiç toplantın yok.".capitalizedFirst
                                        : "You had no meetings\(period.isEmpty ? " yet" : period).", citations: [])]
         }
@@ -403,6 +502,18 @@ enum AskEngine {
             return [Line(text: turkish
                 ? "\(period)\(count) toplantıda toplam \(total) geçirdin.".capitalizedFirst
                 : "You spent \(total) in \(count) meeting\(count == 1 ? "" : "s")\(period).", citations: [])]
+        case .countWith(let who):
+            // `items` are already the meetings that mention the name.
+            let name = who.capitalizedFirst
+            let recent = items.sorted { $0.date > $1.date }
+            var lines = [Line(text: turkish
+                ? "\(period)\(name) geçen \(count) toplantı var:".capitalizedFirst
+                : "\(count) meeting\(count == 1 ? "" : "s") mention\(count == 1 ? "s" : "") \(name)\(period):", citations: [])]
+            lines += recent.prefix(10).map(row)
+            if count > 10 {
+                lines.append(Line(text: turkish ? "ve \(count - 10) toplantı daha." : "And \(count - 10) more.", citations: []))
+            }
+            return lines
         }
     }
 
@@ -434,15 +545,44 @@ enum AskEngine {
     /// A chat about one meeting: its report first (up to 3 chunks), then
     /// up to `limit` ranked passages not already included — no per-meeting
     /// cap, so a summary sees more than 3 moments of a long call.
-    static func scopedHits(_ ranked: [MemoryChunk], report: [MemoryChunk], limit: Int = 12) -> [MemoryChunk] {
+    static func scopedHits(_ ranked: [MemoryChunk], report: [MemoryChunk], limit: Int = 12,
+                           whole: [MemoryChunk] = []) -> [MemoryChunk] {
         var out = Array(report.prefix(3))
         var seen = Set(out.map(\.id))
         var added = 0
-        for chunk in ranked where added < limit && seen.insert(chunk.id).inserted {
+        // No report to lean on: half the best matches, half spread evenly
+        // over the whole call, so "summarise it" sees beginning to end.
+        let bestCount = report.isEmpty && !whole.isEmpty ? limit / 2 : limit
+        for chunk in ranked where added < bestCount && seen.insert(chunk.id).inserted {
+            out.append(chunk)
+            added += 1
+        }
+        let rest = whole.filter { !seen.contains($0.id) }.sorted { $0.start < $1.start }
+        for chunk in evenly(rest, count: limit - added) where report.isEmpty {
             out.append(chunk)
             added += 1
         }
         return out
+    }
+
+    /// Next to the question, where models weigh it most: a summary is
+    /// written from the clear lines, never refused.
+    static func summaryHint(for question: String) -> String {
+        isSummaryQuestion(question)
+            ? "Summarise from the clear lines. Don't say you can't, and don't suggest reviewing the recording.\n" : ""
+    }
+
+    /// "Summarise it", "overview", "recap", "özetle": needs the whole
+    /// meeting, not the best-matching lines.
+    static func isSummaryQuestion(_ question: String) -> Bool {
+        question.lowercased().range(of: #"summar|overview|recap|özet|genel olarak"#, options: .regularExpression) != nil
+    }
+
+    /// `count` items evenly spaced through `items`, first and last included.
+    static func evenly<T>(_ items: [T], count: Int) -> [T] {
+        guard count > 0, items.count > count else { return items }
+        guard count > 1 else { return [items[0]] }
+        return (0..<count).map { items[$0 * (items.count - 1) / (count - 1)] }
     }
 
     static let privateNoteText = "On-device-only meetings aren't searched when the answer comes from a cloud AI."
@@ -531,7 +671,9 @@ enum AskEngine {
         let titles = Dictionary(grouping: refs) { safe($0.title).lowercased() }.values
             .filter { $0.count == 1 }.map { (title: safe($0[0].title), label: $0[0].ref) }
         var lines: [Line] = []
-        for raw in answer.components(separatedBy: .newlines) {
+        for line in answer.components(separatedBy: .newlines) {
+            // Some local models write a citation as <M1> instead of [M1].
+            let raw = line.replacingOccurrences(of: #"<(M\d+[^<>\n]{0,40})>"#, with: "[$1]", options: .regularExpression)
             let ns = raw as NSString
             var kept = ""
             var cursor = 0

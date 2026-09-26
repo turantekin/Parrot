@@ -85,6 +85,7 @@ enum ProfileTest {
         testAskFinalFixes()
         testAskRealTestFixes()
         testAskMeetingQuestions()
+        testAskDeepTestFixes()
         testOnboardingFlow()
         testCopilotSetupState()
         testProviderKeyCheck()
@@ -1190,6 +1191,80 @@ enum ProfileTest {
     }
 
     @MainActor
+    static func testAskDeepTestFixes() {
+        typealias E = AskEngine
+        // 1. Names beat the 5-letter stems.
+        let chunks: [Set<String>] = [
+            ["we", "must", "complete", "the", "compliance", "check"],
+            ["complex", "setup"],
+            ["milos", "from", "complycube", "offered", "an", "api"],
+            ["complete", "later"],
+        ]
+        let promoted = MeetingMemory.promoteRare(queryWords: ["did", "i", "meet", "complycube"], chunkWords: chunks,
+                                                 order: [0, 1, 3], topK: 3)
+        check("names: a rare name's passage comes first", promoted.first == 2 && promoted.count == 3)
+        check("names: common words change nothing",
+              MeetingMemory.promoteRare(queryWords: ["meetings", "about"], chunkWords: chunks, order: [0, 1], topK: 2) == [0, 1])
+        let many = Array(repeating: Set(["kerem", "said"]), count: 40) + [Set(["hello"])]
+        check("names: a word in many passages isn't a name",
+              MeetingMemory.promoteRare(queryWords: ["kerem"], chunkWords: many, order: [40, 0], topK: 2) == [40, 0])
+
+        // 2. A question naming one meeting.
+        let a = UUID(), b = UUID(), c = UUID()
+        let titles: [(id: UUID, title: String)] = [(a, "Dietify - Tasks Review"), (b, "Meeting Revolut Sep 23, 2026 at 10:59 am"),
+                                                   (c, "Meeting Jul 8, 2026 at 2:49 pm")]
+        check("named: Turkish question names Dietify", E.namedMeeting(in: "Dietify toplantısında hangi görevler konuşuldu?", titles: titles) == a)
+        check("named: the Revolut call", E.namedMeeting(in: "what did Mac say in the Revolut call?", titles: titles) == b)
+        check("named: auto titles name nothing", E.namedMeeting(in: "what happened in the meeting on Jul 8?", titles: titles) == nil)
+        check("named: two named meetings is not one", E.namedMeeting(in: "compare Dietify and Revolut", titles: titles) == nil)
+
+        // 3. Rewrite only when the follow-up points back.
+        check("points back: pronoun", E.pointsBack("and what did we offer them?"))
+        check("points back: Turkish pronoun", E.pointsBack("onlar ne dedi fiyat hakkında?"))
+        check("points back: very short", E.pointsBack("why?"))
+        check("points back: a new question doesn't", !E.pointsBack("Any hiring updates?") && !E.pointsBack("What did we agree with Google about the partnership?"))
+        check("rewrite: an answer instead of a question is refused",
+              E.parseRewrite("You had 19 meetings between 1 Aug and 31 Aug 2026.", original: "geçen ay kaç toplantı yaptım?") == nil)
+        check("rewrite: a statement for a question is refused", E.parseRewrite("Kerem is Uygar.", original: "Who is Kerem?") == nil)
+        check("language: Turkish question gets a Turkish hint",
+              E.languageHint(for: "Dietify toplantısında hangi görevler konuşuldu?") == "Answer in Turkish.\n")
+        check("language: English needs no hint", E.languageHint(for: "What did Acme push back on?") == "")
+        check("names: a local model gets only the named passages",
+              MeetingMemory.promoteRare(queryWords: ["complycube"], chunkWords: chunks, order: [0, 1, 3], topK: 3, namedOnly: true) == [2])
+        check("name words: capitalised mid-sentence", E.nameWords(in: "What did Milos from Complycube offer?", known: [])
+              == ["milos", "complycube"])
+        check("name words: ordinary words aren't names",
+              E.nameWords(in: "Emre ne satıyor ve neden UK şirketi istiyor?", known: []) == [] )
+        check("name words: a title word counts even lowercase or first",
+              E.nameWords(in: "Dietify toplantısında neler oldu", known: ["dietify"]) == ["dietify"])
+        let past = [AskMessage(role: .me, text: "What did Milos offer?"), AskMessage(role: .parrot, text: "An API.")]
+        check("history: questions only for a local model",
+              E.history(past, cloud: false, answers: false) == "User: What did Milos offer?")
+        check("answer: garbled lines don't mean refusing", E.systemPrompt.contains("don't refuse because others aren't"))
+        check("with: how many meetings with Revolut", E.meetingQuestion("How many meetings did I have with Revolut?")?.kind == .countWith("revolut"))
+        check("with: did I meet", E.meetingQuestion("Did I have any meetings with Complycube?")?.kind == .countWith("complycube"))
+        check("with: Turkish", E.meetingQuestion("Revolut ile kaç toplantı yaptım?").map { $0.kind == .countWith("revolut") && $0.turkish } == true)
+        check("with: 'my team' isn't a name", E.meetingQuestion("how many meetings with my team") == nil)
+        let one = [(id: a, title: "Meeting Revolut Sep 23", date: Date(timeIntervalSince1970: 1_790_000_000), duration: 1340.0)]
+        check("with: answer names the meetings",
+              E.meetingAnswer(.countWith("revolut"), turkish: false, items: one, range: nil).first?.text == "1 meeting mentions Revolut:")
+        check("with: none found", E.meetingAnswer(.countWith("google"), turkish: false, items: [], range: nil).first?.text == "No meetings mention Google.")
+        let long = (0..<20).map { MemoryChunk(meetingID: a, kind: .transcript, start: Double($0 * 60), text: "t\($0)", languageRaw: "tr") }
+        let spread = E.scopedHits(Array(long.prefix(3)), report: [], limit: 6, whole: long)
+        check("summary: no report spreads over the whole call",
+              spread.count == 6 && spread.contains { $0.start == 0 } && spread.contains { $0.start == 19 * 60 })
+        check("summary q: English and Turkish", E.isSummaryQuestion("summarise the meeting") && E.isSummaryQuestion("toplantıyı özetle")
+              && !E.isSummaryQuestion("what are the next steps?"))
+        let angle = E.parse("Emre sells textiles <M1 00:12>.", refs: [E.MeetingRef(ref: "M1", meetingID: a, title: "Jul 2", date: .now, people: [])]) { _, _ in true }
+        check("parse: <M1 00:12> is a citation", angle.first?.citations.count == 1 && angle.first?.text == "Emre sells textiles.")
+        check("summary hint: only for summaries", E.summaryHint(for: "summarise the meeting").hasPrefix("Summarise from the clear lines")
+              && E.summaryHint(for: "who is Kerem?") == "")
+        check("evenly: first and last", E.evenly(Array(0..<10), count: 3) == [0, 4, 9])
+        check("rewrite: a real rewrite passes",
+              E.parseRewrite("What did we offer Acme on pricing?", original: "and what did we offer them?") == "What did we offer Acme on pricing?")
+    }
+
+    @MainActor
     static func testAskMeetingQuestions() {
         typealias E = AskEngine
         check("meeting q: how many", E.meetingQuestion("how many meetings did I do this week")?.kind == .count)
@@ -1198,7 +1273,7 @@ enum ProfileTest {
         check("meeting q: longest defaults to 5", E.meetingQuestion("which were my longest calls")?.kind == .longest(5))
         check("meeting q: Turkish longest", E.meetingQuestion("en uzun toplantılarım hangileri")?.kind == .longest(5))
         check("meeting q: time spent", E.meetingQuestion("how much time did I spend in meetings last month")?.kind == .totalTime)
-        check("meeting q: with someone goes to the AI", E.meetingQuestion("how many meetings did I have with Revolut") == nil)
+        check("meeting q: longest with someone goes to the AI", E.meetingQuestion("my longest meetings with Revolut") == nil)
         check("meeting q: other questions go to the AI", E.meetingQuestion("how many people were in the meeting?") == nil
               && E.meetingQuestion("what did Acme push back on?") == nil)
 

@@ -71,6 +71,11 @@ struct ParrotMain {
             AnalyzeTest.run(provider: provider, model: model)
             return
         }
+        if let i = args.firstIndex(of: "--ask-real"), i + 2 < args.count {
+            let model = (i + 3 < args.count) ? args[i + 3] : nil
+            MainActor.assumeIsolated { AskRealTest.run(provider: args[i + 1], path: args[i + 2], model: model) }
+            return
+        }
         if let i = args.firstIndex(of: "--ask-chat-test") {
             let provider = (i + 1 < args.count) ? args[i + 1] : nil
             let model = (i + 2 < args.count) ? args[i + 2] : nil

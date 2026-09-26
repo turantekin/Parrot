@@ -833,6 +833,82 @@ enum AnalyzeTest {
     }
 }
 
+/// Dev only: Ask Parrot against the user's REAL meetings, read-only, for
+/// testing answer quality. Run from the signed bundle (the sandbox gives it
+/// the container): questions come from a file, one per line; a blank line
+/// starts a new chat; "@scope: <title words>" limits the next chat to the
+/// first meeting whose title contains those words. Chats are not saved.
+///   dist/Parrot.app/Contents/MacOS/Parrot --ask-real <claude|ollama> <questions-file> [model]
+@MainActor
+enum AskRealTest {
+    static func run(provider: String, path: String, model: String?) {
+        // The argument domain beats the app's saved settings (register(defaults:)
+        // would lose to an Ask AI the user picked in the app), and is never saved.
+        var overrides: [String: Any] = ["askProvider": provider]
+        if let model { overrides["copilotOllamaModel"] = model }
+        UserDefaults.standard.setVolatileDomain(overrides, forName: UserDefaults.argumentDomain)
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            print("ask-real: cannot read \(path)"); exit(1)
+        }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, allowsSave: false)]
+        ) else { print("ask-real: store failed (open Parrot once so it migrates)"); exit(1) }
+        let context = container.mainContext
+        let rm = RecordingManager(chats: AskChatStore(directory: nil))
+        rm.attachForHarness(modelContext: context)
+        let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+
+        // Chats: split on blank lines; "@scope:" picks a meeting.
+        var chats: [(scope: Meeting?, questions: [String])] = [(nil, [])]
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                if !(chats.last?.questions.isEmpty ?? true) { chats.append((nil, [])) }
+            } else if line.lowercased().hasPrefix("@scope:") {
+                let words = line.dropFirst(7).trimmingCharacters(in: .whitespaces).lowercased()
+                chats[chats.count - 1].scope = meetings.first { $0.title.lowercased().contains(words) }
+            } else {
+                chats[chats.count - 1].questions.append(line)
+            }
+        }
+
+        Task { @MainActor in
+            print("ask-real: \(meetings.count) meetings, AI = \(provider)\(model.map { " " + $0 } ?? "")")
+            for (n, spec) in chats.enumerated() where !spec.questions.isEmpty {
+                var chat = AskChat(title: "real \(n + 1)", scope: spec.scope?.id, scopeTitle: spec.scope?.title)
+                print("\n=== CHAT \(n + 1)\(spec.scope.map { " (scope: \($0.title))" } ?? "")")
+                for q in spec.questions {
+                    let started = Date()
+                    let result = await rm.ask(q, in: chat)
+                    let secs = String(format: "%.1f", Date().timeIntervalSince(started))
+                    print("\nQ: \(q)   [\(secs)s · \(result.model ?? "no AI") · private=\(result.usedPrivate)]")
+                    if let s = result.searchedFor { print("   searched: \(s)") }
+                    let titles = Dictionary(meetings.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+                    if !result.sources.isEmpty {
+                        var seen: [String] = []
+                        for c in result.sources { let t = String((titles[c.meetingID] ?? "?").prefix(24)); if !seen.contains(t) { seen.append(t) } }
+                        print("   passages from: \(seen.joined(separator: " | "))")
+                    }
+                    let names = Dictionary(result.refs.map { ($0.meetingID, $0.title) }, uniquingKeysWith: { a, _ in a })
+                    for line in result.lines {
+                        let cites = line.citations.map { c in
+                            String((names[c.meetingID] ?? "?").prefix(28)) + (c.time.map { " @" + Receipts.stamp($0) } ?? "")
+                        }
+                        print("   A: \(line.text)" + (cites.isEmpty ? "" : "  \(cites)"))
+                    }
+                    if let note = result.note { print("   note: \(note)") }
+                    chat.messages.append(AskMessage(role: .me, text: q))
+                    chat.messages.append(AskMessage(answer: result))
+                }
+            }
+            exit(0)
+        }
+        RunLoop.main.run()
+    }
+}
+
+
 /// Ask Parrot end to end on a real AI: two made-up meetings, a question,
 /// then a follow-up that only makes sense with the first. Prints what was
 /// searched, the answers and their citations. Nothing is saved.
