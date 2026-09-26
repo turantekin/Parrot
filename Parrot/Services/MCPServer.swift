@@ -40,6 +40,10 @@ enum MCPServer {
         /// The transcript as a receipts index, for commitment owners (only
         /// list_commitments pays for it). Names and times, no text leaves.
         var receipts: (UUID) -> ReceiptIndex
+        /// The meeting as an in-app export would write it, only these parts.
+        var export: (UUID, ExportService.Format, ExportService.Parts) -> String?
+        /// Where export_meeting saves (Downloads/Parrot Exports in the app).
+        var exportFolder: URL
         /// Hybrid search (exact words + on-device meaning) within these meetings.
         var search: @MainActor (String, Set<UUID>, Int) async -> [MemoryChunk]
     }
@@ -90,6 +94,9 @@ enum MCPServer {
                     meetings: { snapshot(context) },
                     transcript: { shareable($0)?.receiptIndex.lines ?? [] },
                     receipts: { shareable($0)?.receiptIndex ?? .empty },
+                    export: { id, format, parts in shareable(id).map { ExportService.content(for: $0, format: format, parts: parts) } },
+                    exportFolder: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+                        .appendingPathComponent("Parrot Exports", isDirectory: true),
                     // ponytail: loads every meeting's chunks from disk per search;
                     // keep one MeetingMemory alive if long histories feel slow.
                     search: { query, ids, limit in await MeetingMemory().search(query, within: ids, topK: limit) })
@@ -250,6 +257,19 @@ enum MCPServer {
                 ]) { a, _ in a },
             ],
         ],
+        [
+            "name": "export_meeting",
+            "title": "Save a meeting as a file",
+            "description": "Saves one meeting (report, notes, transcript, as the user shares them) as a file in their Downloads/Parrot Exports folder and returns the path. A copy of the user's own data; nothing in Parrot changes. Saving again overwrites that meeting's file. Good for many meetings or apps that read files.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "id": ["type": "string", "description": "Meeting id."],
+                    "format": ["type": "string", "enum": ["markdown", "txt", "srt"], "description": "Default markdown."],
+                ],
+                "required": ["id"],
+            ],
+        ],
     ]
 
     /// Narrowing shared by the tools that list or search meetings.
@@ -307,7 +327,8 @@ enum MCPServer {
     @MainActor
     static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
-        guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments"].contains(name)
+        guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments",
+           "export_meeting"].contains(name)
         else { return nil }
         let meetings = source.meetings()
         switch name {
@@ -394,6 +415,28 @@ enum MCPServer {
                     + (c.stamp.map { " | at \($0)" } ?? "")
                     + " | \(c.title), \(c.date.formatted(dayFormat)) | id \(c.meetingID.uuidString)"
             }.joined(separator: "\n")
+
+        case "export_meeting":
+            guard let raw = args["id"] as? String, let id = UUID(uuidString: raw),
+                  let m = meetings.first(where: { $0.id == id }) else {
+                return "No meeting with that id."
+            }
+            let asked = ((args["format"] as? String) ?? "markdown").lowercased()
+            guard let format = ExportService.Format(rawValue: asked == "md" ? "markdown" : asked) else {
+                return "Format is markdown, txt or srt."
+            }
+            // ponytail: v1's share set until the share settings land (Task 7).
+            guard let content = source.export(id, format, [.transcript, .report, .notes]) else {
+                return "No meeting with that id."
+            }
+            let url = source.exportFolder.appendingPathComponent(ExportService.filename(title: m.title, date: m.date, format: format))
+            do {
+                try FileManager.default.createDirectory(at: source.exportFolder, withIntermediateDirectories: true)
+                try content.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                return "Couldn't save the file: \(error.localizedDescription)"
+            }
+            return "Saved to \(url.path)"
 
         default:
             return nil

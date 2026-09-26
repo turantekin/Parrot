@@ -3,9 +3,34 @@ import Foundation
 /// Exports meeting transcripts to TXT and SRT formats.
 enum ExportService {
 
+    enum Format: String {
+        case markdown, txt, srt
+        var fileExtension: String { self == .markdown ? "md" : rawValue }
+    }
+
+    /// Which parts of a meeting an export holds. The app exports everything;
+    /// an AI app only gets what the user shares with it.
+    struct Parts: OptionSet {
+        let rawValue: Int
+        static let transcript = Parts(rawValue: 1)
+        static let report = Parts(rawValue: 2)
+        static let notes = Parts(rawValue: 4)
+        static let cards = Parts(rawValue: 8)
+        static let all: Parts = [.transcript, .report, .notes, .cards]
+    }
+
+    @MainActor
+    static func content(for meeting: Meeting, format: Format, parts: Parts = .all) -> String {
+        switch format {
+        case .markdown: return exportToMarkdown(meeting: meeting, parts: parts)
+        case .txt: return exportToTXT(meeting: meeting, parts: parts)
+        case .srt: return exportToSRT(meeting: meeting, parts: parts)
+        }
+    }
+
     // MARK: - Plain Text Export
 
-    static func exportToTXT(meeting: Meeting) -> String {
+    static func exportToTXT(meeting: Meeting, parts: Parts = .all) -> String {
         var output = """
         Meeting: \(meeting.title)
         Date: \(formatDate(meeting.date))
@@ -14,7 +39,7 @@ enum ExportService {
 
         """
 
-        if !meeting.notes.isEmpty {
+        if parts.contains(.notes), !meeting.notes.isEmpty {
             output += """
 
             === My Notes ===
@@ -36,7 +61,7 @@ enum ExportService {
             }
         }
 
-        if let summary = meeting.summary {
+        if parts.contains(.report), let summary = meeting.summary {
             output += """
 
             === Summary ===
@@ -46,7 +71,7 @@ enum ExportService {
             """
         }
 
-        if let coaching = meeting.coaching {
+        if parts.contains(.report), let coaching = meeting.coaching {
             output += """
 
             === Coaching & Follow-ups ===
@@ -56,7 +81,7 @@ enum ExportService {
             """
         }
 
-        if !meeting.insights.isEmpty {
+        if parts.contains(.cards), !meeting.insights.isEmpty {
             output += "\n=== Copilot Insights ===\n\n"
             for insight in meeting.sortedInsights {
                 let style = KindResolver.style(forKey: insight.kindRaw, profile: meeting.profile, snapshot: meeting.snapshotKinds)
@@ -72,6 +97,7 @@ enum ExportService {
             }
         }
 
+        guard parts.contains(.transcript) else { return output }
         output += "\n=== Transcript ===\n\n"
         for segment in meeting.sortedSegments {
             let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
@@ -88,7 +114,7 @@ enum ExportService {
     /// tasks, and the transcript. `parrot_id` lets a re-export overwrite the
     /// same note.
     @MainActor
-    static func exportToMarkdown(meeting: Meeting) -> String {
+    static func exportToMarkdown(meeting: Meeting, parts: Parts = .all) -> String {
         var out = "---\n"
         out += "title: \(yamlString(meeting.title))\n"
         out += "date: \(ISO8601DateFormatter().string(from: meeting.date))\n"
@@ -109,19 +135,21 @@ enum ExportService {
         if let consent = meeting.consent {
             out += "> Recording consent: \(consent.summary)\n\n"
         }
-        if !meeting.notes.isEmpty {
+        if parts.contains(.notes), !meeting.notes.isEmpty {
             out += "## My notes\n\n\(meeting.notes)\n\n"
         }
         // The checklist replaces the report's own next-step and commitment
         // sections, which listed the same promises a second time.
-        let steps = LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 20)
-        if let summary = meeting.summary {
+        let summary = parts.contains(.report) ? meeting.summary : nil
+        let coaching = parts.contains(.report) ? meeting.coaching : nil
+        let steps = LastCallBrief.openItems(summary: summary, coaching: coaching, limit: 20)
+        if let summary {
             out += "## Summary\n\n\(markdownReport(summary, skipCommitments: !steps.isEmpty))\n\n"
         }
         if !steps.isEmpty {
             out += "## Next steps\n\n" + steps.map { "- [ ] \($0)" }.joined(separator: "\n") + "\n\n"
         }
-        if let coaching = meeting.coaching {
+        if let coaching {
             out += "## Coaching\n\n\(markdownReport(coaching, skipCommitments: !steps.isEmpty))\n\n"
         }
         let marks = meeting.bookmarks
@@ -130,9 +158,10 @@ enum ExportService {
             out += marks.map { "- `\(Receipts.stamp($0.time))` \($0.label.isEmpty ? "Marked moment" : $0.label)" }
                 .joined(separator: "\n") + "\n\n"
         }
-        if let email = meeting.followUpEmail, !email.isEmpty {
+        if parts.contains(.report), let email = meeting.followUpEmail, !email.isEmpty {
             out += "## Follow-up email (draft)\n\n\(email)\n\n"
         }
+        guard parts.contains(.transcript) else { return out }
         out += "## Transcript\n\n"
         for segment in meeting.sortedSegments {
             let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
@@ -160,15 +189,19 @@ enum ExportService {
 
     /// "2026-09-25 14-30 Acme renewal.md": sorts by date, safe on every FS.
     static func markdownFilename(for meeting: Meeting) -> String {
+        filename(title: meeting.title, date: meeting.date, format: .markdown)
+    }
+
+    static func filename(title: String, date: Date, format: Format) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH-mm"
-        let title = meeting.title
+        let title = title
             .components(separatedBy: CharacterSet(charactersIn: "/:\\?%*|\"<>\n\r"))
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let short = String(title.prefix(80))
-        return "\(f.string(from: meeting.date)) \(short.isEmpty ? "Meeting" : short).md"
+        return "\(f.string(from: date)) \(short.isEmpty ? "Meeting" : short).\(format.fileExtension)"
     }
 
     private static func yamlString(_ s: String) -> String {
@@ -179,8 +212,9 @@ enum ExportService {
 
     // MARK: - SRT Export
 
-    static func exportToSRT(meeting: Meeting) -> String {
+    static func exportToSRT(meeting: Meeting, parts: Parts = .all) -> String {
         var output = ""
+        guard parts.contains(.transcript) else { return output }
         let segments = meeting.sortedSegments
 
         for (index, segment) in segments.enumerated() {

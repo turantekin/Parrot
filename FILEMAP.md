@@ -46,7 +46,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/KnowledgeBaseService.swift` | 532 | Ingests/chunks KB docs (heading-aware), on-device multilingual embeddings (re-embeds stale vectors), hybrid BM25 + embedding retrieval |
 | `Services/ProfileStore.swift` | 111 | Persists and mutates `CallProfile`s |
 | `Services/ProfilePresets.swift` | 170 | Built-in starter profiles (seven, incl. the buyer-side "Vendor call") |
-| `Services/ExportService.swift` | 235 | Export: TXT, SRT, Markdown (front matter, next-step checklist instead of repeated sections) |
+| `Services/ExportService.swift` | 265 | Export: TXT, SRT, Markdown (front matter, next-step checklist instead of repeated sections); `Parts` limits what an AI app gets |
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/AppUpdater.swift` | 56 | Sparkle updater: daily signed appcast check, installs on quit |
 | `Services/BugReport.swift` | 120 | Pre-filled GitHub issue: diagnostics, own-window screenshot, URL builder |
@@ -64,7 +64,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
 | `Services/Integrations.swift` | 230 | Apple Reminders, export folder (security-scoped bookmark), webhook (payload, HMAC, send) |
 | `Services/RecordingManager+Integrations.swift` | 90 | After-call actions, follow-up drafting, next steps → Reminders |
-| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations), opt-in, private meetings hidden |
+| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations, export to Downloads/Parrot Exports), opt-in, private meetings hidden |
 | `Services/MCPCommitments.swift` | 55 | Pure: commitment bullets from a report, owner = speaker of the cited receipt line |
 | `Services/MCPPrompts.swift` | 115 | Pure: the four ready-made MCP prompts (weekly digest, follow-up email, call prep, PRD from calls) |
 | `Services/CloudGate.swift` | 60 | On-device-only switch: global or per-call holds; checked by every cloud path |

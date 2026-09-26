@@ -2749,15 +2749,19 @@ enum ProfileTest {
         let long = (0..<1000).map { i in
             ReceiptIndex.Line(start: Double(i) / 3, end: Double(i) / 3 + 0.3, speaker: i % 2 == 0 ? "Me" : "Sarah", text: "line \(i)")
         }
-        func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
-            var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
-            if let id { msg["id"] = id }
-            let source = MCPServer.DataSource(
+        let exportFolder = FileManager.default.temporaryDirectory.appendingPathComponent("parrot-mcp-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: exportFolder) }
+        var source = MCPServer.DataSource(
                 meetings: { meetings },
                 transcript: { $0 == a ? [.init(start: 30, end: 33, speaker: "Jeremy", text: "Send the contract.")]
                                       : $0 == old ? long : [] },
                 receipts: { ReceiptIndex(lines: $0 == beta ? betaLines : []) },
+                export: { _, _, _ in nil }, exportFolder: exportFolder,
                 search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
+        func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
+            var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
+            if let id { msg["id"] = id }
+            let source = source
             return awaitMain { await MCPServer.handle(msg, source: source) }
         }
         let initResult = call("initialize", ["protocolVersion": "2025-03-26"])?["result"] as? [String: Any]
@@ -2767,7 +2771,7 @@ enum ProfileTest {
         check("mcp: ping", call("ping")?["result"] != nil)
         let tools = (call("tools/list")?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
         check("mcp: read-only tools listed", tools?.compactMap { $0["name"] as? String }
-              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments"])
+              == ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments", "export_meeting"])
         func text(_ reply: [String: Any]?) -> String {
             (((reply?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         }
@@ -2874,6 +2878,24 @@ enum ProfileTest {
         phase4Meeting(ctx).profile = therapy
         let snap = MCPServer.snapshot(ctx)
         check("mcp: private and unfinished meetings are invisible", snap.map(\.id) == [open.id])
+
+        // export_meeting writes what the in-app export writes.
+        source.meetings = { snap }
+        source.export = { id, format, parts in id == open.id ? ExportService.content(for: open, format: format, parts: parts) : nil }
+        let saved = tool("export_meeting", ["id": open.id.uuidString])
+        let path = saved.hasPrefix("Saved to ") ? String(saved.dropFirst(9)) : ""
+        let file = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        let inApp = ExportService.exportToMarkdown(meeting: open)
+        let frontMatter = String(inApp.prefix(upTo: inApp.range(of: "\n---\n")!.upperBound))
+        check("mcp: export lands in the export folder", path.hasPrefix(exportFolder.path) && path.hasSuffix(".md"))
+        check("mcp: export has the in-app front matter", file.hasPrefix(frontMatter))
+        check("mcp: export keeps the transcript", file.contains("**Them:** Send me the contract."))
+        _ = tool("export_meeting", ["id": open.id.uuidString])
+        _ = tool("export_meeting", ["id": open.id.uuidString, "format": "srt"])
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: exportFolder.path)) ?? []
+        check("mcp: saving again overwrites the same file", files.filter { $0.hasSuffix(".md") }.count == 1 && files.count == 2)
+        check("mcp: export bad id", tool("export_meeting", ["id": secret.id.uuidString]) == "No meeting with that id.")
+        check("mcp: export bad format", tool("export_meeting", ["id": open.id.uuidString, "format": "pdf"]).hasPrefix("Format is"))
     }
 
     // MARK: - Phase 5: privacy
