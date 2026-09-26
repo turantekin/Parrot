@@ -226,7 +226,6 @@ enum HelpShots {
             // this keeps a screenshot from kicking one off.
             "onboardingNoAutoDownload": true,
             // Help shots never read the Keychain or call a cloud service.
-            "onboardingNoKeyPrefill": true,
         ])
 
         // A live-looking meeting for the call screen.
