@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="privacy, local, on device, cloud, what is sent, audio, transcript, api keys, keychain, security">
+<meta name="keywords" content="privacy, local, on device, cloud, what is sent, audio, transcript, api keys, keychain, security, set up copilot, ollama install, check key">
 <title>What leaves your Mac</title>
 <link rel="canonical" href="https://openparrot.app/help/privacy.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -27,7 +27,9 @@ that is one you make yourself, and here is the complete list.</p>
   <li>Meetings, transcripts, insights, reports: a local database in the app's
   own container.</li>
   <li>Your API keys, if you add any: stored in the macOS Keychain, not in
-  files.</li>
+  files. When you press <strong>Check key</strong> during setup, the key goes
+  only to its own service (Anthropic or Deepgram), once, to see that it
+  works.</li>
   <li>Your documents: read, split up and indexed on your Mac. The files
   themselves are never uploaded.</li>
   <li>Your calendar, if you connect it: read on your Mac through macOS's own
@@ -115,6 +117,9 @@ and for what.</p>
 local: Parrot only ever talks to it on localhost. Local model, local
 transcription, zero outbound bytes. That combination is the whole reason
 Parrot exists.</p>
+<p>If you pick <strong>Private</strong> during setup, Parrot can install Ollama
+for you: it downloads the official app from ollama.com, checks that it's really
+signed by Ollama, and opens it. macOS asks you to confirm once.</p>
 
 </body>
 </html>
