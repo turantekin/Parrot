@@ -28,6 +28,8 @@ enum MCPServer {
         var coaching: String?
         var notes: String
         var bookmarks: [String]
+        /// For excluded call types.
+        var profileID: UUID? = nil
     }
 
     /// Where the tools read from. Closures so a request only pays for what
@@ -48,9 +50,18 @@ enum MCPServer {
         var export: (UUID, ExportService.Format, ExportService.Parts) -> String?
         /// Where export_meeting saves (Downloads/Parrot Exports in the app).
         var exportFolder: URL
-        /// Hybrid search (exact words + on-device meaning) within these meetings.
-        var search: @MainActor (String, Set<UUID>, Int) async -> [MemoryChunk]
+        /// Hybrid search (exact words + on-device meaning) within these
+        /// meetings, over these kinds of passage.
+        var search: @MainActor (String, Set<UUID>, Set<MemoryChunk.Kind>, Int) async -> [MemoryChunk]
+        /// What the user shares; every tool reads through `access.gate`.
+        var access = MCPAccess()
+        /// Called once per tool call that returns meeting content (activity line).
+        var didRead: () -> Void = {}
     }
+
+    /// Tools whose answer is meeting content (profiles are config).
+    static let contentTools: Set<String> = ["list_meetings", "get_meeting", "search_meetings", "get_transcript",
+                                            "list_commitments", "export_meeting", "meeting_stats"]
 
     // MARK: stdio loop
 
@@ -98,15 +109,25 @@ enum MCPServer {
                     meetings: { snapshot(context) },
                     transcript: { shareable($0)?.receiptIndex.lines ?? [] },
                     receipts: { shareable($0)?.receiptIndex ?? .empty },
-                    // ponytail: cards stay off until the share settings land (Task 7).
-                    cards: { _ in [] },
+                    cards: { id in
+                        guard let m = shareable(id) else { return [] }
+                        return m.sortedInsights.map { card in
+                            let style = KindResolver.style(forKey: card.kindRaw, profile: m.profile, snapshot: m.snapshotKinds)
+                            return "\(card.formattedCallTime) \(style.label): \(card.title)"
+                                + (style.isPinned ? (card.isHandled ? " (handled)" : " (open)") : "")
+                        }
+                    },
                     profiles: { (try? context.fetch(FetchDescriptor<CallProfile>(sortBy: [SortDescriptor(\.sortOrder)]))) ?? [] },
                     export: { id, format, parts in shareable(id).map { ExportService.content(for: $0, format: format, parts: parts) } },
                     exportFolder: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
                         .appendingPathComponent("Parrot Exports", isDirectory: true),
                     // ponytail: loads every meeting's chunks from disk per search;
                     // keep one MeetingMemory alive if long histories feel slow.
-                    search: { query, ids, limit in await MeetingMemory().search(query, within: ids, topK: limit) })
+                    search: { query, ids, kinds, limit in
+                        await MeetingMemory().search(query, within: ids, kinds: kinds, topK: limit)
+                    },
+                    access: MCPAccess(defaults: .standard),
+                    didRead: { MCPAccess.recordRead() })
                 if let reply = await handle(message, source: source) { respond(reply) }
             }
         } catch {
@@ -139,7 +160,8 @@ enum MCPServer {
             id: m.id, title: m.title, date: m.date, durationMinutes: Int((m.duration / 60).rounded()),
             people: people, profile: m.profile?.name, summary: m.summary, coaching: m.coaching,
             notes: m.notes,
-            bookmarks: m.bookmarks.map { "\(Receipts.stamp($0.time)) \($0.label.isEmpty ? "Marked moment" : $0.label)" })
+            bookmarks: m.bookmarks.map { "\(Receipts.stamp($0.time)) \($0.label.isEmpty ? "Marked moment" : $0.label)" },
+            profileID: m.profile?.id)
     }
 
     // MARK: JSON-RPC
@@ -185,6 +207,7 @@ enum MCPServer {
             guard let text = await call(name, args: args, source: source) else {
                 return error(-32602, "Unknown tool: \(name)")
             }
+            if contentTools.contains(name) { source.didRead() }
             let clipped = text.count > maxToolText ? String(text.prefix(maxToolText)) + "\n…(truncated)" : text
             return result(["content": [["type": "text", "text": clipped]], "isError": false])
         default:
@@ -359,6 +382,8 @@ enum MCPServer {
 
     @MainActor
     static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
+        let access = source.access
+        let source = access.gate(source)
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
         guard ["list_meetings", "get_meeting", "search_meetings", "get_transcript", "list_commitments",
            "export_meeting", "meeting_stats", "list_profiles", "get_profile"].contains(name)
@@ -390,6 +415,8 @@ enum MCPServer {
             if let coaching = m.coaching { out += "\n\n## Coaching\n\(coaching)" }
             if !m.bookmarks.isEmpty { out += "\n\n## Moments the user marked\n" + m.bookmarks.map { "- \($0)" }.joined(separator: "\n") }
             if !m.notes.isEmpty { out += "\n\n## User's notes\n\(m.notes)" }
+            let unshared = [(access.reports, "reports"), (access.transcripts, "transcripts"), (access.notes, "notes")]
+                .filter { !$0.0 }.map(\.1)
             let cards = source.cards(m.id)
             if !cards.isEmpty { out += "\n\n## Copilot cards from the live call\n" + cards.map { "- \($0)" }.joined(separator: "\n") }
             if (args["include_transcript"] as? Bool) == true {
@@ -399,6 +426,7 @@ enum MCPServer {
                     out += "\n\n(The transcript goes on: call get_transcript with this id and from = \(Receipts.stamp(next)).)"
                 }
             }
+            if !unshared.isEmpty { out += "\n\n(The user doesn't share \(unshared.joined(separator: " or ")) with AI apps.)" }
             return out
 
         case "get_transcript":
@@ -409,6 +437,7 @@ enum MCPServer {
             let from = (args["from"] as? String).map { Receipts.parseStamp($0) }
             let to = (args["to"] as? String).map { Receipts.parseStamp($0) }
             if from == .some(nil) || to == .some(nil) { return "Write from and to as mm:ss, e.g. 12:30." }
+            guard access.transcripts else { return "The user doesn't share transcripts with AI apps." }
             let lines = source.transcript(id)
             guard !lines.isEmpty else { return "This meeting has no transcript." }
             let limit = min(max((args["max_lines"] as? Int) ?? defaultPageLines, 1), 1000)
@@ -425,7 +454,11 @@ enum MCPServer {
             let byID = Dictionary(meetings.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             // Checked again here: whatever the search returns, only meetings
             // that passed the privacy gate and the filters come out.
-            let hits = await source.search(query, Set(byID.keys), limit).filter { byID[$0.meetingID] != nil }
+            guard access.transcripts || access.reports else {
+                return "The user doesn't share transcripts or reports with AI apps, so there's nothing to search."
+            }
+            let hits = await source.search(query, Set(byID.keys), [.transcript, .report], limit)
+                .filter { byID[$0.meetingID] != nil }
             guard !hits.isEmpty else { return "Nothing matches that in the meetings." }
             return hits.map { c -> String in
                 let m = byID[c.meetingID]!
@@ -434,6 +467,7 @@ enum MCPServer {
             }.joined(separator: "\n\n---\n\n")
 
         case "list_commitments":
+            guard access.reports else { return "The user doesn't share reports with AI apps, so there are no commitments to list." }
             guard let meetings = filtered(meetings, args: args) else { return badWhen }
             let owner = (args["owner"] as? String) ?? ""
             let limit = min(max((args["limit"] as? Int) ?? 30, 1), 100)
@@ -460,8 +494,8 @@ enum MCPServer {
             guard let format = ExportService.Format(rawValue: asked == "md" ? "markdown" : asked) else {
                 return "Format is markdown, txt or srt."
             }
-            // ponytail: v1's share set until the share settings land (Task 7).
-            guard let content = source.export(id, format, [.transcript, .report, .notes]) else {
+            if format == .srt, !access.transcripts { return "The user doesn't share transcripts with AI apps." }
+            guard let content = source.export(id, format, .all) else {
                 return "No meeting with that id."
             }
             let url = source.exportFolder.appendingPathComponent(ExportService.filename(title: m.title, date: m.date, format: format))

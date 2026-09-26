@@ -263,10 +263,10 @@ final class MeetingMemory {
     /// `namedOnly`: when the question names someone rare, return only the
     /// passages that mention them (a small local model mixes in the rest).
     func search(_ query: String, within meetingIDs: Set<UUID>? = nil,
-                excluding: Set<UUID> = [], topK: Int = 8, names: Set<String> = [],
-                namedOnly: Bool = false) async -> [MemoryChunk] {
+                excluding: Set<UUID> = [], kinds: Set<MemoryChunk.Kind> = [.transcript, .report],
+                topK: Int = 8, names: Set<String> = [], namedOnly: Bool = false) async -> [MemoryChunk] {
         let pool = chunks.filter {
-            !excluding.contains($0.meetingID) && (meetingIDs?.contains($0.meetingID) ?? true)
+            !excluding.contains($0.meetingID) && (meetingIDs?.contains($0.meetingID) ?? true) && kinds.contains($0.kind)
         }
         guard !pool.isEmpty, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
         let tokens = pool.map { chunk -> [String] in

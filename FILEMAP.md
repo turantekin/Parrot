@@ -57,17 +57,18 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/CallWatcher.swift` | 356 | Polls the detector; Ask/Auto modes; notification actions + delegate; calendar reminders; `NotificationAccess` |
 | `Services/CalendarService.swift` | 250 | EventKit read-only: current event match, notes cleaning, invite context, title → profile |
 | `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
-| `Services/MeetingMemory.swift` | 300 | Local index of finished meetings (chunks + on-device vectors, one file per meeting), hybrid search |
+| `Services/MeetingMemory.swift` | 300 | Local index of finished meetings (chunks + on-device vectors, one file per meeting), hybrid search (optionally one kind of passage) |
 | `Services/AskChatStore.swift` | 170 | Ask Parrot's saved chats: AskMessage/AskChat values, one JSON file, rename/delete/stale sweep, titles, day groups |
 | `Services/AskEngine.swift` | 260 | Ask Parrot prompt/context, `[M2 12:34]` citation parsing + checks; LastCallBrief (previous meeting, open items) |
 | `Services/RecordingManager+Memory.swift` | 110 | meetingFinished hook, memory sync, previous meeting, `ask()` |
 | `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
 | `Services/Integrations.swift` | 230 | Apple Reminders, export folder (security-scoped bookmark), webhook (payload, HMAC, send) |
 | `Services/RecordingManager+Integrations.swift` | 90 | After-call actions, follow-up drafting, next steps → Reminders |
-| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations, export to Downloads/Parrot Exports, talk-time stats, read profiles), opt-in, private meetings hidden |
+| `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations, export to Downloads/Parrot Exports, talk-time stats, read profiles; share settings via MCPAccess), opt-in, private meetings hidden |
 | `Services/MCPCommitments.swift` | 55 | Pure: commitment bullets from a report, owner = speaker of the cited receipt line |
 | `Services/MCPPrompts.swift` | 115 | Pure: the four ready-made MCP prompts (weekly digest, follow-up email, call prep, PRD from calls) |
 | `Services/ProfileFile.swift` | 250 | Pure: portable `.parrotprofile` JSON (encode a CallProfile, decode with limits, unknown fields kept) |
+| `Services/MCPAccess.swift` | 110 | What AI apps may see (share checkboxes, excluded call types), the gate every MCP tool reads through, activity counters |
 | `Services/CloudGate.swift` | 60 | On-device-only switch: global or per-call holds; checked by every cloud path |
 | `Services/Redactor.swift` | 200 | Hide emails/phones/cards/IBANs/names from cloud AI and restore them; request/result helpers |
 | `Services/Retention.swift` | 55 | Automatic clean-up rules (audio / whole meetings after N days) |

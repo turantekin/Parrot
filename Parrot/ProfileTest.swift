@@ -73,6 +73,7 @@ enum ProfileTest {
         testWebhook()
         testMCPServer()
         testProfileFile()
+        testMCPAccess()
         testCloudGate()
         testRedactor()
         testRetention()
@@ -2719,12 +2720,12 @@ enum ProfileTest {
 
     @MainActor
     static func testMCPServer() {
-        let a = UUID(), old = UUID(), hidden = UUID(), beta = UUID()
+        let a = UUID(), old = UUID(), hidden = UUID(), beta = UUID(), board = UUID(), boardProfile = UUID()
         let day: TimeInterval = 86_400
         let meetings = [
             MCPServer.MeetingInfo(
                 id: a, title: "Acme renewal", date: Date().addingTimeInterval(-7 * day), durationMinutes: 30,
-                people: ["Jeremy"], profile: "Sales", summary: "Renewal went well.", coaching: nil, notes: "",
+                people: ["Jeremy"], profile: "Sales", summary: "Renewal went well.", coaching: nil, notes: "Call back Tuesday",
                 bookmarks: ["00:30 pricing"]),
             MCPServer.MeetingInfo(
                 id: old, title: "Globex kickoff", date: Date().addingTimeInterval(-40 * day), durationMinutes: 20,
@@ -2734,6 +2735,10 @@ enum ProfileTest {
                 people: ["Priya"], profile: nil,
                 summary: "Good call.\n\nNext steps:\n- I send the proposal [01:00]\n- Priya shares the budget sheet [02:00]\n- Book a demo\n- None",
                 coaching: "Commitments & follow-ups:\n- You send the proposal [01:00]", notes: "", bookmarks: []),
+            MCPServer.MeetingInfo(
+                id: board, title: "Board call", date: Date().addingTimeInterval(-1 * day), durationMinutes: 45,
+                people: ["Omar"], profile: "Board", summary: "Board notes.", coaching: nil, notes: "", bookmarks: [],
+                profileID: boardProfile),
         ]
         let betaLines: [ReceiptIndex.Line] = [.init(start: 60, end: 64, speaker: "Me", text: "I'll send the proposal tomorrow."),
                                               .init(start: 62, end: 66, speaker: "Me", text: "Could you share the budget by Friday?"),
@@ -2745,8 +2750,10 @@ enum ProfileTest {
         // The stub ignores the ids it's given, like a buggy search would:
         // the tool must still drop what the gate didn't pass.
         let chunks = [chunk(a, "Send the contract."), chunk(a, "That's too expensive for us."),
-                      chunk(hidden, "The secret budget is ninety million.")]
+                      chunk(hidden, "The secret budget is ninety million."),
+                      MemoryChunk(meetingID: a, kind: .report, start: 0, text: "Report: renewal pricing agreed.", languageRaw: "en")]
         var searchedIDs: Set<UUID> = []
+        var searchedKinds: Set<MemoryChunk.Kind> = []
         // Three lines a second, so a page boundary can fall inside a second.
         let long = (0..<1000).map { i in
             ReceiptIndex.Line(start: Double(i) / 3, end: Double(i) / 3 + 0.3, speaker: i % 2 == 0 ? "Me" : "Sarah", text: "line \(i)")
@@ -2760,7 +2767,11 @@ enum ProfileTest {
                 receipts: { ReceiptIndex(lines: $0 == beta ? betaLines : []) },
                 cards: { _ in [] }, profiles: { ProfilePresets.all() },
                 export: { _, _, _ in nil }, exportFolder: exportFolder,
-                search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
+                search: { _, ids, kinds, limit in
+                    searchedIDs = ids
+                    searchedKinds = kinds
+                    return Array(chunks.prefix(limit))
+                })
         func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
             var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
             if let id { msg["id"] = id }
@@ -2864,9 +2875,12 @@ enum ProfileTest {
         check("mcp: stats without a transcript", tool("meeting_stats", ["id": old.uuidString]).hasPrefix("This meeting has no transcript"))
         check("mcp: no cards unless shared", !tool("get_meeting", ["id": a.uuidString]).contains("Copilot cards"))
         source.cards = { $0 == a ? ["00:40 Objection: Price too high (open)"] : [] }
+        check("mcp: cards off by default", !tool("get_meeting", ["id": a.uuidString]).contains("Copilot cards"))
+        source.access = MCPAccess(cards: true)
         check("mcp: cards when shared", tool("get_meeting", ["id": a.uuidString])
               .contains("## Copilot cards from the live call\n- 00:40 Objection: Price too high (open)"))
         source.cards = { _ in [] }
+        source.access = MCPAccess()
         let profileList = tool("list_profiles", [:])
         check("mcp: list_profiles", profileList.contains("## Vendor call") && profileList.contains("Other side: the vendor")
               && profileList.contains("(pinned)"))
@@ -2875,6 +2889,46 @@ enum ProfileTest {
         check("mcp: get_profile is a profile file", vendorFile?.profile.name == "Vendor call"
               && vendorFile?.sharedID == UUID(uuidString: "00000000-0000-0000-0000-0000000000C6"))
         check("mcp: get_profile unknown name", tool("get_profile", ["name": "nope"]).hasPrefix("No profile"))
+        // Share settings: every tool reads through the same gate.
+        var reads = 0
+        source.didRead = { reads += 1 }
+        _ = call("ping"); _ = call("tools/list"); _ = call("prompts/list")
+        _ = tool("list_profiles", [:]); _ = tool("get_profile", ["name": "Default"])
+        check("mcp: no read counted for ping, lists or profiles", reads == 0)
+        _ = tool("get_meeting", ["id": a.uuidString]); _ = tool("search_meetings", ["query": "x"])
+        check("mcp: one read per content call", reads == 2)
+        source.didRead = {}
+        check("mcp: notes shared by default", tool("get_meeting", ["id": a.uuidString]).contains("## User's notes\nCall back Tuesday"))
+        check("mcp: excluded nothing by default", tool("list_meetings", [:]).contains("Board call"))
+
+        source.access = MCPAccess(transcripts: false)
+        check("mcp: transcripts off, get_transcript says so", tool("get_transcript", ["id": old.uuidString])
+              == "The user doesn't share transcripts with AI apps.")
+        let noTranscript = tool("get_meeting", ["id": a.uuidString, "include_transcript": true])
+        check("mcp: transcripts off, get_meeting has none", !noTranscript.contains("Send the contract")
+              && noTranscript.contains("(The user doesn't share transcripts with AI apps.)"))
+        let reportOnly = tool("search_meetings", ["query": "pricing"])
+        check("mcp: transcripts off, search skips transcript passages", !reportOnly.contains("too expensive")
+              && !reportOnly.contains("Send the contract") && reportOnly.contains("renewal pricing agreed"))
+        check("mcp: transcripts off, search asks for reports only", searchedKinds == [.report])
+        check("mcp: transcripts off, talk time still works", tool("meeting_stats", ["id": beta.uuidString]).contains("- Me: 0:06"))
+
+        source.access = MCPAccess(reports: false, notes: false)
+        let bare = tool("get_meeting", ["id": a.uuidString])
+        check("mcp: reports and notes off", !bare.contains("## Summary") && !bare.contains("Call back Tuesday")
+              && bare.contains("doesn't share reports or notes"))
+        check("mcp: reports off, no commitments", tool("list_commitments", [:]).hasPrefix("The user doesn't share reports"))
+        _ = tool("search_meetings", ["query": "pricing"])
+        check("mcp: reports off, search asks for transcripts only", searchedKinds == [.transcript])
+        source.access = MCPAccess(transcripts: false, reports: false)
+        check("mcp: nothing to search", tool("search_meetings", ["query": "pricing"]).contains("nothing to search"))
+
+        source.access = MCPAccess(excludedProfiles: [boardProfile])
+        check("mcp: excluded call type never listed", !tool("list_meetings", [:]).contains("Board call"))
+        check("mcp: excluded call type can't be read", tool("get_meeting", ["id": board.uuidString]) == "No meeting with that id.")
+        _ = tool("search_meetings", ["query": "board"])
+        check("mcp: excluded call type never searched", !searchedIDs.contains(board))
+        source.access = MCPAccess()
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26
@@ -2918,7 +2972,41 @@ enum ProfileTest {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: exportFolder.path)) ?? []
         check("mcp: saving again overwrites the same file", files.filter { $0.hasSuffix(".md") }.count == 1 && files.count == 2)
         check("mcp: export bad id", tool("export_meeting", ["id": secret.id.uuidString]) == "No meeting with that id.")
+        source.access = MCPAccess(transcripts: false, notes: false)
+        let trimmedPath = String(tool("export_meeting", ["id": open.id.uuidString]).dropFirst(9))
+        let trimmed = (try? String(contentsOfFile: trimmedPath, encoding: .utf8)) ?? ""
+        check("mcp: export leaves out unshared parts", trimmed.contains("## Summary") && !trimmed.contains("Send me the contract")
+              && !trimmed.contains("Bring Q3 numbers"))
+        check("mcp: no subtitles without transcripts", tool("export_meeting", ["id": open.id.uuidString, "format": "srt"])
+              == "The user doesn't share transcripts with AI apps.")
+        source.access = MCPAccess()
         check("mcp: export bad format", tool("export_meeting", ["id": open.id.uuidString, "format": "pdf"]).hasPrefix("Format is"))
+    }
+
+    static func testMCPAccess() {
+        let name = "parrot-mcp-access-\(UUID().uuidString)"
+        guard let d = UserDefaults(suiteName: name) else { check("mcp access defaults", false); return }
+        defer { d.removePersistentDomain(forName: name) }
+        check("mcp access: v1 users keep what v1 shared", MCPAccess(defaults: d) == MCPAccess()
+              && MCPAccess().transcripts && MCPAccess().reports && MCPAccess().notes && !MCPAccess().cards)
+        let excluded = UUID()
+        d.set(false, forKey: MCPAccess.transcriptsKey)
+        d.set(true, forKey: MCPAccess.cardsKey)
+        d.set([excluded.uuidString, "junk"], forKey: MCPAccess.excludedKey)
+        check("mcp access: settings are read", MCPAccess(defaults: d) == MCPAccess(transcripts: false, cards: true, excludedProfiles: [excluded]))
+
+        let morning = Date(timeIntervalSince1970: 1_790_406_000)   // 2026-09-26 07:00 UTC
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        MCPAccess.recordRead(in: d, now: morning, calendar: utc)
+        MCPAccess.recordRead(in: d, now: morning.addingTimeInterval(3600), calendar: utc)
+        check("mcp access: reads counted", MCPAccess.readsToday(in: d, now: morning.addingTimeInterval(7200), calendar: utc) == 2)
+        check("mcp access: last read time", d.object(forKey: MCPAccess.lastReadKey) as? Date == morning.addingTimeInterval(3600))
+        check("mcp access: first read kept", d.object(forKey: MCPAccess.firstReadKey) as? Date == morning)
+        check("mcp access: tomorrow shows 0 before any read", MCPAccess.readsToday(in: d, now: morning.addingTimeInterval(86_400), calendar: utc) == 0)
+        MCPAccess.recordRead(in: d, now: morning.addingTimeInterval(86_400), calendar: utc)
+        check("mcp access: a new day starts again", MCPAccess.readsToday(in: d, now: morning.addingTimeInterval(86_400), calendar: utc) == 1)
+        check("mcp access: first read never moves", d.object(forKey: MCPAccess.firstReadKey) as? Date == morning)
     }
 
     @MainActor
