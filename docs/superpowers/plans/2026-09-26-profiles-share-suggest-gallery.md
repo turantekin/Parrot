@@ -144,7 +144,7 @@ Runs once, on the first launch after the update, inside `ProfileStore.seedAndMig
 **Order (each step idempotent, so a crash mid-way just re-runs):**
 1. **Backup:** every profile written as a `.parrotprofile` to `Application Support/Parrot/Backups/profiles-before-2.0/` (never deleted automatically). Restoring = Import.
 2. **Sharing IDs:** built-ins get their preset UUID as `sharedID`; user-made profiles get a new `sharedID`; `sharedVersion = 1`.
-3. **Restore point:** each profile's history (Task C) gets a first entry, "Before Profiles 2.0".
+3. **Restore point:** each profile's history gets a first entry, "Before Profiles 2.0". The history store (last 5 versions per profile, JSON via `ProfileFile`) is built here, in Task M; Task C later adds the editor's "Restore previous version" on top of it.
 4. **Report choice:**
    - built-in, not `isUserModified` → `.preset` (new template, automatic)
    - built-in, `isUserModified` → `.classic` + `reportOfferPending = true`
@@ -226,7 +226,7 @@ Runs once, on the first launch after the update, inside `ProfileStore.seedAndMig
   - side-by-side changes, grouped as persona, what to flag (added / removed / changed kinds), report (sections, scorecard, coaching), mood meters, other
   - the privacy line when it turns on-device-only on
 - [ ] Buttons: **Apply** · **Save as new profile** · **Discard**.
-- [ ] **Undo:** `ProfileStore` keeps the last 5 versions of each profile (a JSON history via `ProfileFile`); the editor gets "Restore previous version".
+- [ ] **Undo:** uses the history store from Task M (last 5 versions per profile); the editor gets "Restore previous version".
 - [ ] Applying marks the profile `isUserModified` (so preset refreshes keep it) and bumps `sharedVersion`.
 - [ ] A suggestion is never applied mid-call: if a call is live with that profile, Apply waits until the call ends and says so.
 
