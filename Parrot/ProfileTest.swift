@@ -2705,24 +2705,47 @@ enum ProfileTest {
         check("webhook: private meeting may not leave", !CloudGate.mayLeaveMac(m))
     }
 
+    /// Runs async main-actor work to completion from the (sync) harness.
+    private final class AwaitBox<T> { var value: T?; var done = false }
+
+    @MainActor
+    static func awaitMain<T>(_ body: @escaping @MainActor () async -> T) -> T {
+        let box = AwaitBox<T>()
+        Task { @MainActor in box.value = await body(); box.done = true }
+        while !box.done { RunLoop.main.run(until: .now + 0.005) }
+        return box.value!
+    }
+
     @MainActor
     static func testMCPServer() {
-        let a = UUID()
-        let meetings = [MCPServer.MeetingInfo(
-            id: a, title: "Acme renewal", date: Date(timeIntervalSince1970: 1_790_000_000), durationMinutes: 30,
-            people: ["Jeremy"], profile: "Sales", summary: "Renewal went well.", coaching: nil, notes: "",
-            bookmarks: ["00:30 pricing"])]
-        let chunks = MeetingMemory.buildChunks(meetingID: a, lines: [.init(start: 30, end: 33, speaker: "Jeremy",
-                                                                           text: "Send the contract.")],
-                                               summary: nil, coaching: nil)
+        let a = UUID(), old = UUID(), hidden = UUID()
+        let day: TimeInterval = 86_400
+        let meetings = [
+            MCPServer.MeetingInfo(
+                id: a, title: "Acme renewal", date: Date().addingTimeInterval(-7 * day), durationMinutes: 30,
+                people: ["Jeremy"], profile: "Sales", summary: "Renewal went well.", coaching: nil, notes: "",
+                bookmarks: ["00:30 pricing"]),
+            MCPServer.MeetingInfo(
+                id: old, title: "Globex kickoff", date: Date().addingTimeInterval(-40 * day), durationMinutes: 20,
+                people: ["Sarah Lee"], profile: nil, summary: nil, coaching: nil, notes: "", bookmarks: []),
+        ]
+        func chunk(_ id: UUID, _ text: String) -> MemoryChunk {
+            MeetingMemory.buildChunks(meetingID: id, lines: [.init(start: 30, end: 33, speaker: "Jeremy", text: text)],
+                                      summary: nil, coaching: nil)[0]
+        }
+        // The stub ignores the ids it's given, like a buggy search would:
+        // the tool must still drop what the gate didn't pass.
+        let chunks = [chunk(a, "Send the contract."), chunk(a, "That's too expensive for us."),
+                      chunk(hidden, "The secret budget is ninety million.")]
+        var searchedIDs: Set<UUID> = []
         func call(_ method: String, _ params: [String: Any] = [:], id: Any? = 1) -> [String: Any]? {
             var msg: [String: Any] = ["jsonrpc": "2.0", "method": method, "params": params]
             if let id { msg["id"] = id }
             let source = MCPServer.DataSource(
                 meetings: { meetings },
                 transcript: { $0 == a ? ["[00:30] Jeremy: Send the contract."] : [] },
-                chunks: { chunks })
-            return MCPServer.handle(msg, source: source)
+                search: { _, ids, limit in searchedIDs = ids; return Array(chunks.prefix(limit)) })
+            return awaitMain { await MCPServer.handle(msg, source: source) }
         }
         let initResult = call("initialize", ["protocolVersion": "2025-03-26"])?["result"] as? [String: Any]
         check("mcp: initialize echoes the client's version", initResult?["protocolVersion"] as? String == "2025-03-26")
@@ -2736,7 +2759,7 @@ enum ProfileTest {
             (((reply?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         }
         check("mcp: list_meetings", text(call("tools/call", ["name": "list_meetings", "arguments": [:]])).contains("Acme renewal | with Jeremy"))
-        check("mcp: list filter misses", text(call("tools/call", ["name": "list_meetings", "arguments": ["query": "globex"]])) == "No meetings found.")
+        check("mcp: list filter misses", text(call("tools/call", ["name": "list_meetings", "arguments": ["query": "initech"]])) == "No meetings found.")
         let got = text(call("tools/call", ["name": "get_meeting", "arguments": ["id": a.uuidString]]))
         check("mcp: get_meeting has the summary", got.contains("## Summary\nRenewal went well."))
         check("mcp: transcript only on request", !got.contains("Send the contract"))
@@ -2745,6 +2768,29 @@ enum ProfileTest {
         check("mcp: bad id", text(call("tools/call", ["name": "get_meeting", "arguments": ["id": "nope"]])) == "No meeting with that id.")
         check("mcp: search finds the moment", text(call("tools/call", ["name": "search_meetings",
               "arguments": ["query": "contract"]])).contains("at 00:30"))
+        func tool(_ name: String, _ args: [String: Any]) -> String { text(call("tools/call", ["name": name, "arguments": args])) }
+        let found = tool("search_meetings", ["query": "pricing"])
+        check("mcp: search returns what the meaning search found", found.contains("too expensive"))
+        check("mcp: search never returns a private meeting's chunk", !found.contains("ninety million"))
+        _ = tool("search_meetings", ["query": "kickoff", "person": "sarah"])
+        check("mcp: search is narrowed to the person's meetings", searchedIDs == [old])
+        let lastWeek = tool("list_meetings", ["when": "last week"])
+        check("mcp: when last week keeps the recent meeting", lastWeek.contains("Acme renewal"))
+        check("mcp: when last week drops the older one", !lastWeek.contains("Globex"))
+        check("mcp: unreadable when says so", tool("list_meetings", ["when": "whenever"]) == MCPServer.badWhen)
+        let twentyDaysAgo = ISO8601DateFormatter.string(from: Date().addingTimeInterval(-20 * day), timeZone: .current,
+                                                         formatOptions: [.withFullDate])
+        check("mcp: until keeps only older meetings", tool("list_meetings", ["until": twentyDaysAgo]).hasPrefix(old.uuidString))
+        check("mcp: since keeps only newer meetings", tool("list_meetings", ["since": twentyDaysAgo]).hasPrefix(a.uuidString))
+        check("mcp: person filter", tool("list_meetings", ["person": "Lee"]).contains("Globex")
+              && !tool("list_meetings", ["person": "Lee"]).contains("Acme"))
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let sept26 = Date(timeIntervalSince1970: 1_790_380_800)   // 2026-09-26
+        check("mcp: in August is this year's", MCPServer.dateRange("in August", now: sept26, calendar: utc)?.start
+              == Date(timeIntervalSince1970: 1_785_542_400))     // 2026-08-01
+        check("mcp: in October is last year's", MCPServer.dateRange("october", now: sept26, calendar: utc)?.start
+              == Date(timeIntervalSince1970: 1_759_276_800))     // 2025-10-01
         check("mcp: unknown tool is an error", (call("tools/call", ["name": "delete_everything"])?["error"] as? [String: Any]) != nil)
         check("mcp: unknown method -32601", ((call("resources/list")?["error"] as? [String: Any])?["code"] as? Int) == -32601)
         let config = MCPServer.claudeDesktopConfig(executable: "/Applications/Parrot.app/Contents/MacOS/Parrot")
@@ -2757,6 +2803,11 @@ enum ProfileTest {
         secret.onDeviceOnly = true
         let recording = phase4Meeting(ctx)
         recording.status = .recording
+        let therapy = CallProfile(name: "Therapy", iconSystemName: "heart", summary: "", isBuiltIn: false, sortOrder: 9,
+                                  persona: "", tone: "", allowGeneralKnowledge: false, kinds: [], gauges: [])
+        ctx.insert(therapy)
+        therapy.onDeviceOnly = true
+        phase4Meeting(ctx).profile = therapy
         let snap = MCPServer.snapshot(ctx)
         check("mcp: private and unfinished meetings are invisible", snap.map(\.id) == [open.id])
     }

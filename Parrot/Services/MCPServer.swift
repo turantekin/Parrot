@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// A read-only Model Context Protocol server over stdio, so an AI app on
-/// this Mac (Claude Desktop, ChatGPT, anything MCP) can list, read and
+/// this Mac (Claude Desktop, Claude Code, Codex, Cursor) can list, read and
 /// search the user's meetings: `Parrot --mcp`, launched by that app.
 ///
 /// Off until the user turns it on in Settings → Connections (the process
@@ -36,13 +36,14 @@ enum MCPServer {
     struct DataSource {
         var meetings: () -> [MeetingInfo]
         var transcript: (UUID) -> [String]
-        var chunks: () -> [MemoryChunk]
+        /// Hybrid search (exact words + on-device meaning) within these meetings.
+        var search: @MainActor (String, Set<UUID>, Int) async -> [MemoryChunk]
     }
 
     // MARK: stdio loop
 
     @MainActor
-    static func run() -> Never {
+    static func run() async {
         guard UserDefaults.standard.bool(forKey: enabledKey) else {
             FileHandle.standardError.write(Data("Parrot: the AI-app connection is off. Turn it on in Parrot → Settings → Connections.\n".utf8))
             exit(1)
@@ -56,34 +57,39 @@ enum MCPServer {
             FileHandle.standardError.write(Data("Parrot: couldn't open your meetings. If Parrot was just updated, open it once, then try again.\n".utf8))
             exit(1)
         }
-        while let line = readLine(strippingNewline: true) {
-            // The AI app keeps this process for its whole session: switching
-            // the connection off in Settings has to end it, not wait for a relaunch.
-            guard UserDefaults.standard.bool(forKey: enabledKey) else {
-                FileHandle.standardError.write(Data("Parrot: the AI-app connection was turned off.\n".utf8))
-                exit(0)
+        // One request at a time, in order. Awaiting here (not a semaphore on
+        // main) matters: the snapshot and the search both need the main actor.
+        do {
+            for try await line in FileHandle.standardInput.bytes.lines {
+                // The AI app keeps this process for its whole session: switching
+                // the connection off in Settings has to end it, not wait for a relaunch.
+                guard UserDefaults.standard.bool(forKey: enabledKey) else {
+                    FileHandle.standardError.write(Data("Parrot: the AI-app connection was turned off.\n".utf8))
+                    exit(0)
+                }
+                guard let data = line.data(using: .utf8),
+                      let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    respond(["jsonrpc": "2.0", "id": NSNull(),
+                             "error": ["code": -32700, "message": "Parse error"]])
+                    continue
+                }
+                // A fresh context and memory per request: a call recorded (or a
+                // report finished) while the AI app is open shows up right away.
+                let context = ModelContext(container)
+                let source = DataSource(
+                    meetings: { snapshot(context) },
+                    transcript: { id in
+                        let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
+                        guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m) else { return [] }
+                        return m.transcriptLines
+                    },
+                    // ponytail: loads every meeting's chunks from disk per search;
+                    // keep one MeetingMemory alive if long histories feel slow.
+                    search: { query, ids, limit in await MeetingMemory().search(query, within: ids, topK: limit) })
+                if let reply = await handle(message, source: source) { respond(reply) }
             }
-            guard let data = line.data(using: .utf8),
-                  let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                respond(["jsonrpc": "2.0", "id": NSNull(),
-                         "error": ["code": -32700, "message": "Parse error"]])
-                continue
-            }
-            // A fresh context and memory per request: a call recorded (or a
-            // report finished) while the AI app is open shows up right away.
-            let context = ModelContext(container)
-            let source = DataSource(
-                meetings: { snapshot(context) },
-                transcript: { id in
-                    let found = try? context.fetch(FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == id })).first
-                    guard let m = found, m.status == .done, CloudGate.mayLeaveMac(m) else { return [] }
-                    return m.transcriptLines
-                },
-                chunks: {
-                    let allowed = Set(snapshot(context).map(\.id))
-                    return MeetingMemory().chunks.filter { allowed.contains($0.meetingID) }
-                })
-            if let reply = handle(message, source: source) { respond(reply) }
+        } catch {
+            FileHandle.standardError.write(Data("Parrot: lost the connection to the AI app.\n".utf8))
         }
         exit(0)
     }
@@ -98,7 +104,9 @@ enum MCPServer {
     @MainActor
     static func snapshot(_ context: ModelContext) -> [MeetingInfo] {
         let meetings = (try? context.fetch(FetchDescriptor<Meeting>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return meetings.filter { $0.status == .done && CloudGate.mayLeaveMac($0) }.map(info(for:))
+        // A profile switched to on-device only later hides its older meetings too.
+        return meetings.filter { $0.status == .done && CloudGate.mayLeaveMac($0) && $0.profile?.onDeviceOnly != true }
+            .map(info(for:))
     }
 
     @MainActor
@@ -116,7 +124,8 @@ enum MCPServer {
     // MARK: JSON-RPC
 
     /// One message in, at most one reply out (notifications get none).
-    static func handle(_ message: [String: Any], source: DataSource) -> [String: Any]? {
+    @MainActor
+    static func handle(_ message: [String: Any], source: DataSource) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
         guard id != nil, !(id is NSNull) else { return nil }   // notification
@@ -143,7 +152,7 @@ enum MCPServer {
             let params = message["params"] as? [String: Any] ?? [:]
             let name = params["name"] as? String ?? ""
             let args = params["arguments"] as? [String: Any] ?? [:]
-            guard let text = call(name, args: args, source: source) else {
+            guard let text = await call(name, args: args, source: source) else {
                 return error(-32602, "Unknown tool: \(name)")
             }
             let clipped = text.count > maxToolText ? String(text.prefix(maxToolText)) + "\n…(truncated)" : text
@@ -159,10 +168,10 @@ enum MCPServer {
             "description": "List the user's recorded meetings, newest first: id, date, title, people.",
             "inputSchema": [
                 "type": "object",
-                "properties": [
+                "properties": filterProperties.merging([
                     "query": ["type": "string", "description": "Only meetings whose title or people contain this text."],
                     "limit": ["type": "integer", "description": "How many (default 20, max 100)."],
-                ],
+                ]) { a, _ in a },
             ],
         ],
         [
@@ -179,24 +188,78 @@ enum MCPServer {
         ],
         [
             "name": "search_meetings",
-            "description": "Find moments across all meetings that match the words in a query. Returns meeting ids, times and the matching lines.",
+            "description": "Find moments across meetings by meaning, not just exact words (\"pricing\" also finds \"too expensive\"). Returns meeting ids, times, speakers and the matching lines.",
             "inputSchema": [
                 "type": "object",
-                "properties": [
+                "properties": filterProperties.merging([
                     "query": ["type": "string"],
                     "limit": ["type": "integer", "description": "How many excerpts (default 8, max 30)."],
-                ],
+                ]) { a, _ in a },
                 "required": ["query"],
             ],
         ],
     ]
 
-    static func call(_ name: String, args: [String: Any], source: DataSource) -> String? {
+    /// Narrowing shared by the tools that list or search meetings.
+    static let filterProperties: [String: Any] = [
+        "since": ["type": "string", "description": "Only meetings on or after this date (ISO, e.g. 2026-09-01)."],
+        "until": ["type": "string", "description": "Only meetings on or before this date (ISO)."],
+        "when": ["type": "string", "description": "Plain words: \"today\", \"yesterday\", \"last week\", \"this month\", \"last 30 days\", \"in August\"."],
+        "person": ["type": "string", "description": "Only meetings with this person (name or part of it)."],
+    ]
+
+    /// Applies since / until / when / person. nil when `when` can't be read,
+    /// so the AI hears it rather than getting every meeting back.
+    static func filtered(_ meetings: [MeetingInfo], args: [String: Any], now: Date = .now) -> [MeetingInfo]? {
+        var start = Date.distantPast, end = Date.distantFuture
+        if let words = (args["when"] as? String)?.trimmingCharacters(in: .whitespaces), !words.isEmpty {
+            guard let range = dateRange(words, now: now) else { return nil }
+            (start, end) = (range.start, range.end)
+        }
+        if let since = (args["since"] as? String).flatMap({ isoDate($0) }) { start = max(start, since) }
+        if let until = (args["until"] as? String).flatMap({ isoDate($0, endOfDay: true) }) { end = min(end, until) }
+        let person = (args["person"] as? String)?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
+        return meetings.filter { m in
+            m.date >= start && m.date < end
+                && (person.isEmpty || m.people.contains { $0.lowercased().contains(person) })
+        }
+    }
+
+    /// Ask Parrot's date words, plus a month name ("in August": the latest
+    /// one, this month included).
+    static func dateRange(_ words: String, now: Date, calendar: Calendar = .current) -> DateInterval? {
+        if let range = AskEngine.dateRange(in: words, now: now, calendar: calendar) { return range }
+        let said = Set(words.lowercased().components(separatedBy: CharacterSet.letters.inverted))
+        let months = ["january", "february", "march", "april", "may", "june", "july",
+                      "august", "september", "october", "november", "december"]
+        guard let month = months.firstIndex(where: said.contains).map({ $0 + 1 }) else { return nil }
+        var year = calendar.component(.year, from: now)
+        if month > calendar.component(.month, from: now) { year -= 1 }
+        return calendar.date(from: DateComponents(year: year, month: month, day: 1))
+            .flatMap { calendar.dateInterval(of: .month, for: $0) }
+    }
+
+    /// "2026-09-01" (a local day) or a full ISO timestamp. `endOfDay` makes a
+    /// bare date include that whole day.
+    static func isoDate(_ raw: String, endOfDay: Bool = false) -> Date? {
+        if let date = ISO8601DateFormatter().date(from: raw) { return date }
+        let day = ISO8601DateFormatter()
+        day.formatOptions = [.withFullDate]
+        day.timeZone = .current
+        guard let date = day.date(from: raw) else { return nil }
+        return endOfDay ? Calendar.current.date(byAdding: .day, value: 1, to: date) : date
+    }
+
+    static let badWhen = "I couldn't read that date. Try \"last week\", \"this month\", \"in August\", or since/until."
+
+    @MainActor
+    static func call(_ name: String, args: [String: Any], source: DataSource) async -> String? {
         let dateFormat = Date.FormatStyle(date: .abbreviated, time: .shortened)
         guard ["list_meetings", "get_meeting", "search_meetings"].contains(name) else { return nil }
         let meetings = source.meetings()
         switch name {
         case "list_meetings":
+            guard let meetings = filtered(meetings, args: args) else { return badWhen }
             let query = (args["query"] as? String)?.lowercased().trimmingCharacters(in: .whitespaces) ?? ""
             let limit = min(max((args["limit"] as? Int) ?? 20, 1), 100)
             let rows = meetings.filter { m in
@@ -226,17 +289,15 @@ enum MCPServer {
             return out
 
         case "search_meetings":
+            guard let meetings = filtered(meetings, args: args) else { return badWhen }
             let query = (args["query"] as? String) ?? ""
             let limit = min(max((args["limit"] as? Int) ?? 8, 1), 30)
             let byID = Dictionary(meetings.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let pool = source.chunks().filter { byID[$0.meetingID] != nil }
-            let order = MeetingMemory.rank(
-                queryTokens: KnowledgeBaseService.lexicalTokens(query),
-                chunkTokens: pool.map { KnowledgeBaseService.lexicalTokens($0.text) },
-                cosine: Array(repeating: 0, count: pool.count), topK: limit)
-            guard !order.isEmpty else { return "Nothing matches that in the meetings." }
-            return order.map { i -> String in
-                let c = pool[i]
+            // Checked again here: whatever the search returns, only meetings
+            // that passed the privacy gate and the filters come out.
+            let hits = await source.search(query, Set(byID.keys), limit).filter { byID[$0.meetingID] != nil }
+            guard !hits.isEmpty else { return "Nothing matches that in the meetings." }
+            return hits.map { c -> String in
                 let m = byID[c.meetingID]!
                 let when = c.kind == .transcript ? " at \(Receipts.stamp(c.start))" : " (report)"
                 return "\(m.title) — \(m.date.formatted(dateFormat))\(when) — id \(m.id.uuidString)\n\(c.text)"

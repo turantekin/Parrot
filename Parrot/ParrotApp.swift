@@ -10,7 +10,8 @@ struct ParrotMain {
         // Launched by an AI app (Claude Desktop…) as its MCP server: stdio,
         // read-only, refuses unless enabled in Settings → Connections.
         if args.contains("--mcp") {
-            MainActor.assumeIsolated { MCPServer.run() }
+            Task { @MainActor in await MCPServer.run() }
+            dispatchMain()
         }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             MainActor.assumeIsolated { ReportSnapshot.write(to: args[i + 1]) }
