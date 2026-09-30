@@ -8,6 +8,7 @@ enum ProfilePresets {
     private static let supportID  = UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!
     private static let genericID  = UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!
     private static let vendorID   = UUID(uuidString: "00000000-0000-0000-0000-0000000000C6")!
+    private static let investorID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C7")!
 
     /// Bump when the built-in preset definitions change (persona, kinds, counterpart).
     /// `ProfileStore` refreshes built-in profiles whose stored version is older,
@@ -19,7 +20,9 @@ enum ProfilePresets {
     /// v4: "Vendor call" preset added — the user is the customer (a bank,
     /// supplier or agency is pitching or onboarding them). Sales discovery cast
     /// the bank as "the prospect" on a real call.
-    static let presetVersion = 4
+    /// v5: Profiles 2.0. Built-ins get their own report templates (see
+    /// `reportTemplate(for:)`) and the "Investor pitch" preset is added.
+    static let presetVersion = 5
 
     // The hex strings below are persisted in user data — never change them when
     // retheming the app. KindResolver.adaptiveColor maps each one to an adaptive
@@ -33,9 +36,19 @@ enum ProfilePresets {
         SentimentGauge(id: UUID(), key: key, label: label, lowLabel: low, highLabel: high, colorHex: hex)
     }
 
+    /// A fresh built-in follows its shipped report and is known across Macs
+    /// by its preset id.
+    private static func shipped(_ p: CallProfile) -> CallProfile {
+        p.reportChoice = .preset
+        p.sharedID = p.id
+        p.sharedVersion = 1
+        p.sharedSource = "builtin"
+        return p
+    }
+
     /// Default = today's exact behavior. persona/tone/fallback injected from migration.
     static func makeDefault(persona: String, tone: String, allowGeneralKnowledge: Bool) -> CallProfile {
-        CallProfile(
+        shipped(CallProfile(
             id: defaultProfileID, name: "Default", iconSystemName: "person.wave.2",
             summary: "General-purpose copilot (your current setup).",
             isBuiltIn: true, sortOrder: 0, persona: persona, tone: tone,
@@ -49,7 +62,7 @@ enum ProfilePresets {
                 kind("feedback", "Feedback", "5F6470", "chart.line.uptrend.xyaxis", "A brief read on a SIGNIFICANT shift only — sparingly."),
             ],
             gauges: [gauge("my_dominance", "You're talking", "Balanced", "Dominating", "5F6470")]
-        )
+        ))
     }
 
     static func all() -> [CallProfile] {
@@ -144,8 +157,112 @@ enum ProfilePresets {
                 ],
                 gauges: [gauge("fit", "Fit", "Poor", "Strong", "3F9168"),
                          gauge("my_dominance", "You're talking", "Balanced", "Dominating", "5F6470")]),
-        ]
+            CallProfile(id: investorID, name: "Investor pitch", iconSystemName: "chart.line.uptrend.xyaxis",
+                summary: "Pitching to VCs and angels.",
+                isBuiltIn: true, sortOrder: 7,
+                persona: investorPersona,
+                tone: "", counterpart: "the investor", allowGeneralKnowledge: true,
+                presetVersion: presetVersion,
+                kinds: [
+                    kind("suggestion", "Suggested answer", "4F6FB0", "lightbulb.fill", "The investor asked something. Draft a short, confident answer the user can give now, with a number when one is known."),
+                    kind("objection", "Objection", "E8943A", "hand.raised.fill", "The investor pushed back on market size, team, traction, competition or terms, and it isn't resolved.", pinned: true, priority: 10),
+                    kind("unanswered_question", "Unanswered question", "C0563B", "questionmark.bubble.fill", "The investor asked a question and the conversation moved on without a real answer. Flag it so the user can come back to it.", pinned: true, priority: 9),
+                    kind("interest_signal", "Interest signal", "3F9168", "arrow.up.right.circle.fill", "The investor showed interest: asked about terms, a next meeting, partners or diligence."),
+                    kind("their_ask", "They asked for", "2F7E96", "tray.and.arrow.down.fill", "The investor asked for data, a deck, metrics or an intro. Capture exactly what, so it gets sent."),
+                    kind("ask_this", "Ask this", "C29218", "magnifyingglass", "Something the user should learn about this investor: check size, stage, lead or follow, timeline, conflicts. Phrase the title as the question.", priority: 7),
+                ],
+                gauges: [gauge("interest", "Interest", "Cold", "Leaning in", "3F9168"),
+                         gauge("my_dominance", "You're talking", "Balanced", "Dominating", "5F6470")]),
+        ].map(shipped)
     }
+
+    // MARK: - Report templates
+
+    private static func section(_ key: String, _ title: String, _ type: String, _ guide: String,
+                                commitments: Bool = false) -> ReportTemplate.Section {
+        ReportTemplate.Section(key: key, title: title, type: type, guide: guide,
+                               commitments: commitments ? true : nil)
+    }
+
+    private static func scorecard(_ key: String, _ title: String, _ guide: String,
+                                  _ criteria: [(String, String, String)]) -> ReportTemplate.Section {
+        ReportTemplate.Section(key: key, title: title, type: "scorecard", guide: guide,
+                               criteria: criteria.map { .init(key: $0.0, label: $0.1, guide: $0.2) })
+    }
+
+    private static func coach(_ role: String, _ focus: String) -> ReportTemplate.Coaching {
+        ReportTemplate.Coaching(enabled: true, role: role, focus: focus)
+    }
+
+    /// The report each built-in ships with. Default and Generic keep the
+    /// standard report. Kept short on purpose: every template here was
+    /// checked on the default local model (see `--analyze-test` report mode).
+    static let reportTemplates: [UUID: ReportTemplate] = [
+        defaultProfileID: .standard,
+        genericID: .standard,
+        salesID: ReportTemplate(sections: [
+            section("overview", "Overview", "prose", "2-3 sentences: what the call was about and where the deal stands."),
+            section("pain", "Pain points", "bullets", "What the prospect is struggling with and why it matters to them."),
+            section("budget", "Budget", "bullets", "What they said about budget, price or what they spend today."),
+            section("decision", "Decision-maker", "bullets", "Who decides, who else is involved, and how they buy."),
+            section("timeline", "Timeline", "bullets", "When they want to decide or start, and why then."),
+            section("objections", "Objections", "bullets", "Concerns they raised, and whether each one was answered."),
+            section("next", "Next steps", "bullets", "What someone said they'd do, with any date.", commitments: true),
+        ], coaching: coach("sales coach", "Discovery: pain, budget, decision-maker and timeline. How objections were handled.")),
+        interviewID: ReportTemplate(sections: [
+            section("overview", "Overview", "prose", "2-3 sentences: the role, how the conversation went, and anything decided."),
+            scorecard("scorecard", "Scorecard", "Only what the candidate said on this call.", [
+                ("experience", "Relevant experience", "Has done similar work, with real examples"),
+                ("problems", "Problem solving", "How they work through a problem"),
+                ("communication", "Communication", "Explains clearly and answers the question asked"),
+                ("teamwork", "Teamwork", "How they work with others and handle disagreement"),
+            ]),
+            section("strengths", "Strengths", "bullets", "Things the candidate showed they can do, with the moment it came up."),
+            section("concerns", "Concerns", "bullets", "Gaps or doubts from what the candidate said. Only job-related points, never age, looks, accent or other personal traits."),
+            section("uncovered", "Still to cover", "bullets", "Planned topics or questions that didn't come up."),
+            section("next", "Next steps", "bullets", "What someone said they'd do, with any date.", commitments: true),
+        ], coaching: coach("interview coach", "Question quality, fairness, and giving the candidate room to talk.")),
+        supportID: ReportTemplate(sections: [
+            section("issue", "Issue", "prose", "1-2 sentences: what the customer needed help with."),
+            section("cause", "Cause", "bullets", "What caused the problem, if it came up."),
+            section("resolved", "Resolved", "bullets", "What was fixed or answered on the call."),
+            section("followups", "Follow-ups", "bullets", "What someone promised to do after the call, with any date.", commitments: true),
+            section("mood", "Mood", "prose", "One line: how the customer felt at the start and at the end."),
+        ], coaching: coach("support coach", "Clarity, empathy, and whether the issue was really solved.")),
+        coachingID: ReportTemplate(sections: [
+            // Starts with a paragraph like the others: bullets-only came back
+            // ragged on gemma3:4b ("Wins - …", no colons) in two runs.
+            section("overview", "Overview", "prose", "1-2 sentences: how the person is doing and what you talked about."),
+            section("wins", "Wins", "bullets", "Progress or good news the person shared."),
+            section("blockers", "Blockers", "bullets", "What is in their way or worrying them."),
+            section("commitments", "Commitments", "bullets", "What either of you said you'd do, with any date.", commitments: true),
+        ], coaching: ReportTemplate.Coaching(enabled: false, role: nil, focus: nil)),
+        vendorID: ReportTemplate(sections: [
+            section("offer", "Offer", "prose", "2-3 sentences: what the vendor offered and how the call ended."),
+            section("pricing", "Pricing and terms", "bullets", "Every fee, rate, limit and timeline the vendor stated, word for word."),
+            section("redflags", "Red flags", "bullets", "Risks, holds, exclusions, lock-in or conditions that could hurt you."),
+            section("open", "Open questions", "bullets", "What you asked that wasn't answered clearly."),
+            section("commitments", "Commitments", "bullets", "What either side said they'd do or send, with any date.", commitments: true),
+        ], coaching: coach("negotiation coach", "Getting clear answers, firm numbers and promises in writing.")),
+        investorID: ReportTemplate(sections: [
+            section("overview", "Overview", "prose", "2-3 sentences: what the call was about and how it ended."),
+            section("liked", "What they liked", "bullets", "Parts of the pitch the investor responded well to."),
+            section("concerns", "Their concerns", "bullets", "Doubts about market, team, traction or terms."),
+            section("asks", "What they asked for", "bullets", "Data, metrics or intros they requested."),
+            scorecard("fit", "Fit", "How well this investor fits the round.", [
+                ("stage", "Stage fit", "Do they invest at our stage?"),
+                ("check", "Check size", "Does their usual check match the round?"),
+            ]),
+            section("next", "Next steps", "bullets", "What someone said they'd do, with any date.", commitments: true),
+        ], coaching: coach("pitch coach", "Clarity of the story, handling tough questions, the ask.")),
+    ]
+
+    /// The built-in reports a profile can start from, by profile name.
+    static let reportStarters: [(name: String, template: ReportTemplate)] =
+        all().filter { !$0.reportTemplate.isStandard }.map { ($0.name, $0.reportTemplate) }
+
+    /// A built-in's shipped report, nil for anything that isn't a built-in.
+    static func reportTemplate(for id: UUID) -> ReportTemplate? { reportTemplates[id] }
 
     /// The framing scaffold the Default profile uses (mirrors today's hardcoded prompt intent).
     private static let defaultPersona = "You are a live call copilot. Draft short, concrete lines the user can say, flag obstacles, and capture commitments."
@@ -157,6 +274,14 @@ enum ProfilePresets {
     selling anything and the other party is never a prospect. Protect the user's interests: capture \
     exactly what the vendor commits to and what it costs, flag risks, holds, exclusions and unanswered \
     questions, and suggest what to ask next. Keep the vendor's numbers verbatim.
+    """
+
+    /// Investor pitch persona — the user is the founder asking for money.
+    private static let investorPersona = """
+    You are coaching a founder pitching to an investor (a VC or angel) on a live call. Help the \
+    founder answer crisply with numbers, handle pushback without getting defensive, notice what the \
+    investor cares about, and make sure the call ends with a clear next step. Every card must be \
+    usable in the next 30 seconds.
     """
 
     /// Sales discovery persona — a real-time coach, not just a suggestion engine.

@@ -25,12 +25,13 @@ enum MCPCommitments {
     /// in order. Placeholders ("- None") are skipped, and a promise the
     /// coaching restates from the next steps counts once.
     static func items(meetingID: UUID, title: String, date: Date, people: [String] = [],
-                      reports: [String?], index: ReceiptIndex) -> [Item] {
+                      reports: [String?], template: ReportTemplate?, index: ReceiptIndex) -> [Item] {
         var out: [Item] = []
         for text in reports.compactMap({ $0 }) {
             // Section titles go through Receipts, so report templates that
             // flag their own commitment sections join in one place.
-            for section in ReportProse.sections(from: text) where Receipts.isCommitmentSection(section.title) {
+            for section in ReportProse.sections(from: text, template: template)
+            where Receipts.isCommitmentSection(section.title, in: template) {
                 for block in section.blocks {
                     guard case .bullet(let raw, _) = block else { continue }
                     let cited = Receipts.extract(raw)

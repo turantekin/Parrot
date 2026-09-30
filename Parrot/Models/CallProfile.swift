@@ -22,6 +22,25 @@ struct SentimentGauge: Codable, Identifiable, Hashable {
     var colorHex: String
 }
 
+/// Which report a profile writes.
+enum ReportChoice: String, Codable {
+    /// Today's report (`ReportTemplate.standard`).
+    case classic
+    /// The built-in's own template, read live from ProfilePresets.
+    case preset
+    /// The user's own template (`CallProfile.reportData`).
+    case custom
+}
+
+/// One saved state of a profile: the portable file plus the report choice
+/// the file can't say (classic vs following the built-in).
+struct ProfileVersion: Codable, Equatable {
+    var date: Date
+    var label: String
+    var file: Data
+    var reportChoice: String
+}
+
 @Model
 final class CallProfile {
     var id: UUID
@@ -51,6 +70,26 @@ final class CallProfile {
     /// JSON-encoded [ProfileKind] / [SentimentGauge] — config, not queried entities.
     var kindsData: Data
     var gaugesData: Data
+
+    // Profiles 2.0. All added and defaulted, so old stores migrate as is.
+
+    /// Which report this profile writes (see `ReportChoice`). Tracked apart
+    /// from `isUserModified`: picking a report never blocks Copilot preset
+    /// refreshes, and Copilot tuning never blocks a report offer.
+    // A literal, like every other migrated default here.
+    var reportChoiceRaw: String = "classic"
+    /// The user's own template (JSON ReportTemplate), used when `.custom`.
+    var reportData: Data? = nil
+    /// A tuned built-in whose new report hasn't been offered yet.
+    var reportOfferPending: Bool = false
+    /// Identifies the profile across Macs for life (built-ins: their preset
+    /// id). The local `id` never leaves the Mac.
+    var sharedID: UUID? = nil
+    var sharedVersion: Int = 0
+    /// Where it came from: "user", "claude", "gallery", "builtin".
+    var sharedSource: String? = nil
+    /// Saved versions, newest last (JSON [ProfileVersion]); see `saveVersion`.
+    var versionsData: Data? = nil
 
     // NOTE: @Relationship(inverse: \Meeting.profile) var meetings: [Meeting] = [] is
     // intentionally omitted here — Meeting.profile does not exist until Task 9/5.
@@ -84,6 +123,77 @@ final class CallProfile {
     var gauges: [SentimentGauge] {
         get { (try? JSONDecoder().decode([SentimentGauge].self, from: gaugesData)) ?? [] }
         set { gaugesData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+    }
+
+    var reportChoice: ReportChoice {
+        get { ReportChoice(rawValue: reportChoiceRaw) ?? .classic }
+        set { reportChoiceRaw = newValue.rawValue }
+    }
+
+    /// The report this profile writes right now. A `.preset` built-in reads
+    /// its shipped template live, so it gets future improvements for free.
+    var reportTemplate: ReportTemplate {
+        switch reportChoice {
+        case .classic: return .standard
+        case .preset: return ProfilePresets.reportTemplate(for: id) ?? .standard
+        case .custom: return reportData.flatMap { try? JSONDecoder().decode(ReportTemplate.self, from: $0) } ?? .standard
+        }
+    }
+
+    /// The report a built-in ships with, nil for profiles made by the user.
+    var presetReportTemplate: ReportTemplate? {
+        isBuiltIn ? ProfilePresets.reportTemplate(for: id) : nil
+    }
+
+    /// Stores `template` as the user's own, or back to classic when it is
+    /// the standard report.
+    func setCustomReport(_ template: ReportTemplate) {
+        if template.isStandard {
+            reportChoice = .classic
+            reportData = nil
+        } else {
+            reportChoice = .custom
+            reportData = try? JSONEncoder().encode(template)
+        }
+    }
+
+    /// Every edit from the Report card. Landing back on the built-in's own
+    /// report follows it again; the standard report is classic; anything
+    /// else is the user's own.
+    func editReport(_ change: (inout ReportTemplate) -> Void) {
+        var t = reportTemplate
+        change(&t)
+        t = t.normalized
+        if let own = presetReportTemplate, !own.isStandard, t == own {
+            reportChoice = .preset
+            reportData = nil
+        } else {
+            setCustomReport(t)
+        }
+    }
+
+    /// The one-time screen's switch and the editor's offer: follow the
+    /// built-in's own report, or keep the classic one. Either answer settles
+    /// the offer. Does nothing for a profile with no report of its own.
+    func useBuiltInReport(_ on: Bool) {
+        guard presetReportTemplate?.isStandard == false else { return }
+        reportChoice = on ? .preset : .classic
+        reportData = nil
+        reportOfferPending = false
+    }
+
+    static let maxVersions = 5
+
+    var versions: [ProfileVersion] {
+        get { versionsData.flatMap { try? JSONDecoder().decode([ProfileVersion].self, from: $0) } ?? [] }
+        set { versionsData = try? JSONEncoder().encode(Array(newValue.suffix(Self.maxVersions))) }
+    }
+
+    /// Keeps this profile as it is now (as a `.parrotprofile`), the last 5
+    /// only. The editor's "Restore previous version" reads these.
+    func saveVersion(label: String, at date: Date = .now) {
+        versions.append(ProfileVersion(date: date, label: label, file: ProfileFile.encode(self),
+                                       reportChoice: reportChoiceRaw))
     }
 
     /// Profile-defined style for a key, or nil if this profile doesn't define it.

@@ -59,6 +59,14 @@ enum Theme {
         static let action = good
         static let blocker = warn
         static let subtle = accent
+
+        /// Live nudge banner fill and edge.
+        static let nudge = warn.opacity(0.12)
+        static let nudgeLine = warn.opacity(0.4)
+        /// Tone timeline: you, them, and the mood line.
+        static let meLane = ink3
+        static let themLane = accent.opacity(0.6)
+        static let moodLine = warn
     }
 
     // MARK: - Typography
@@ -142,6 +150,11 @@ enum Theme {
         static let chatMaxWidth: CGFloat = 760
         /// Ask Parrot's "thinking" dots.
         static let thinkingDot: CGFloat = 5
+        /// Report scorecards: one step of the five-step score bar.
+        static let scoreStep = CGSize(width: 14, height: 6)
+        /// The floating live-nudge pill: width and its rounded ends.
+        static let pillWidth: CGFloat = 460
+        static let pillRadius: CGFloat = 22
         /// A calendar's colour dot in the calendar picker.
         static let calendarDot: CGFloat = 8
     }

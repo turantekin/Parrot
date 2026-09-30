@@ -24,6 +24,11 @@ final class AppSession {
         let scopeTitle: String?
     }
     var askRequest: AskRequest?
+
+    /// Profile files waiting for the review screen, oldest first.
+    var profileReviews: [PendingProfile] = []
+    /// Feeds `profileReviews` with AI apps' suggestions.
+    @ObservationIgnored let profileInbox = ProfileInboxWatcher()
 }
 
 extension Notification.Name {

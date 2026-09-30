@@ -125,6 +125,20 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.uygar.parrot.link
             CFBundleURLSchemes: [openparrot]
+        # .parrotprofile: a portable call profile (JSON, see ProfileFile).
+        # Double-click or drop one and Parrot opens its review screen;
+        # nothing changes until the user applies it.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.uygar.parrot.profile
+            UTTypeDescription: Parrot call profile
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [parrotprofile]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Parrot call profile
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.uygar.parrot.profile]
         # Auto-register bundled fonts (Parrot/Fonts/*.otf, flattened into
         # Resources by xcodegen) — the whole UI runs on Inter.
         ATSApplicationFontsPath: "."

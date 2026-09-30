@@ -8,6 +8,21 @@ enum MainPage: Equatable { case dashboard, settings, ask, aiApps, meeting }
 struct ContentView: View {
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSession.self) private var appSession
+    @Environment(ProfileStore.self) private var profileStore
+    /// The welcome tour's sheet; the Profiles 2.0 screen waits for it.
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    /// The profile file on the review screen now.
+    @State private var reviewing: PendingProfile?
+    /// Suggestions the user said "Later" to this session (they stay in the inbox).
+    @State private var laterIDs: Set<UUID> = []
+    @Query(sort: \CallProfile.sortOrder) private var profiles: [CallProfile]
+
+    /// The AI suggestion the banner offers, if any.
+    private var suggestion: PendingProfile? {
+        appSession.profileReviews.first { item in
+            if case .suggestion = item.origin { return !laterIDs.contains(item.id) } else { return false }
+        }
+    }
     @Environment(\.modelContext) private var modelContext
     @State private var selectedMeeting: Meeting?
     @State private var page: MainPage = .dashboard
@@ -63,6 +78,12 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 AIAppsConnectedBanner()
+                if let suggestion, reviewing == nil, !recordingManager.isRecording {
+                    ProfileSuggestionBanner(item: suggestion, profiles: profiles,
+                                            review: { reviewing = suggestion },
+                                            later: { laterIDs.insert(suggestion.id) })
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let progress = recordingManager.importProgress {
                     ImportingBanner(progress: progress)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -92,6 +113,25 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showBugReport) {
             BugReportSheet(screenshot: reportScreenshot)
+        }
+        // Files the user opened, dropped or imported go straight to review.
+        .onChange(of: appSession.profileReviews) { _, _ in reviewNextFile() }
+        // A file that launched Parrot was queued before this view listened.
+        .onAppear { reviewNextFile() }
+        .sheet(item: $reviewing) { item in
+            ProfileReviewView(item: item) {
+                appSession.profileReviews.removeAll { $0.id == item.id }
+                reviewing = nil
+            }
+            .environment(profileStore)
+            .environment(recordingManager)
+        }
+        // Once, after the Profiles 2.0 migration (never on a fresh install).
+        .sheet(isPresented: Binding(
+            get: { profileStore.showProfiles2Screen && hasCompletedOnboarding && !recordingManager.isRecording },
+            set: { profileStore.showProfiles2Screen = $0 })) {
+            ProfileMigrationView()
+                .environment(profileStore)
         }
         // ⌘K, the menu and "Ask about this meeting" open the Ask page.
         .onChange(of: appSession.askRequest) { _, request in
@@ -140,8 +180,15 @@ struct ContentView: View {
         .task {
             guard !hasLoadedModel else { return }
             hasLoadedModel = true
+            // AI apps' profile suggestions, ones waiting from before too.
+            appSession.profileInbox.start { [appSession] in appSession.profileReviews += $0 }
             await recordingManager.prepare(modelContext: modelContext)
         }
+    }
+
+    private func reviewNextFile() {
+        guard reviewing == nil else { return }
+        reviewing = appSession.profileReviews.first { if case .file = $0.origin { true } else { false } }
     }
 
     /// Selects the meeting a jump points at; the detail view seeks.

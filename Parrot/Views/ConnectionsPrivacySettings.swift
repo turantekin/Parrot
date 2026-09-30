@@ -97,7 +97,7 @@ struct ConnectionsSettingsPage: View {
             }
 
             SettingsCard(title: "Claude & AI Apps",
-                         blurb: "Let Claude, Codex or Cursor read and search your meetings, read-only. The app you connect usually sends what it reads to its own cloud, so on-device-only meetings are never shown to it.") {
+                         blurb: "Let Claude, Codex or Cursor read and search your meetings. They can't change them. The app you connect usually sends what it reads to its own cloud, so on-device-only meetings are never shown to it.") {
                 SettingsToggleRow(title: "Allow AI apps to read my meetings", first: true, isOn: $mcpEnabled)
                 SettingsLabeledRow(title: "Connect an app, choose what it sees",
                                    detail: "One click for Claude Desktop and Cursor, a command for Claude Code and Codex.") {

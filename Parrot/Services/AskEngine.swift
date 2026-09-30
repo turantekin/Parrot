@@ -850,12 +850,13 @@ enum LastCallBrief {
     }
 
     /// Next steps and commitments from a report, receipts stripped, no
-    /// placeholders, no duplicates.
+    /// placeholders, no duplicates. `template` is the meeting's (nil = standard).
     @MainActor
-    static func openItems(summary: String?, coaching: String?, limit: Int = 6) -> [String] {
+    static func openItems(summary: String?, coaching: String?, template: ReportTemplate?, limit: Int = 6) -> [String] {
         var items: [String] = []
         for text in [summary, coaching].compactMap({ $0 }) {
-            for section in ReportProse.sections(from: text) where Receipts.isCommitmentSection(section.title) {
+            for section in ReportProse.sections(from: text, template: template)
+            where Receipts.isCommitmentSection(section.title, in: template) {
                 for block in section.blocks {
                     guard case .bullet(let raw, _) = block else { continue }
                     let clean = Receipts.extract(raw).text

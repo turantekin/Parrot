@@ -200,12 +200,12 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     func summarize(transcript: String, insightTitles: [String], bookmarks: [String] = [],
                    instructions: String,
-                   counterpart: String = "the other person") async throws -> String {
+                   counterpart: String = "the other person", template: ReportTemplate) async throws -> String {
         guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
         return try await plainChat(
-            system: ClaudeAnalysisProvider.summarySystemPrompt(counterpart: counterpart),
+            system: ClaudeAnalysisProvider.summarySystemPrompt(counterpart: counterpart, template: template),
             user: ClaudeAnalysisProvider.summaryUserContent(
                 transcript: transcript, insightTitles: insightTitles,
                 bookmarks: bookmarks, instructions: instructions),
@@ -213,12 +213,12 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
-                        counterpart: String = "the other person") async throws -> String {
+                        counterpart: String = "the other person", template: ReportTemplate) async throws -> String {
         guard let config = currentConfig() else {
             throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
         }
         return try await plainChat(
-            system: ClaudeAnalysisProvider.coachingSystemPrompt(counterpart: counterpart),
+            system: ClaudeAnalysisProvider.coachingSystemPrompt(counterpart: counterpart, template: template),
             user: ClaudeAnalysisProvider.coachingUserContent(
                 transcript: transcript, talkPercentMe: talkPercentMe,
                 instructions: instructions, counterpart: counterpart),
@@ -546,22 +546,22 @@ final class SwitchingAnalysisProvider: AnalysisProvider {
     }
 
     func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
-                   instructions: String, counterpart: String) async throws -> String {
+                   instructions: String, counterpart: String, template: ReportTemplate) async throws -> String {
         var r = reportsRedactor
         let out = try await reportsProvider.summarize(
             transcript: r?.redact(transcript) ?? transcript,
             insightTitles: insightTitles.map { r?.redact($0) ?? $0 },
             bookmarks: bookmarks.map { r?.redact($0) ?? $0 },
-            instructions: instructions, counterpart: counterpart)
+            instructions: instructions, counterpart: counterpart, template: template)
         return r?.restore(out) ?? out
     }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
-                        counterpart: String) async throws -> String {
+                        counterpart: String, template: ReportTemplate) async throws -> String {
         var r = reportsRedactor
         let out = try await reportsProvider.coachingReport(
             transcript: r?.redact(transcript) ?? transcript, talkPercentMe: talkPercentMe,
-            instructions: instructions, counterpart: counterpart)
+            instructions: instructions, counterpart: counterpart, template: template)
         return r?.restore(out) ?? out
     }
 

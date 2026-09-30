@@ -72,6 +72,18 @@ struct ParrotMain {
             MainActor.assumeIsolated { CopilotReplay.run(transcriptPath: args[i + 1], args: rest) }
             return
         }
+        if let i = args.firstIndex(of: "--nudge-replay") {
+            MainActor.assumeIsolated { NudgeReplay.run(args: Array(args[(i + 1)...])) }
+            return
+        }
+        if let i = args.firstIndex(of: "--tone-snapshot"), i + 1 < args.count {
+            MainActor.assumeIsolated { ToneSnapshot.write(to: args[i + 1]) }
+            return
+        }
+        if let i = args.firstIndex(of: "--store-upgrade-test"), i + 1 < args.count {
+            MainActor.assumeIsolated { StoreUpgradeTest.run(path: args[i + 1]) }
+            return
+        }
         if args.contains("--profile-test") {
             MainActor.assumeIsolated { ProfileTest.run() }
             return
@@ -106,15 +118,21 @@ struct ParrotMain {
 final class ParrotAppDelegate: NSObject, NSApplicationDelegate {
     weak var recordingManager: RecordingManager?
     /// Set once the window is up; links that came before wait in `pendingLink`.
-    weak var appSession: AppSession? { didSet { deliverLink() } }
+    weak var appSession: AppSession? { didSet { deliverLink(); deliverProfiles() } }
     /// Reopens the main window when a link arrives after it was closed.
     var openMainWindow: OpenWindowAction?
     private var pendingLink: AppSession.Jump?
+    /// .parrotprofile files opened before the window was up.
+    private var pendingProfiles: [PendingProfile] = []
 
     /// openparrot:// links (ParrotLink), e.g. a time Claude cited: the same
     /// jump as an Ask Parrot chip. Here, not SwiftUI's onOpenURL, which drops
     /// the link when it's what launched Parrot.
     func application(_ application: NSApplication, open urls: [URL]) {
+        // A double-clicked .parrotprofile: read now (the sandbox lets us
+        // read it during this call), review later.
+        pendingProfiles += urls.filter { $0.pathExtension.lowercased() == "parrotprofile" }.compactMap { PendingProfile.read($0) }
+        deliverProfiles()
         guard let link = urls.lazy.compactMap(ParrotLink.parse).first else { return }
         pendingLink = AppSession.Jump(meetingID: link.id, time: link.time)
         deliverLink()
@@ -131,6 +149,16 @@ final class ParrotAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         // Next turn of the run loop, so the window's jump handler is listening.
         DispatchQueue.main.async { session.pendingJump = jump }
+    }
+
+    private func deliverProfiles() {
+        guard let session = appSession, !pendingProfiles.isEmpty else { return }
+        if !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
+            openMainWindow?(id: ParrotApp.mainWindowID)
+        }
+        NSApp.activate()
+        session.profileReviews += pendingProfiles
+        pendingProfiles = []
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

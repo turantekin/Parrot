@@ -311,7 +311,7 @@ enum HelpShots {
             ],
             sentiment: ["score": 72, "buying_temperature": 65],
             read: "engaged", coach: "Going well — answer the pricing question, then ask who signs off.",
-            meCharacters: 620, themCharacters: 780,
+            meSeconds: 41, themSeconds: 52,
             brief: "Renewal call with Acme. Legal wants to know where the data is stored.")
 
         // Two documents so the Knowledge page shows rows, notes, and profile tags.
@@ -371,7 +371,7 @@ enum HelpShots {
                 .modelContainer(container))
         // Tall on purpose: the Advanced kinds/gauges editors live far down the
         // form, and the window's viewport is what gets captured.
-        shot("profiles-advanced.png", size: .init(width: 860, height: 2450),
+        shot("profiles-advanced.png", size: .init(width: 860, height: 3500),
              ProfilesSettingsView(advancedInitiallyOpen: true)
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
@@ -423,6 +423,76 @@ enum HelpShots {
         UserDefaults.standard.register(defaults: ["copilotEnabled": false, CopilotPath.defaultsKey: "later"])
         shot("home-copilot-card.png", size: .init(width: 600, height: 260),
              CopilotHomeCard().environment(rm).padding(Theme.Metrics.pad))
+
+        // Profiles 2.0: the Report card, the offer, and the one-time screen.
+        // Last, because they change the profiles for everything after them.
+        let profiles = (try? context.fetch(FetchDescriptor<CallProfile>())) ?? []
+        func editor(_ id: UUID?) -> some View {
+            ProfilesSettingsView(initialSelection: id)
+                .environment(rm).environment(rm.profileStore).environment(AppSession())
+                .modelContainer(container)
+        }
+        shot("profiles-report.png", size: .init(width: 860, height: 1900), editor(salesProfile?.id))
+        // As an update leaves them: restore points, a tuned 1:1 coaching with
+        // its offer, and a profile the user made.
+        for p in profiles where p.name != "Investor pitch" { p.saveVersion(label: ProfileStore.restorePointLabel) }
+        if let coaching = profiles.first(where: { $0.name == "1:1 coaching" }) {
+            coaching.isUserModified = true
+            coaching.reportChoice = .classic
+            coaching.reportOfferPending = true
+        }
+        let mine = CallProfile(name: "Northwind accounts", iconSystemName: "briefcase.fill", summary: "Account reviews",
+                               isBuiltIn: false, sortOrder: 20, persona: "", tone: "", allowGeneralKnowledge: true,
+                               kinds: [], gauges: [])
+        mine.saveVersion(label: ProfileStore.restorePointLabel)
+        context.insert(mine)
+        try? context.save()
+        shot("profiles-report-offer.png", size: .init(width: 860, height: 1500),
+             editor(profiles.first { $0.name == "1:1 coaching" }?.id))
+        shot("profiles2-screen.png", size: .init(width: 560, height: 760),
+             ProfileMigrationView().environment(rm.profileStore).modelContainer(container))
+        rm.profileStore.defaults.removeObject(forKey: ProfileStore.screenShownKey)
+
+        // Profiles 2.0, part two: scorecards, rewrite, share, review.
+        let interview = profiles.first { $0.name == "Interview" }
+        shot("profiles-scorecard.png", size: .init(width: 860, height: 2300), editor(interview?.id))
+        let scoreReport = """
+        Overview:
+        A first interview for the data role at Acme. The candidate walked through a pipeline rebuild.
+
+        Scorecard:
+        - Relevant experience: 4/5 - Rebuilt a nightly import, 3 hours down to 20 minutes [01:02]
+        - Problem solving: 3/5 - Moved to small batches and added retries [01:06]
+        - Communication: 4/5 [01:11]
+        - Teamwork: not enough evidence
+
+        Next steps:
+        - You send the take-home task by Friday [01:16]
+        """
+        shot("report-scorecard.png", size: .init(width: 640, height: 560),
+             ReportContentView(summary: scoreReport, coaching: nil, talkPercentMe: nil,
+                               receipts: meeting.receiptIndex, template: interview?.reportTemplate)
+                .padding(Theme.Metrics.pad).background(Theme.Colors.canvas))
+        meeting.status = .done
+        shot("rewrite-report.png", size: .init(width: 460, height: 330),
+             RewriteReportSheet(meeting: meeting).environment(rm).modelContainer(container))
+        if let salesProfile {
+            shot("profile-export.png", size: .init(width: 480, height: 420),
+                 ProfileExportSheet(profile: salesProfile))
+            var suggested = (try? ProfileFile.decode(ProfileFile.encode(salesProfile)))!
+            suggested.profile.persona = salesProfile.persona.replacingOccurrences(of: "authority", with: "who signs")
+            suggested.profile.kinds.removeAll { $0.key == "opportunity" }
+            suggested.profile.kinds.append(.init(key: "decision_maker", label: "Decision-maker", color: "3F9168",
+                                                 icon: "person.fill", trigger: "Who signs the deal came up.", pinned: false, priority: 0))
+            suggested.suggestion = .init(targetSharedID: salesProfile.id,
+                                         reason: "In your last 10 sales calls, Opportunity cards were ignored 8 times, and the report never said who signs.",
+                                         from: "claude-ai")
+            let item = PendingProfile(data: suggested.data(), origin: .suggestion(URL(fileURLWithPath: "/dev/null")))
+            shot("profile-review.png", size: .init(width: 560, height: 680),
+                 ProfileReviewView(item: item) {}.environment(rm.profileStore).environment(rm).modelContainer(container))
+            shot("profile-suggestion-banner.png", size: .init(width: 680, height: 70),
+                 ProfileSuggestionBanner(item: item, profiles: profiles, review: {}, later: {}).padding(8))
+        }
 
         print("help-shots: wrote \(made.count) → \(dir.path)")
         exit(made.count >= 12 ? 0 : 1)
@@ -620,7 +690,7 @@ enum CopilotSnapshot {
             sentiment: ["buying_temperature": 62, "my_dominance": 55, "score": 68],
             read: "warming",
             coach: "Going well — stop listing features and ask who signs off on budget.",
-            meCharacters: 1300, themCharacters: 900,
+            meSeconds: 87, themSeconds: 60,
             brief: "Renewal call with Northwind. Legal wants to know where the data is stored."
         )
 
@@ -687,7 +757,7 @@ enum CopilotSnapshot {
         // The "Briefed" card open: what the panel shows before the first insight lands.
         rm.callAnalysisEngine.seedForSnapshot(
             profile: profile, insights: [], sentiment: [:], read: nil, coach: nil,
-            meCharacters: 0, themCharacters: 0,
+            meSeconds: 0, themSeconds: 0,
             brief: "Renewal call with Northwind. Legal wants to know where the data is stored.")
         let briefed = render(
             CopilotPanelView(transcriptJumpTarget: .constant(nil)).environment(rm).frame(width: 420, height: 460),
@@ -838,6 +908,13 @@ enum AnalyzeTest {
             ])
         }
 
+        // ANALYZE_REPORT=all (or a profile name): write each built-in's report
+        // instead of a live pass, to check a model can follow the templates.
+        if let which = ProcessInfo.processInfo.environment["ANALYZE_REPORT"] {
+            if let provider { UserDefaults.standard.register(defaults: ["reportsProvider": provider]) }
+            exit(ReportEval.run(which))
+        }
+
         let profile = ProfilePresets.all().first { $0.name == "Sales discovery" }
         // ANALYZE_TRANSCRIPT=<file> swaps in your own call (e.g. named speakers).
         let transcript = ProcessInfo.processInfo.environment["ANALYZE_TRANSCRIPT"]
@@ -897,6 +974,239 @@ enum AnalyzeTest {
         }
         sem.wait()
         exit(exitCode)
+    }
+}
+
+/// `ANALYZE_REPORT=all Parrot --analyze-test ollama gemma3:4b`: every
+/// built-in writes its report (and coaching, when on) for a short made-up
+/// call. Prints each report, then whether every section title came back,
+/// the promises found, and how many bullets carry a real receipt.
+/// Exits non-zero when a template's sections don't all come back.
+enum ReportEval {
+    static let calls: [String: String] = [
+        "Sales discovery": """
+        [00:05] Me: Thanks for making time. What made you look at new tools this quarter?
+        [00:14] Them: Our reps spend hours logging calls by hand, and half the notes never reach the CRM.
+        [00:32] Me: How much time are we talking about per rep?
+        [00:40] Them: Maybe five hours a week each, and we have twelve reps.
+        [01:02] Me: Is there budget set aside for this?
+        [01:10] Them: We have about twenty thousand for the year, but finance wants to see a payback case first.
+        [01:35] Me: Who else weighs in on the decision?
+        [01:42] Them: Our VP of Sales, Dana, signs off, and IT has to approve anything that touches customer data.
+        [02:05] Them: Honestly your price looks high next to the tool we use now.
+        [02:20] Me: Fair. Most teams earn it back in two months from saved rep time. I can show you the numbers.
+        [02:40] Them: We'd want something live before the new quarter starts in January.
+        [03:01] Me: I'll send you a payback sheet by Friday and set up a call with Dana next week.
+        [03:12] Them: Great, and I'll ask IT for their security checklist.
+        """,
+        "Interview": """
+        [00:02] Me: Today I want to cover your pipeline work, teamwork, streaming, and on-call.
+        [00:08] Me: Thanks for coming in, Jordan. Tell me about a data pipeline you built.
+        [00:15] Them: At Acme I rebuilt our nightly import so it ran in twenty minutes instead of three hours.
+        [00:40] Me: What did you change?
+        [00:46] Them: We moved from one big job to small batches and added retries, and I wrote the monitoring myself.
+        [01:20] Me: How do you handle a disagreement with a teammate on design?
+        [01:28] Them: I write down both options with the tradeoffs and we pick together. Sometimes I'm too quick to defend my own idea, though.
+        [02:05] Me: Have you worked with streaming systems?
+        [02:12] Them: Not in production, only side projects.
+        [02:40] Me: We'll get back to you by Wednesday with next steps.
+        [02:48] Them: Thanks. I'll send over the code sample you asked for tonight.
+        """,
+        "Customer support": """
+        [00:03] Me: Hi, thanks for calling Acme support. What's going on?
+        [00:08] Them: Our invoices stopped syncing to the accounting system since Monday.
+        [00:20] Me: Sorry about that. Did anything change on your side on Monday?
+        [00:27] Them: We rotated our API keys. Could that be it?
+        [00:35] Me: That's likely. The sync still uses the old key. Yes, it's failing with an auth error.
+        [01:02] Me: I've updated the connection with your new key. Can you check the last invoice?
+        [01:15] Them: It's there now. But the invoices from Monday and Tuesday are still missing.
+        [01:30] Me: I'll run a backfill for those two days tonight and email you when it's done.
+        [01:42] Them: Okay. I was pretty annoyed this morning, but this helps a lot. Thanks.
+        """,
+        "1:1 coaching": """
+        [00:05] Me: How has the week been?
+        [00:09] Them: Good overall. I shipped the onboarding redesign and the numbers look better already.
+        [00:25] Me: That's great. What's been harder?
+        [00:30] Them: The Northwind integration is stuck. I'm waiting on their team for API access and it's been two weeks.
+        [00:55] Them: I'm also a bit worried about the reorg and what it means for my team.
+        [01:20] Me: I'll ask Alex about the reorg timeline and tell you what I learn by Thursday.
+        [01:35] Them: Thanks. I'll email Northwind's lead directly today to push for access.
+        [01:50] Me: And let's talk about your conference talk next time.
+        """,
+        "Vendor call": """
+        [00:04] Them: Thanks for considering Acme Payments. Our standard rate is 1.4 percent plus 20 cents per card payment.
+        [00:18] Me: Are there monthly fees on top?
+        [00:23] Them: There's a 25 dollar monthly platform fee, waived for the first three months.
+        [00:40] Me: How fast do payouts reach our bank?
+        [00:45] Them: Two business days, but new accounts have a 7 day rolling reserve for the first 90 days.
+        [01:05] Me: What happens if we want to leave?
+        [01:10] Them: The contract is 12 months, and there's an early exit fee. I'd have to check the exact amount.
+        [01:30] Me: Do you support refunds in euros?
+        [01:36] Them: Good question, let me come back to you on that.
+        [01:50] Them: I'll send the contract draft and our security documents by Monday.
+        [02:00] Me: Great, I'll review it with our finance lead, Mara, next week.
+        """,
+        "Investor pitch": """
+        [00:05] Me: We help small clinics cut no-shows with automatic reminders. We're at 40 thousand in monthly revenue, growing 12 percent a month.
+        [00:25] Them: I like that growth. What does churn look like?
+        [00:32] Me: About 2 percent monthly, mostly very small clinics.
+        [00:45] Them: My worry is the market. Isn't this a feature the big practice software will just add?
+        [01:05] Me: They've had years to do it. Our edge is the integrations with 30 booking systems.
+        [01:25] Them: What are you raising?
+        [01:30] Me: Two million, and we have a lead for half of it.
+        [01:40] Them: We usually write checks of 500 thousand at seed, so that could fit.
+        [01:55] Them: Can you send me your cohort data and an intro to two customers?
+        [02:10] Me: Yes, I'll send both by Wednesday.
+        [02:18] Them: Then I'll bring it to our partner meeting on Monday.
+        """,
+    ]
+
+    /// The receipts index for a fixture: each line runs until the next.
+    static func index(_ transcript: String) -> ReceiptIndex {
+        let rows = transcript.components(separatedBy: "\n").compactMap { line -> (TimeInterval, String, String)? in
+            guard line.hasPrefix("["), let close = line.firstIndex(of: "]"),
+                  let t = Receipts.parseStamp(String(line[line.index(after: line.startIndex)..<close])) else { return nil }
+            let rest = line[line.index(after: close)...].trimmingCharacters(in: .whitespaces)
+            let parts = rest.split(separator: ":", maxSplits: 1).map(String.init)
+            return (t, parts.first ?? "", parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
+        }
+        return ReceiptIndex(lines: rows.enumerated().map { i, r in
+            .init(start: r.0, end: i + 1 < rows.count ? rows[i + 1].0 : r.0 + 5, speaker: r.1, text: r.2)
+        })
+    }
+
+    static func run(_ which: String) -> Int32 {
+        let profiles = ProfilePresets.all().filter { which == "all" || $0.name == which }
+        guard !profiles.isEmpty else { print("report-eval: no built-in named \(which)"); return 1 }
+        var failed = 0
+        var done = false
+        // Parsing is main-actor work, so spin the main run loop, don't block it.
+        Task { @MainActor in
+            let provider = SwitchingAnalysisProvider()
+            for p in profiles {
+                let template = p.reportTemplate
+                let transcript = calls[p.name] ?? calls["Sales discovery"]!
+                let idx = index(transcript)
+                print("\n=== \(p.name) · \(CopilotProviderKind.modelName(for: SwitchingAnalysisProvider.reportsKind))")
+                let start = Date()
+                do {
+                    let summary = try await provider.summarize(transcript: transcript, insightTitles: [], bookmarks: [],
+                                                               instructions: p.tone, counterpart: p.counterpart, template: template)
+                    var coaching: String?
+                    if template.coachingEnabled {
+                        coaching = try await provider.coachingReport(transcript: transcript, talkPercentMe: 45, instructions: p.tone,
+                                                                     counterpart: p.counterpart, template: template)
+                    }
+                    print(summary)
+                    if let coaching { print("--- coaching\n\(coaching)") }
+                    let got = ReportProse.sections(from: summary, template: template).compactMap(\.title)
+                    let want = template.isStandard ? ["Pain points", "Key points"] : template.titles
+                    let missing = want.filter { w in !got.contains { $0.caseInsensitiveCompare(w) == .orderedSame } }
+                    let bullets = ReportProse.sections(from: summary, template: template).flatMap(\.blocks).compactMap { b -> String? in
+                        if case .bullet(let t, _) = b { return t } else { return nil }
+                    }.filter { !Receipts.isPlaceholder(Receipts.extract($0).text) }
+                    let cited = bullets.filter { !idx.verified(Receipts.extract($0).times).isEmpty }.count
+                    let promises = LastCallBrief.openItems(summary: summary, coaching: coaching, template: template, limit: 20)
+                    let parsed = ReportProse.sections(from: summary, template: template)
+                    let scores = template.sections.filter { $0.type == "scorecard" }.map { card -> String in
+                        let blocks = parsed.first { $0.title.map { template.section(titled: $0)?.key == card.key } == true }?.blocks ?? []
+                        let rows = Scorecard.rows(from: blocks.map(\.raw), criteria: card.criteria ?? [], receipts: idx).rows
+                        return ", scores \(rows.filter { $0.score != nil }.count)/\(rows.count)"
+                    }.joined()
+                    let coachOK = coaching.map { $0.lowercased().contains("what went well") } ?? true
+                    let secs = String(format: "%.0f", Date().timeIntervalSince(start))
+                    print("--- \(missing.isEmpty && coachOK ? "OK" : "MISS") \(p.name): sections \(want.count - missing.count)/\(want.count)"
+                          + (missing.isEmpty ? "" : " missing \(missing)") + ", receipts \(cited)/\(bullets.count)"
+                          + ", promises \(promises.count)\(scores), coaching \(template.coachingEnabled ? (coachOK ? "ok" : "BAD") : "off"), \(secs)s")
+                    if !missing.isEmpty || !coachOK { failed += 1 }
+                } catch {
+                    print("--- FAILED \(p.name): \(error.localizedDescription)")
+                    failed += 1
+                }
+            }
+            done = true
+        }
+        while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+        print("\nreport-eval: \(profiles.count - failed)/\(profiles.count) templates followed")
+        return failed == 0 ? 0 : 1
+    }
+}
+
+/// `Parrot --store-upgrade-test <file.store>`: opens a store written by an
+/// older Parrot (a copy, never the live one) the way this version would.
+/// First read-only, like the MCP server before the app has run; then
+/// read-write with the Profiles 2.0 migration, using throwaway settings and
+/// a throwaway backup folder. Prints PASS/FAIL; exits non-zero on a FAIL.
+enum StoreUpgradeTest {
+    @MainActor
+    static func run(path: String) {
+        let fm = FileManager.default
+        let url = URL(fileURLWithPath: path)
+        var failures = 0
+        func check(_ name: String, _ ok: Bool) { print((ok ? "PASS " : "FAIL ") + name); if !ok { failures += 1 } }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+
+        // 1. Read-only, on a copy (SQLite keeps -wal/-shm beside the file).
+        let ro = url.deletingLastPathComponent().appendingPathComponent("readonly-" + url.lastPathComponent)
+        for suffix in ["", "-wal", "-shm"] {
+            let from = URL(fileURLWithPath: path + suffix), to = URL(fileURLWithPath: ro.path + suffix)
+            try? fm.removeItem(at: to)
+            if fm.fileExists(atPath: from.path) { try? fm.copyItem(at: from, to: to) }
+        }
+        let readOnly = try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: ro, allowsSave: false)])
+        let roMeetings = readOnly.flatMap { try? ModelContext($0).fetch(FetchDescriptor<Meeting>()) }
+        print("read-only open (MCP before the app runs): \(readOnly == nil ? "fails" : "opens"), meetings \(roMeetings?.count ?? -1)")
+
+        // 2. The app: read-write, then the migration.
+        guard let container = try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: url)]) else {
+            check("store opens with the new schema", false); exit(1)
+        }
+        check("store opens with the new schema", true)
+        let ctx = ModelContext(container)
+        let before = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        let meetingsBefore = (try? ctx.fetch(FetchDescriptor<Meeting>())) ?? []
+        let copilot = Dictionary(uniqueKeysWithValues: before.map { ($0.id, [$0.persona, $0.tone, $0.counterpart]
+            + [$0.kindsData.base64EncodedString(), $0.gaugesData.base64EncodedString(), "\($0.onDeviceOnly)"]) })
+        let summaries = Dictionary(uniqueKeysWithValues: meetingsBefore.map { ($0.id, $0.summary ?? "") })
+        check("old rows read with the new fields defaulted",
+              before.allSatisfy { $0.reportChoice == .classic && $0.sharedID == nil && $0.versions.isEmpty })
+
+        let suite = "parrot.test.store-upgrade"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let backups = fm.temporaryDirectory.appendingPathComponent("parrot-upgrade-\(UUID().uuidString)")
+        defer { defaults.removePersistentDomain(forName: suite); try? fm.removeItem(at: backups) }
+        let store = ProfileStore()
+        store.defaults = defaults
+        store.backupFolder = backups
+        store.seedAndMigrateIfNeeded(context: ctx, knowledgeBase: KnowledgeBaseService(persistent: false))
+
+        let after = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
+        check("migration ran and the screen is due", defaults.bool(forKey: ProfileStore.migrationDoneKey) && store.showProfiles2Screen)
+        check("a backup per profile", ((try? fm.contentsOfDirectory(atPath: backups.path))?.count ?? 0) == before.count)
+        check("Copilot fields unchanged on every old profile", before.allSatisfy { p in
+            let now = [p.persona, p.tone, p.counterpart, p.kindsData.base64EncodedString(), p.gaugesData.base64EncodedString(), "\(p.onDeviceOnly)"]
+            return copilot[p.id] == now || (p.isBuiltIn && !p.isUserModified) })
+        check("tuned built-ins keep their Copilot settings exactly",
+              before.filter { $0.isBuiltIn && $0.isUserModified }.allSatisfy { p in
+                  copilot[p.id] == [p.persona, p.tone, p.counterpart, p.kindsData.base64EncodedString(),
+                                    p.gaugesData.base64EncodedString(), "\(p.onDeviceOnly)"] })
+        check("new built-ins added", after.count >= before.count && after.contains { $0.name == "Investor pitch" })
+        check("meetings untouched", ((try? ctx.fetch(FetchDescriptor<Meeting>())) ?? []).allSatisfy {
+            summaries[$0.id] == ($0.summary ?? "") && $0.reportTemplateData == nil })
+        for p in after.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+            print("  \(p.name) | \(p.isBuiltIn ? "built-in" : "yours")\(p.isUserModified ? ", tuned" : "") | report \(p.reportChoiceRaw)"
+                  + (p.reportOfferPending ? " + offer" : "") + " | versions \(p.versions.count)")
+        }
+
+        // 3. It stuck: a fresh container on the same file sees the new state.
+        let choices = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0.reportChoiceRaw) })
+        let reopened = (try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: url)]))
+            .flatMap { try? ModelContext($0).fetch(FetchDescriptor<CallProfile>()) } ?? []
+        check("the migration is saved to disk", !reopened.isEmpty
+              && reopened.allSatisfy { choices[$0.id] == $0.reportChoiceRaw && $0.sharedID != nil })
+        print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
+        exit(failures == 0 ? 0 : 1)
     }
 }
 
@@ -1166,7 +1476,7 @@ enum ReportSnapshot {
             Divider().overlay(Theme.Colors.line).padding(.vertical, 16)
 
             ReportContentView(summary: sampleSummary, coaching: sampleCoaching, talkPercentMe: 29,
-                              receipts: sampleReceipts)
+                              receipts: sampleReceipts, template: nil)
         }
         .frame(width: 600, alignment: .leading)
         .padding(Theme.Metrics.pad)

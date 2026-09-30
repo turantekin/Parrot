@@ -22,6 +22,8 @@ final class RecordingManager {
     private(set) var liveSpeakerSuggestions: [String: String] = [:]
     // Routes to Claude / Ollama / a custom server per Settings → Copilot.
     let callAnalysisEngine: CallAnalysisEngine
+    /// This call's live nudges (the pill, the Copilot banner, the report timeline).
+    let nudges = LiveNudgeSession()
     let knowledgeBase = KnowledgeBaseService()
     /// TypeSafe client for the copilot's "From your docs" excerpts; inert
     /// without a key (see CallAnalysisEngine.fastPathAvailable).
@@ -369,7 +371,8 @@ final class RecordingManager {
                 meeting.previousMeetingID = previous.id
                 lastCall = LastCallBrief.context(
                     title: previous.title, date: previous.date,
-                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching))
+                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching,
+                                                   template: previous.reportTemplate))
             }
         }
         meeting.brief = nextCallBrief.nilIfEmpty
@@ -397,10 +400,13 @@ final class RecordingManager {
             Task { @MainActor in
                 self?.lastVoiceAt = .now
                 self?.addSegment(result)
+                self?.nudges.add(line: NudgeDetector.Line(source: result.source, start: result.startTime,
+                                                          end: result.endTime, text: result.text))
                 self?.callAnalysisEngine.ingest(
                     text: result.text,
                     at: result.endTime,
-                    source: result.source
+                    source: result.source,
+                    duration: result.endTime - result.startTime
                 )
             }
         }
@@ -427,6 +433,17 @@ final class RecordingManager {
         transcriptionEngine.startTranscribing(meetingStartTime: .now)
         callAnalysisEngine.provider.resetUsage()  // this call's token meter starts at zero
         docMatcher.resetUsage()
+        nudges.start(gauges: profile?.gauges ?? [])
+        nudges.onShow = { [weak self] nudge in
+            guard let self else { return }
+            // The Copilot banner covers it when Parrot is in front and Copilot is showing.
+            if !(NSApp.isActive && self.callAnalysisEngine.isActive) { NudgePillController.shared.show(nudge) }
+        }
+        NudgePillController.shared.onOpen = {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first { $0.canBecomeMain && $0.isVisible }?.makeKeyAndOrderFront(nil)
+        }
+        callAnalysisEngine.onPassCompleted = { [weak self] pass in self?.nudges.add(pass: pass) }
         callAnalysisEngine.start(profile: profile, brief: nextCallBrief, calendarContext: calendarContext,
                                  previousCall: lastCall, previousCallIsPrivate: previousIsPrivate,
                                  forceLocal: meeting.onDeviceOnly)
@@ -462,6 +479,8 @@ final class RecordingManager {
             Task { @MainActor in
                 guard let self, let start = self.recordingStartTime else { return }
                 self.elapsedTime = Date.now.timeIntervalSince(start)
+                let clock = self.transcriptionEngine.speechClock()
+                self.nudges.tick(now: clock.now, lastHeard: clock.lastHeard, paused: self.callAnalysisEngine.isPaused)
                 if let voice = self.lastVoiceAt,
                    Self.idleReminderDue(now: .now, lastVoice: voice,
                                         lastReminder: self.lastIdleReminderAt, after: Self.idleReminderAfter) {
@@ -481,6 +500,7 @@ final class RecordingManager {
 
         timer?.invalidate()
         timer = nil
+        NudgePillController.shared.hide()
         markHotKey.unregister()
         // A "Still recording?" left in Notification Center is stale once stopped.
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.idleReminderID])
@@ -505,6 +525,9 @@ final class RecordingManager {
         if let meeting = currentMeeting {
             meeting.duration = elapsedTime
             meeting.status = .processing
+            let tone = nudges.stop()
+            meeting.nudges = tone.nudges
+            meeting.moodTimeline = tone.timeline
 
             // Persist the copilot's insights so they survive into the meeting report.
             // Same SwiftData rule as addSegment: insert before setting the relationship.
@@ -802,6 +825,10 @@ final class RecordingManager {
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
         let instructions = meeting.profile?.tone ?? (UserDefaults.standard.string(forKey: "copilotInstructions") ?? "")
         let counterpart = meeting.profile?.counterpart ?? "the other person"
+        // Snapshot the template, so the report still renders (and its
+        // commitments still count) after the profile changes.
+        let template = meeting.profile?.reportTemplate ?? .standard
+        meeting.reportTemplateData = template.isStandard ? nil : try? JSONEncoder().encode(template)
 
         do {
             let summary = try await callAnalysisEngine.provider.summarize(
@@ -809,7 +836,8 @@ final class RecordingManager {
                 insightTitles: insightTitles,
                 bookmarks: meeting.bookmarks.map(\.promptLine),
                 instructions: instructions,
-                counterpart: counterpart
+                counterpart: counterpart,
+                template: template
             )
             meeting.summary = summary
             try? modelContext?.save()
@@ -817,20 +845,18 @@ final class RecordingManager {
             // Best-effort: the transcript and insights are already saved.
         }
 
-        guard includeCoaching else { return }
+        // A template can turn coaching off: one call fewer, faster and cheaper.
+        guard includeCoaching, template.coachingEnabled else { return }
 
         // Coaching + follow-ups report, with the user's real talk balance.
-        let meWords = segments
-            .filter { $0.speakerLabel == "Me" }
-            .reduce(0) { $0 + $1.text.split(separator: " ").count }
-        let totalWords = segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-        let talkPercentMe = totalWords > 0 ? Int(Double(meWords) / Double(totalWords) * 100) : 0
+        let talkPercentMe = meeting.talkPercentMe ?? 0
         do {
             let coaching = try await callAnalysisEngine.provider.coachingReport(
                 transcript: transcript,
                 talkPercentMe: talkPercentMe,
                 instructions: instructions,
-                counterpart: counterpart
+                counterpart: counterpart,
+                template: template
             )
             meeting.coaching = coaching
             try? modelContext?.save()

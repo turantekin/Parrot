@@ -14,18 +14,25 @@ struct ReportContentView: View {
     var receipts: ReceiptIndex = .empty
     /// What a receipt chip can do; nil → chips still show the quote, no buttons.
     var receiptActions: ReceiptActions?
+    /// The template the report was written with (nil = standard): its
+    /// titles are headings, its flags say which sections are commitments.
+    let template: ReportTemplate?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let summary, !summary.isEmpty {
-                ReportProse(text: summary, receipts: receipts, actions: receiptActions)
+                ReportProse(text: summary, template: template, receipts: receipts, actions: receiptActions)
+                // Coaching off in the template: the talk balance still shows.
+                if template?.coachingEnabled == false, coaching == nil, let pct = talkPercentMe {
+                    TalkRatioBar(percentMe: pct)
+                }
             }
 
             if let coaching, !coaching.isEmpty {
                 if let pct = talkPercentMe {
                     TalkRatioBar(percentMe: pct)
                 }
-                ReportProse(text: coaching, receipts: receipts, actions: receiptActions)
+                ReportProse(text: coaching, template: template, receipts: receipts, actions: receiptActions)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,7 +44,7 @@ struct ReportContentView: View {
 /// skip re-parsing the report on every playback tick.
 extension ReportContentView: Equatable {
     nonisolated static func == (lhs: ReportContentView, rhs: ReportContentView) -> Bool {
-        lhs.summary == rhs.summary && lhs.coaching == rhs.coaching
+        lhs.summary == rhs.summary && lhs.coaching == rhs.coaching && lhs.template == rhs.template
             && lhs.talkPercentMe == rhs.talkPercentMe && lhs.receipts == rhs.receipts
             && (lhs.receiptActions?.play == nil) == (rhs.receiptActions?.play == nil)
     }
@@ -137,6 +144,57 @@ struct UnverifiedTag: View {
     }
 }
 
+/// One scorecard criterion: name, a five-step bar, the score, the moment
+/// that backs it. No score means "not enough evidence", never a guess.
+struct ScoreRow: View {
+    let row: Scorecard.Row
+    let actions: ReceiptActions?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(row.label)
+                    .font(Theme.Typography.cardTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                Spacer(minLength: 8)
+                if let score = row.score {
+                    HStack(spacing: 2) {
+                        ForEach(1...5, id: \.self) { step in
+                            Capsule()
+                                .fill(step <= score ? Theme.Colors.accent : Theme.Colors.chip)
+                                .frame(width: Theme.Metrics.scoreStep.width, height: Theme.Metrics.scoreStep.height)
+                        }
+                    }
+                    .accessibilityHidden(true)
+                    Text("\(score)/5")
+                        .font(Theme.Typography.mono(12, .semibold))
+                        .foregroundStyle(Theme.Colors.ink)
+                } else {
+                    Text(row.uncited ? "no moment cited" : "not enough evidence")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.ink3)
+                        .help(row.uncited ? "The report gave a score without pointing to a moment in the call, so Parrot doesn't show it." : "")
+                }
+            }
+            if row.score != nil {
+                HStack(alignment: .top, spacing: 8) {
+                    Text(row.evidence)
+                        .font(Theme.Typography.secondary)
+                        .foregroundStyle(Theme.Colors.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(Array(row.lines.enumerated()), id: \.offset) { _, line in
+                        ReceiptChip(line: line, actions: actions)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(row.score.map { "\(row.label): \($0) out of 5. \(row.evidence)" }
+                            ?? "\(row.label): \(row.uncited ? "no moment cited" : "not enough evidence")")
+    }
+}
+
 // MARK: - Section chrome shared by cards + talk bar
 
 /// One report section as a card: tinted icon chip + title header, content below.
@@ -203,12 +261,19 @@ struct TalkRatioBar: View {
 /// section as a card.
 struct ReportProse: View {
     let text: String
+    let template: ReportTemplate?
     var receipts: ReceiptIndex = .empty
     var actions: ReceiptActions?
 
     enum Block {
         case bullet(String, level: Int)
         case paragraph(String, lede: Bool)
+
+        var raw: String {
+            switch self {
+            case .bullet(let t, _), .paragraph(let t, _): return t
+            }
+        }
     }
 
     struct Section {
@@ -217,19 +282,35 @@ struct ReportProse: View {
     }
 
     var body: some View {
-        let sections = Self.sections(from: text)
+        let sections = Self.sections(from: text, template: template)
         // Only a report written under the receipts rule gets "unverified"
         // flags — older reports never claimed a source.
         let flagging = receipts.reportHasReceipts(text)
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                if let title = section.title {
+                if let title = section.title, let card = template?.section(titled: title),
+                   card.type == "scorecard", let criteria = card.criteria, !criteria.isEmpty {
+                    let read = Scorecard.rows(from: section.blocks.map(\.raw), criteria: criteria, receipts: receipts)
+                    ReportSectionCard(title: title, icon: "gauge.with.dots.needle.50percent", tint: Theme.Colors.accent) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(read.rows.enumerated()), id: \.offset) { _, r in
+                                ScoreRow(row: r, actions: actions)
+                            }
+                            // Lines that weren't scores still show, as plain bullets.
+                            ForEach(Array(read.rest.enumerated()), id: \.offset) { _, line in
+                                let block = Block.bullet(line, level: 0)
+                                row(block, check: Self.checked(block, section: title, template: template,
+                                                               receipts: receipts, flagging: flagging))
+                            }
+                        }
+                    }
+                } else if let title = section.title {
                     ReportSectionCard(title: title,
                                       icon: Self.icon(for: title),
                                       tint: Self.tint(for: title)) {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
-                                row(block, check: Self.checked(block, section: title,
+                                row(block, check: Self.checked(block, section: title, template: template,
                                                                receipts: receipts, flagging: flagging))
                             }
                         }
@@ -238,7 +319,7 @@ struct ReportProse: View {
                     // Overview/preamble — breathes outside any card.
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(section.blocks.enumerated()), id: \.offset) { _, block in
-                            row(block, check: Self.checked(block, section: nil,
+                            row(block, check: Self.checked(block, section: nil, template: template,
                                                            receipts: receipts, flagging: flagging))
                         }
                     }
@@ -255,14 +336,14 @@ struct ReportProse: View {
         let unverified: Bool
     }
 
-    static func checked(_ block: Block, section: String?, receipts: ReceiptIndex,
-                        flagging: Bool) -> Checked {
+    static func checked(_ block: Block, section: String?, template: ReportTemplate?,
+                        receipts: ReceiptIndex, flagging: Bool) -> Checked {
         switch block {
         case .bullet(let raw, _):
             let cited = Receipts.extract(raw)
             let lines = receipts.verified(cited.times)
             let unverified = flagging && lines.isEmpty
-                && Receipts.isCommitmentSection(section) && !Receipts.isPlaceholder(cited.text)
+                && Receipts.isCommitmentSection(section, in: template) && !Receipts.isPlaceholder(cited.text)
             return Checked(text: cited.text, lines: lines, unverified: unverified)
         case .paragraph(let raw, _):
             let cited = Receipts.extract(raw)
@@ -323,11 +404,13 @@ struct ReportProse: View {
     static let sectionLabels = ["Pain points", "Key points", "Next steps", "What went well",
                                 "What to improve", "Objections & questions", "Commitments & follow-ups"]
 
-    private static let inlineSection: NSRegularExpression = {
-        let labels = sectionLabels.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+    private static let inlineSection = inlineSectionPattern(sectionLabels)
+
+    private static func inlineSectionPattern(_ labels: [String]) -> NSRegularExpression {
+        let alternatives = labels.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
         // swiftlint:disable:next force_try
-        return try! NSRegularExpression(pattern: "(?i)(^|\\s)(\(labels)):[ \\t]*(?=[-–•][ \\t])")
-    }()
+        return try! NSRegularExpression(pattern: "(?i)(^|\\s)(\(alternatives)):[ \\t]*(?=[-–•][ \\t])")
+    }
 
     private static let inlineBullet = try! NSRegularExpression(pattern: "[ \\t]+[-–•][ \\t]+")  // swiftlint:disable:this force_try
 
@@ -338,9 +421,41 @@ struct ReportProse: View {
     /// well-formed report never changes.
     // ponytail: splits every " - " after such a label, so an item that
     // itself contains " - " is cut in two; fine until a model does both.
-    static func unflattened(_ text: String) -> String {
+    /// `template` adds its section titles to the known labels (nil = the
+    /// standard labels only, exactly as before templates).
+    static func unflattened(_ text: String, template: ReportTemplate?) -> String {
+        let split = inlineSplit(text, template: template)
+        guard let titles = template?.titles, !titles.isEmpty else { return split }
+        return split.components(separatedBy: "\n").map { titleOnOwnLine($0, titles: titles) }.joined(separator: "\n")
+    }
+
+    /// Local models write a template section's content on its title line
+    /// ("Mood: calm by the end.", "Topics: -" with the bullets below, or no
+    /// colon at all: "Wins - a – b"; all seen on gemma3:4b). Puts the title
+    /// on a line of its own. Template titles only, so a report without a
+    /// template never changes.
+    private static func titleOnOwnLine(_ line: String, titles: [String]) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        for marker in [":", " -", " –"] {
+            guard let title = titles.first(where: { lower.hasPrefix($0.lowercased() + marker) }) else { continue }
+            let head = String(trimmed.prefix(title.count)) + ":"
+            let rest = trimmed.dropFirst(title.count + marker.count).trimmingCharacters(in: .whitespaces)
+            if rest.isEmpty || ["-", "–", "•"].contains(rest) { return head }
+            guard marker != ":" else { return head + "\n" + rest }
+            // "Title - a – b": the dash opened a list.
+            let listed = inlineBullet.stringByReplacingMatches(
+                in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "\n- ")
+            return head + "\n- " + listed
+        }
+        return line
+    }
+
+    private static func inlineSplit(_ text: String, template: ReportTemplate?) -> String {
         let ns = text as NSString
-        let matches = inlineSection.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        let extra = (template?.titles ?? []).filter { t in !sectionLabels.contains { $0.caseInsensitiveCompare(t) == .orderedSame } }
+        let pattern = extra.isEmpty ? inlineSection : inlineSectionPattern(sectionLabels + extra)
+        let matches = pattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return text }
         var out = ""
         func items(_ body: String) -> String {
@@ -364,15 +479,16 @@ struct ReportProse: View {
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func sections(from text: String) -> [Section] {
+    static func sections(from text: String, template: ReportTemplate?) -> [Section] {
         var sections: [Section] = [Section(title: nil, blocks: [])]
         var sawParagraph = false
+        let templateTitles = Set((template?.titles ?? []).map { $0.lowercased() })
 
         func append(_ block: Block) {
             sections[sections.count - 1].blocks.append(block)
         }
 
-        for rawLine in unflattened(text).components(separatedBy: "\n") {
+        for rawLine in unflattened(text, template: template).components(separatedBy: "\n") {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
 
@@ -390,8 +506,9 @@ struct ReportProse: View {
 
             let words = line.split(separator: " ")
 
-            // Short label line ending in ":" → section heading
-            if line.hasSuffix(":") && words.count <= 7 {
+            // Short label line ending in ":" → section heading (a template's
+            // own title counts at any length)
+            if line.hasSuffix(":") && (words.count <= 7 || templateTitles.contains(line.dropLast().lowercased())) {
                 sections.append(Section(title: String(line.dropLast()), blocks: []))
                 continue
             }

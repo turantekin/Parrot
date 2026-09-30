@@ -106,6 +106,11 @@ final class TranscriptionEngine {
     /// exist. Same benign cross-thread pattern as the streamers dict.
     private(set) var isHearingSpeech = false
     private var lastSpeechAt = Date.distantPast
+    /// Per stream: samples appended so far, and the count at the last buffer
+    /// with speech-level energy (both guarded by bufferLock). Live nudges read
+    /// them through `speechClock()`, on the same clock as segment timestamps.
+    private var appendedSamples: [AudioSource: Int] = [:]
+    private var heardSamples: [AudioSource: Int] = [:]
     private(set) var modelState: ModelState = .notLoaded
     /// Display name of the model currently downloading/preparing, set at the
     /// start of every load — the status views use it to answer "which model
@@ -511,6 +516,11 @@ final class TranscriptionEngine {
             let energy = samples.reduce(into: Float(0)) { $0 += abs($1) } / Float(frameCount)
             let floor = bufferLock.withLock { Segmenter.adaptiveFloor(for: audioBuffers[source] ?? []) }
             if energy > floor { lastSpeechAt = Date() }
+            bufferLock.withLock {
+                let total = (appendedSamples[source] ?? 0) + frameCount
+                appendedSamples[source] = total
+                if energy > floor { heardSamples[source] = total }
+            }
             let hearing = Date().timeIntervalSince(lastSpeechAt) < 1.0
             if hearing != isHearingSpeech {
                 Task { @MainActor in self.isHearingSpeech = hearing }
@@ -541,6 +551,23 @@ final class TranscriptionEngine {
 
         bufferLock.withLock {
             audioBuffers[source, default: []].append(contentsOf: samples)
+        }
+    }
+
+    /// "Now" and when each stream last carried speech, in seconds into the
+    /// call on the segments' own clock (samples / 16 kHz + the stream's
+    /// offset). A wall clock would drift from segment times whenever a tap
+    /// starts late.
+    func speechClock() -> (now: TimeInterval, lastHeard: [AudioSource: TimeInterval]) {
+        bufferLock.withLock {
+            var now: TimeInterval = 0
+            var heard: [AudioSource: TimeInterval] = [:]
+            for source in AudioSource.allCases {
+                let offset = localClockOffset[source] ?? 0
+                if let n = appendedSamples[source] { now = max(now, Double(n) / 16000 + offset) }
+                if let h = heardSamples[source] { heard[source] = Double(h) / 16000 + offset }
+            }
+            return (now, heard)
         }
     }
 
@@ -728,6 +755,8 @@ final class TranscriptionEngine {
             deepgramFailedSources = []
             localClockOffset = [:]
             consumedSamples = [.me: 0, .them: 0]
+            appendedSamples = [:]
+            heardSamples = [:]
         }
         deepgramStreamers = [:]
         if backend == .groq {

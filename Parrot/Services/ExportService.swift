@@ -142,15 +142,16 @@ enum ExportService {
         // sections, which listed the same promises a second time.
         let summary = parts.contains(.report) ? meeting.summary : nil
         let coaching = parts.contains(.report) ? meeting.coaching : nil
-        let steps = LastCallBrief.openItems(summary: summary, coaching: coaching, limit: 20)
+        let template = meeting.reportTemplate
+        let steps = LastCallBrief.openItems(summary: summary, coaching: coaching, template: template, limit: 20)
         if let summary {
-            out += "## Summary\n\n\(markdownReport(summary, skipCommitments: !steps.isEmpty))\n\n"
+            out += "## Summary\n\n\(markdownReport(summary, template: template, skipCommitments: !steps.isEmpty))\n\n"
         }
         if !steps.isEmpty {
             out += "## Next steps\n\n" + steps.map { "- [ ] \($0)" }.joined(separator: "\n") + "\n\n"
         }
         if let coaching {
-            out += "## Coaching\n\n\(markdownReport(coaching, skipCommitments: !steps.isEmpty))\n\n"
+            out += "## Coaching\n\n\(markdownReport(coaching, template: template, skipCommitments: !steps.isEmpty))\n\n"
         }
         let marks = meeting.bookmarks
         if !marks.isEmpty {
@@ -171,12 +172,12 @@ enum ExportService {
     }
 
     /// Report text with `[12:34]` receipts as inline code, headings as ###.
-    static func markdownReport(_ text: String, skipCommitments: Bool = false) -> String {
+    static func markdownReport(_ text: String, template: ReportTemplate?, skipCommitments: Bool = false) -> String {
         var skipping = false
-        return ReportProse.unflattened(text).components(separatedBy: "\n").compactMap { line -> String? in
+        return ReportProse.unflattened(text, template: template).components(separatedBy: "\n").compactMap { line -> String? in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasSuffix(":"), trimmed.split(separator: " ").count <= 7, !trimmed.hasPrefix("-") {
-                skipping = skipCommitments && Receipts.isCommitmentSection(String(trimmed.dropLast()))
+                skipping = skipCommitments && Receipts.isCommitmentSection(String(trimmed.dropLast()), in: template)
                 return skipping ? nil : "### " + String(trimmed.dropLast())
             }
             if skipping { return nil }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="profiles, call types, sales, coaching, interview, kinds, card kinds, gauges, persona, tone, custom rules, trigger, pinned, priority, internal key, icon, color, edit, duplicate, advanced">
+<meta name="keywords" content="profiles, call types, sales, coaching, interview, kinds, card kinds, gauges, persona, tone, custom rules, trigger, pinned, priority, internal key, icon, color, edit, duplicate, advanced, report, report template, sections, scorecard, criteria, coaching, share, export, import, parrotprofile, saved versions, restore, investor pitch, profiles 2.0, backup, classic report">
 <title>Call profiles</title>
 <link rel="canonical" href="https://openparrot.app/help/profiles.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -24,14 +24,16 @@ Settings → Profiles.</p>
 <img src="img/settings-profiles.png" alt="The Profiles page: profile list on the left, editor on the right">
 
 <h2>The profile list</h2>
-<p>Parrot ships with seven built-ins: Default, Sales discovery, 1:1 coaching,
-Interview, Customer support, Generic, and Vendor call (for calls where you
-are the customer and a bank, supplier or agency is onboarding you). You can
+<p>Parrot ships with eight built-ins: Default, Sales discovery, 1:1 coaching,
+Interview, Customer support, Generic, Vendor call (for calls where you
+are the customer and a bank, supplier or agency is onboarding you), and
+Investor pitch (for pitching to VCs and angels). You can
 edit every one of them,
-built-in only means you can't delete it. The two small buttons under the list
+built-in only means you can't delete it. The small buttons under the list
 are <strong>duplicate</strong> (the safe way to experiment: copy a built-in,
-go wild on the copy) and <strong>delete</strong>, which only works on your own
-profiles.</p>
+go wild on the copy), <strong>delete</strong>, which only works on your own
+profiles, and <strong>import</strong> (see
+<a href="#share">Share, export and import</a>).</p>
 
 <h2>The basics: who is this call with</h2>
 <p>The top of the editor is quick housekeeping: the profile's
@@ -63,6 +65,101 @@ Small thing, but cards read much more naturally when it's set.</p>
 sheet belongs in sales calls and has no business in a 1:1. Documents are
 added on the <a href="knowledge.html">Knowledge page</a> first, then tagged
 here.</p>
+
+<h2 id="report">The report: what it covers</h2>
+<p>Each profile decides what the report after its calls covers. A sales
+call's report asks about budget, who decides, timeline and objections. An
+interview's has a scorecard. A 1:1's is wins, blockers and what you both
+agreed. The <strong>Report</strong> card, under Persona &amp; Tone, is where you
+shape it.</p>
+
+<img src="img/profiles-report.png" alt="The Report card: the report menu, sections with titles and what goes in each, and the coaching settings">
+
+<ul>
+  <li><strong>The Report menu</strong>: the built-in's own report, the
+  <strong>classic report</strong> (the one every profile had before), or start
+  from another profile's report.</li>
+  <li><strong>Sections</strong>: each has a title and "what goes here", in
+  your own words, and is a <strong>Paragraph</strong>, a <strong>Bullet
+  list</strong> or a <strong>Scorecard</strong>. Move them with the arrows. Up to
+  eight; fewer work better when a local AI writes the report.</li>
+  <li><strong>"Promises and next steps go here"</strong>: switch it on for the
+  section that holds promises. Parrot checks each one against the transcript,
+  and uses them for Reminders, the follow-up email, "From your last call" and
+  Claude's "what did I promise?".</li>
+  <li><strong>Coaching report</strong>: what went well and what to improve.
+  Name the coach ("pitch coach", "interview coach") and what to focus on, or
+  switch it off to save one AI call per meeting.</li>
+</ul>
+
+<p>Editing anything makes it your own report, and improvements to the built-in
+stop reaching it. <strong>Reset</strong> brings the built-in's report back.
+Your custom rules still apply to the report, so "always mention budget" keeps
+working.</p>
+
+<h2 id="scorecards">Scorecards</h2>
+<p>A scorecard scores the call on criteria you list, like "Relevant
+experience" or "Check size". Each one gets a score from 1 to 5 <em>and</em> the
+moment in the call that shows it. No moment, no number: the row says
+<strong>no moment cited</strong>, or <strong>not enough evidence</strong> when the
+call didn't show it. Scorecards only judge what was said, never age, gender,
+accent, looks or other personal traits, and they never give a hire or no-hire
+verdict unless you add a section that asks for one. See
+<a href="reports.html#scorecards">how a scorecard looks in a report</a>.</p>
+
+<h2 id="share">Share, export and import</h2>
+<p>A profile you've tuned can go to a colleague. At the top of the editor,
+<strong>Share…</strong> opens Mail, Messages or AirDrop, and
+<strong>Export…</strong> shows what the file holds before it saves a
+<code>.parrotprofile</code> file.</p>
+
+<img src="img/profile-export.png" alt="Export sheet: what the file holds, and that it never holds meetings, documents, names or keys">
+
+<p>A profile file carries the persona, custom rules, card types, mood meters,
+report and the on-device only setting. It never carries your meetings, your
+documents, names from your calls, or any keys.</p>
+
+<p>To add one, double-click the file, drop it on the profile list, or use the
+import button under the list. Parrot shows what it would add or change before
+anything happens:</p>
+
+<img src="img/profile-review.png" alt="The review screen: who it came from and why, persona before and after, cards added and removed">
+
+<ul>
+  <li><strong>A new profile</strong>: <strong>Add profile</strong>. Add your own
+  documents afterwards; a file never carries them.</li>
+  <li><strong>An update to a profile you have</strong>: <strong>Apply</strong>,
+  <strong>Save as new profile</strong> or <strong>Discard</strong>. If you changed
+  that profile yourself, the buttons say <strong>Use theirs</strong>,
+  <strong>Keep both</strong> and <strong>Keep mine</strong>.</li>
+</ul>
+<p>A file can switch on-device only on, never off. The same screen reviews
+<a href="claude.html#tune">suggestions from Claude</a>.</p>
+
+<h2 id="versions">Saved versions</h2>
+<p>Before an import, a suggestion or a report change is applied, Parrot saves
+the profile as it was. The <strong>Saved Versions</strong> card keeps the last
+five, and <strong>Restore…</strong> puts one back. It saves the current one
+first, so a restore can be undone too.</p>
+
+<h2 id="profiles-2">What changed in Profiles 2.0</h2>
+<p>If you used Parrot before profiles had their own reports, this is what the
+update did:</p>
+<ul>
+  <li>Your Copilot settings (persona, custom rules, cards, mood meters,
+  documents, on-device only) didn't change.</li>
+  <li>Built-ins you never edited switched to their new report. Built-ins you
+  had tuned kept the classic report and show an offer in their settings:
+  <strong>Use it</strong> or <strong>Keep classic</strong>.</li>
+  <li>Profiles you made yourself kept the classic report.</li>
+  <li>Past meetings keep their reports. For a new-style report on one, use
+  <a href="reports.html#rewrite">Rewrite Report</a>.</li>
+  <li>A backup of every profile was saved first. The screen you saw after the
+  update has <strong>Show backup in Finder</strong>; to bring one back, import
+  it.</li>
+</ul>
+<p>To switch a built-in back, pick <strong>Classic report</strong> in its Report
+menu.</p>
 
 <h2>Advanced: the card kinds</h2>
 <p>In the <strong>Advanced</strong> card, click <strong>Card kinds &amp; gauges</strong> at the bottom

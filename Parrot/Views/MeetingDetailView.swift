@@ -59,6 +59,7 @@ struct MeetingDetailView: View {
     /// A transcript line to bring into view once the Transcript tab shows.
     @State private var scrollRequest: UUID?
     @State private var renamingBookmark: Bookmark?
+    @State private var showRewrite = false
     @State private var bookmarkLabelText = ""
 
     var body: some View {
@@ -161,6 +162,12 @@ struct MeetingDetailView: View {
 
                 AskClaudeMenu(meeting: meeting)
 
+                Button { showRewrite = true } label: {
+                    Label("Rewrite Report…", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .help("Write this report again with a profile's report")
+                .disabled(meeting.status != .done || meeting.segments.isEmpty || recordingManager.isRecording)
+
                 Menu {
                     Button("Export as TXT") { MeetingActions.exportTXT(meeting) }
                     Button("Export as Markdown") { MeetingActions.exportMarkdown(meeting) }
@@ -223,6 +230,7 @@ struct MeetingDetailView: View {
         )) {
             Button("OK", role: .cancel) { actionMessage = nil }
         }
+        .sheet(isPresented: $showRewrite) { RewriteReportSheet(meeting: meeting) }
         .confirmationDialog("Delete this meeting?", isPresented: $confirmingDelete) {
             Button("Delete", role: .destructive) { onDelete?() }
         } message: {
@@ -540,6 +548,8 @@ struct MeetingDetailView: View {
                         } else {
                             emptyTabState("No report was generated for this meeting.")
                         }
+                        // Timing and marks don't need a report either.
+                        toneCard
                         // Marks don't need a report to be useful.
                         if !meeting.bookmarks.isEmpty {
                             bookmarksCard
@@ -547,13 +557,16 @@ struct MeetingDetailView: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 16) {
+                        if meeting.previousReport != nil { RewrittenBanner(meeting: meeting) }
                         AIAppsReportTip(meeting: meeting)
+                        toneCard
                         ReportContentView(
                             summary: meeting.summary,
                             coaching: meeting.coaching,
                             talkPercentMe: talkPercentMe,
                             receipts: receiptIndex,
-                            receiptActions: receiptActions
+                            receiptActions: receiptActions,
+                            template: meeting.reportTemplate
                         )
                         // Playback redraws this view ten times a second; the
                         // report only needs to when its text or lines change.
@@ -565,7 +578,8 @@ struct MeetingDetailView: View {
                             followUpCard(draft)
                         }
                         // Summary is in; the coaching pass is still running.
-                        if meeting.status == .processing, meeting.coaching == nil {
+                        if meeting.status == .processing, meeting.coaching == nil,
+                           meeting.reportTemplate?.coachingEnabled != false {
                             reportGeneratingRow("Analyzing your coaching report…")
                         }
                     }
@@ -598,12 +612,20 @@ struct MeetingDetailView: View {
     }
 
     /// Me's share of the words, for the talk-balance bar.
-    private var talkPercentMe: Int? {
-        let me = meeting.segments
-            .filter { $0.speakerLabel == "Me" }
-            .reduce(0) { $0 + $1.text.split(separator: " ").count }
-        let total = meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-        return total > 0 ? Int(Double(me) / Double(total) * 100) : nil
+    private var talkPercentMe: Int? { meeting.talkPercentMe }
+
+    /// The tone timeline, nil for imported audio (no "Me" track).
+    private var toneModel: ToneTimeline.Model? {
+        ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(meeting.sortedSegments),
+                           nudges: meeting.nudges, timeline: meeting.moodTimeline, marks: meeting.bookmarks)
+    }
+
+    @ViewBuilder
+    private var toneCard: some View {
+        if let model = toneModel {
+            ToneTimelineCard(model: model, play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil)
+                .equatable()
+        }
     }
 
     // MARK: - Receipts + bookmarks

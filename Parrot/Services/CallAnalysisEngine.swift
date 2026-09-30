@@ -133,8 +133,10 @@ final class CallAnalysisEngine {
     /// This call is on-device only (see CloudGate): Ollama, no TypeSafe.
     private(set) var forceLocal = false
     private var segments: [(time: TimeInterval, text: String, source: AudioSource)] = []
-    private var meCharacters = 0
-    private var themCharacters = 0
+    /// Seconds each side has spoken: the live talk balance. Seconds, not
+    /// characters, so a Turkish call isn't under-counted.
+    private var meSeconds: TimeInterval = 0
+    private var themSeconds: TimeInterval = 0
     private var lastAnalyzedCount = 0
     private var debounceTask: Task<Void, Never>?
     private var analysisTask: Task<Void, Never>?
@@ -184,8 +186,8 @@ final class CallAnalysisEngine {
         fastPathLastError = nil
         fastPathStats = (0, 0, 0)
         isPaused = false
-        meCharacters = 0
-        themCharacters = 0
+        meSeconds = 0
+        themSeconds = 0
         sentiment = [:]; sentimentRead = nil; coachLine = nil
         activeProfile = profile
         callBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -237,13 +239,15 @@ final class CallAnalysisEngine {
 
     /// Share of the conversation spoken by the user, once there's enough signal.
     var userTalkPercent: Int? {
-        let total = meCharacters + themCharacters
-        guard total >= 400 else { return nil }
-        return Int((Double(meCharacters) / Double(total) * 100).rounded())
+        let total = meSeconds + themSeconds
+        guard total >= 30 else { return nil }  // about the old 400 characters
+        return Int((meSeconds / total * 100).rounded())
     }
 
     /// Feed every finalized transcript segment here. The engine decides when to analyze.
-    func ingest(text: String, at time: TimeInterval, source: AudioSource) {
+    /// `duration`: how long the line took to say; without it (replays), about
+    /// 15 characters a second.
+    func ingest(text: String, at time: TimeInterval, source: AudioSource, duration: TimeInterval? = nil) {
         guard isActive, isEnabled else { return }
         guard provider.isConfigured else {
             status = .needsAPIKey
@@ -252,8 +256,8 @@ final class CallAnalysisEngine {
 
         segments.append((time, text, source))
         switch source {
-        case .me: meCharacters += text.count
-        case .them: themCharacters += text.count
+        case .me: meSeconds += duration ?? Double(text.count) / 15
+        case .them: themSeconds += duration ?? Double(text.count) / 15
         }
 
         // Paused: collect context, schedule nothing. setPaused(false) picks
@@ -509,6 +513,9 @@ final class CallAnalysisEngine {
                 Self.log.notice("card [\(inserted.kindKey, privacy: .public)] \(inserted.title.prefix(80), privacy: .public)")
                 onInsightInserted?(inserted)
             }
+            onPassCompleted?(Self.nudgePass(time: anchorTime, sentiment: merged, insights: insights,
+                                            gauges: profile?.gauges ?? [],
+                                            pinnedKinds: Set(profile?.kinds.filter(\.isPinned).map(\.key) ?? [])))
             status = .listening
         } catch let error as AnalysisError {
             if isActive, !Task.isCancelled {
@@ -546,15 +553,15 @@ final class CallAnalysisEngine {
     /// can be rendered offscreen (`--copilot-snapshot`) without a live call.
     func seedForSnapshot(profile: CallProfile?, insights: [Insight],
                          sentiment: [String: Int], read: String?, coach: String? = nil,
-                         meCharacters: Int, themCharacters: Int, brief: String = "") {
+                         meSeconds: TimeInterval, themSeconds: TimeInterval, brief: String = "") {
         activeProfile = profile
         callBrief = brief
         self.insights = insights
         self.sentiment = sentiment
         sentimentRead = read
         coachLine = coach
-        self.meCharacters = meCharacters
-        self.themCharacters = themCharacters
+        self.meSeconds = meSeconds
+        self.themSeconds = themSeconds
         isActive = true
         status = .listening
     }
@@ -591,6 +598,29 @@ final class CallAnalysisEngine {
     nonisolated static let docAnswerThreshold = 0.75
     /// Dev harness observation hook (--copilot-replay): every insertion, wall time.
     var onInsightInserted: ((Insight) -> Void)?
+
+    static let wrappingUpKey = "wrapping_up"
+    static let nextStepKey = "next_step_agreed"
+    /// Insight kinds that mean "they asked and it's still open".
+    static let questionKinds: Set<String> = ["question", "unanswered_question"]
+
+    /// After every successful pass: gauges, open items and the wrap-up flags,
+    /// for live nudges and the report's mood line.
+    var onPassCompleted: ((NudgeDetector.Pass) -> Void)?
+
+    nonisolated static func nudgePass(time: TimeInterval, sentiment: [String: Int], insights: [Insight],
+                                      gauges: [SentimentGauge], pinnedKinds: Set<String>) -> NudgeDetector.Pass {
+        let keys = Set(gauges.map(\.key))
+        let open = insights.filter { !$0.isHandled && $0.kindKey != Insight.docExcerptKind }
+        return NudgeDetector.Pass(
+            time: time,
+            values: sentiment.filter { keys.contains($0.key) },
+            openQuestions: open.filter { questionKinds.contains($0.kindKey) }
+                .map { .init(title: $0.title, since: $0.callTime) },
+            openItems: open.filter { pinnedKinds.contains($0.kindKey) }.map(\.title),
+            wrappingUp: sentiment[wrappingUpKey] == 1,
+            nextStepAgreed: sentiment[nextStepKey] == 1)
+    }
     private(set) var fastPathStats: (attempts: Int, hits: Int, failures: Int) = (0, 0, 0)
     private var fastTask: Task<Void, Never>?
     private var consecutiveFastFailures = 0

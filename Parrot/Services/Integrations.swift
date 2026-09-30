@@ -156,7 +156,8 @@ enum Webhook {
             "people": meeting.attendees.map { ["name": $0.displayName, "email": $0.email ?? ""] },
             "summary": meeting.summary ?? "",
             "coaching": meeting.coaching ?? "",
-            "next_steps": LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 20),
+            "next_steps": LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching,
+                                                  template: meeting.reportTemplate, limit: 20),
             "bookmarks": meeting.bookmarks.map { ["time": Receipts.stamp($0.time), "label": $0.label] },
             "notes": meeting.notes,
         ]

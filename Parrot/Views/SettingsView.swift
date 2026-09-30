@@ -54,6 +54,7 @@ struct SettingsView: View {
     @AppStorage("whisperModel") private var selectedModel = "base"
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("copilotEnabled") private var copilotEnabled = false
+    @AppStorage(LiveNudgeSession.defaultsKey) private var liveNudges = true
     @AppStorage("copilotProvider") private var copilotProvider = CopilotProviderKind.claude.rawValue
     @AppStorage("copilotPace") private var copilotPace = CopilotPace.fast.rawValue
     @AppStorage("copilotWindow") private var copilotWindow = CopilotWindow.standard.rawValue
@@ -527,6 +528,15 @@ struct SettingsView: View {
                 SettingsLabeledRow(title: "Call profiles", detail: "What it says and watches for is set per call profile.") {
                     Button("Open Profiles") { section = .profiles }
                 }
+            }
+
+            SettingsCard(title: "Live Nudges") {
+                SettingsToggleRow(
+                    title: "Show live nudges",
+                    detail: "Short tips during a call, like when they've gone quiet after something you said. Works without Copilot too.",
+                    first: true,
+                    isOn: $liveNudges
+                )
             }
 
             // What each call costs, in the user's hands: how often the model is

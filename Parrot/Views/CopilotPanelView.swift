@@ -159,6 +159,15 @@ struct CopilotPanelView: View {
     @ViewBuilder
     private func feedArea(errorMessage: String?) -> some View {
         VStack(spacing: 0) {
+            // The latest live nudge ("they've gone quiet since you said …"),
+            // the in-app twin of the floating pill.
+            if let nudge = recordingManager.nudges.current {
+                NudgeBanner(nudge: nudge) { recordingManager.nudges.dismiss() }
+                    .padding(.horizontal, Theme.Metrics.pad)
+                    .padding(.top, 12)
+                    .transition(.opacity)
+            }
+
             // Always-on live summary: call score + one-line coach verdict +
             // sentiment chips + open-blocker count. THE glanceable answer to
             // "how is it going and what should I do".
