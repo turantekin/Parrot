@@ -235,6 +235,11 @@ final class StubAnalysisProvider: AnalysisProvider {
 /// real engine at real time and logs, per "Them" question, the wall delay to
 /// the first card and which path produced it.
 ///   .build/release/Parrot --copilot-replay export.txt [--pace fast] [--haiku-ms 2500] [--fast on|off] [--limit-seconds 600]
+/// `--real [--profile "Vendor call"] [--brief text]` sends the passes to the real
+/// Claude Haiku instead of the stub (costs API calls; run from the signed
+/// dist/Parrot.app so the Keychain key is readable) and prints every card at its
+/// call time. Real mode leaves out the knowledge base and Jev, so it never
+/// touches the user's index.
 @MainActor
 enum CopilotReplay {
     struct Line {
@@ -268,6 +273,7 @@ enum CopilotReplay {
         let haikuMs = Double(opt("--haiku-ms", "2500")) ?? 2500
         let fastOn = opt("--fast", "on") == "on"
         let limit = Double(opt("--limit-seconds", "600")) ?? 600
+        let real = args.contains("--real")
         UserDefaults.standard.register(defaults: [
             "copilotPace": pace, "copilotEnabled": true, "copilotProvider": "claude", "copilotWindow": "standard",
         ])
@@ -276,15 +282,25 @@ enum CopilotReplay {
                 print("copilot-replay: cannot read \(transcriptPath)"); exit(1)
             }
             let lines = parse(text).filter { $0.time <= limit }
-            let engine = CallAnalysisEngine(provider: StubAnalysisProvider(latency: haikuMs / 1000))
-            engine.knowledgeBase = KnowledgeBaseService()
-            if fastOn { engine.docMatcher = JevDocMatcher(apiKey: DocAnswerEval.keychainKey()) }
-            let profile = ProfilePresets.all().first { $0.name == "Sales discovery" }
+            let engine = CallAnalysisEngine(provider: real
+                ? ClaudeAnalysisProvider() : StubAnalysisProvider(latency: haikuMs / 1000))
+            if !real { engine.knowledgeBase = KnowledgeBaseService() }
+            if fastOn, !real { engine.docMatcher = JevDocMatcher(apiKey: DocAnswerEval.keychainKey()) }
+            let profileName = opt("--profile", "Sales discovery")
+            let profile = ProfilePresets.all().first { $0.name == profileName }
             print("copilot-replay: \(lines.count) lines, pace=\(pace), haiku=\(Int(haikuMs))ms, fast=\(fastOn), kb docs=\(engine.knowledgeBase?.documents.count ?? 0)")
 
             var pendingQuestions: [(text: String, at: Date)] = []
             var results: [(question: String, seconds: Double, path: String)] = []
+            var t0 = Date()
+            var firstCard: TimeInterval?
             engine.onInsightInserted = { insight in
+                if real {
+                    let at = Date().timeIntervalSince(t0)
+                    firstCard = firstCard ?? at
+                    print(String(format: "  card %02d:%02d [%@] %@", Int(at) / 60, Int(at) % 60, insight.kindKey, insight.title))
+                    return
+                }
                 // Attribute by content, not arrival order: the stub titles its
                 // card with the question and the excerpt card quotes it. A
                 // card about no pending question is ignored.
@@ -298,8 +314,8 @@ enum CopilotReplay {
                 results.append((q.text, seconds, path))
                 print(String(format: "  %5.2fs %-7@ ← %@", seconds, path, String(q.text.prefix(60))))
             }
-            engine.start(profile: profile)
-            let t0 = Date()
+            engine.start(profile: profile, brief: opt("--brief", ""))
+            t0 = Date()
             for line in lines {
                 let wait = t0.addingTimeInterval(line.time).timeIntervalSinceNow
                 if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
@@ -310,6 +326,11 @@ enum CopilotReplay {
             }
             try? await Task.sleep(for: .seconds(max(8, haikuMs / 1000 + 6)))
             engine.stop()
+            if real {
+                let first = firstCard.map { String(format: "%02d:%02d", Int($0) / 60, Int($0) % 60) } ?? "none"
+                print("first card at \(first), \(engine.insights.count) cards, \(engine.provider.usageTotals.calls) calls")
+                exit(0)
+            }
             let minutes = max(1, (lines.last?.time ?? 60) / 60)
             report(results, calls: engine.provider.usageTotals.calls, minutes: minutes,
                    stats: engine.fastPathStats, unanswered: pendingQuestions.count)

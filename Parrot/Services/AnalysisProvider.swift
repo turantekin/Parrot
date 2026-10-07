@@ -286,6 +286,17 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Live Analysis
 
+    /// Sent only while no card has been shown yet, so the user isn't left
+    /// staring at an empty panel once the call gets down to business.
+    static let firstCardRule = """
+    Nothing has been shown to the user yet, so the "empty list is fine" default does not \
+    apply until the first insight is out. As soon as either side talks about their \
+    business, needs, product or terms, return ONE insight now: the most useful one for the \
+    user so far, using the kinds above. A question worth asking counts. People's roles, \
+    careers and life news are still small talk. Base it on what was actually said, and \
+    return none while the talk is only greetings or small talk.
+    """
+
     /// Assembles the analysis user turn — shared verbatim by every provider so
     /// all backends receive identical grounding/instructions.
     static func analysisUserContent(_ request: AnalysisRequest) -> String {
@@ -335,6 +346,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
               + "doesn't cover a question, say so briefly in the suggestion instead of "
               + "answering from general knowledge, and leave \"source\" unset.")
 
+        // Until the first card, "an empty list is fine" kept a Turkish vendor
+        // call blank for 9.7 min (2026-10-07) while every pass succeeded.
+        if request.knownInsightTitles.isEmpty { sections.append(firstCardRule) }
         sections.append("Already shown insights (do not repeat):\n\(knownList)")
         sections.append("Rolling transcript (oldest to newest):\n<transcript>\n\(request.transcript)\n</transcript>")
 
