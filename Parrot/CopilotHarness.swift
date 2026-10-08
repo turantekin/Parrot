@@ -220,11 +220,11 @@ final class StubAnalysisProvider: AnalysisProvider {
     }
 
     func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
-                   instructions: String, counterpart: String) async throws -> String { "" }
+                   instructions: String, counterpart: String, template: ReportTemplate) async throws -> String { "" }
     func complete(system: String, user: String, maxTokens: Int) async throws -> String { "" }
 
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
-                        counterpart: String) async throws -> String { "" }
+                        counterpart: String, template: ReportTemplate) async throws -> String { "" }
 
     var usageTotals: AITokenTotals { lock.lock(); defer { lock.unlock() }; return totals }
 

@@ -76,7 +76,56 @@ enum MCPPrompts {
                 evidence, proposed solution, open questions. \(dataRule)
                 """
             }),
+        Prompt(
+            name: "create_profile", title: "Create a call profile",
+            description: "Build an Assistant profile for a kind of call, then send it to Parrot for me to review.",
+            arguments: [Argument(name: "call_type", description: "The kind of call, e.g. \"investor pitch\" or \"hiring interview\".", required: true)],
+            text: { args in
+                """
+                Help me build a Parrot call profile for "\(args["call_type"] ?? "")". First ask me three to five short \
+                questions (who's on the other side, what I want out of these calls, what I tend to miss, what the \
+                report after the call should cover). Then use get_profile on the closest existing profile \
+                (list_profiles) as the starting point, write the new profile as .parrotprofile JSON (persona, the \
+                card types to flag live with clear triggers, gauges, and a report template), and send it with \
+                suggest_profile with a one-line reason. \(profileRule)
+                """
+            }),
+        Prompt(
+            name: "optimize_profile", title: "Improve a call profile",
+            description: "Look at my recent calls with a profile and suggest a better one, with a reason for each change.",
+            arguments: [Argument(name: "profile", description: "The profile's name (list_profiles).", required: true),
+                        Argument(name: "last_n", description: "How many recent meetings to look at (default 10).")],
+            text: { args in
+                let n = args["last_n"].flatMap { Int($0) }.map { max(1, min($0, 30)) } ?? 10
+                return """
+                Improve my Parrot profile "\(args["profile"] ?? "")". Read it with get_profile. Then read my last \(n) \
+                meetings that used it (list_meetings, get_meeting) and their Assistant cards; if get_meeting shows no \
+                cards, ask me to tick "Assistant cards" in Parrot's Claude & AI Apps page first. Look for cards I \
+                ignored, moments the Assistant missed, and report sections that came out empty or generic. Then send \
+                a better version with suggest_profile (updates = the profile's name), and in the reason list each \
+                change and the calls that show why. \(profileRule)
+                """
+            }),
+        Prompt(
+            name: "design_report", title: "Design a report",
+            description: "Make a profile's end-of-call report match how I work, e.g. our hiring scorecard.",
+            arguments: [Argument(name: "profile", description: "The profile's name (list_profiles).", required: true),
+                        Argument(name: "description", description: "What the report should cover.", required: true)],
+            text: { args in
+                """
+                Redesign the report of my Parrot profile "\(args["profile"] ?? "")" so it covers: \(args["description"] ?? ""). \
+                Read the profile with get_profile and change only its "report" block: up to 8 sections, each with a \
+                title, a type (prose, bullets or scorecard), a short "guide" for what goes there, and commitments: \
+                true on the section that holds promises. A scorecard has 1 to 8 criteria, each with a label and a \
+                guide; it scores only what was said, never age, gender, accent, looks or other personal traits. \
+                Keep the rest of the profile as it is. Send it with suggest_profile (updates = the profile's name). \
+                \(profileRule)
+                """
+            }),
     ]
+
+    /// Shared by the profile prompts.
+    static let profileRule = "Keep it short and plain: small local AI models run these profiles too. Never include names or details from my meetings in the profile, and never turn on-device only off."
 
     /// The `prompts/list` payload.
     static var list: [[String: Any]] {

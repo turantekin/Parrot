@@ -88,6 +88,9 @@ final class RecordingManager {
 
     /// Non-nil while a file import runs — drives the import banner in the UI.
     private(set) var importProgress: ImportProgress?
+    /// Report rewrites running (or just failed), by meeting id. Here, not in
+    /// the sheet, so "Keep working" can close the sheet; see startRewrite.
+    var rewrites: [UUID: RewriteRun] = [:]
 
     struct ImportProgress: Equatable {
         var fileName: String
@@ -394,7 +397,8 @@ final class RecordingManager {
                 meeting.previousMeetingID = previous.id
                 lastCall = LastCallBrief.context(
                     title: previous.title, date: previous.date,
-                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching))
+                    items: LastCallBrief.openItems(summary: previous.summary, coaching: previous.coaching,
+                                                   template: previous.reportTemplate))
             }
         }
         meeting.brief = nextCallBrief.nilIfEmpty
@@ -925,6 +929,10 @@ final class RecordingManager {
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
         let instructions = meeting.profile?.tone ?? (UserDefaults.standard.string(forKey: "copilotInstructions") ?? "")
         let counterpart = meeting.profile?.counterpart ?? "the other person"
+        // Snapshot the template, so the report still renders (and its
+        // commitments still count) after the profile changes.
+        let template = meeting.profile?.reportTemplate ?? .standard
+        meeting.reportTemplateData = template.isStandard ? nil : try? JSONEncoder().encode(template)
 
         do {
             let summary = try await callAnalysisEngine.provider.summarize(
@@ -932,7 +940,8 @@ final class RecordingManager {
                 insightTitles: insightTitles,
                 bookmarks: meeting.bookmarks.map(\.promptLine),
                 instructions: instructions,
-                counterpart: counterpart
+                counterpart: counterpart,
+                template: template
             )
             meeting.summary = summary
             try? modelContext?.save()
@@ -941,7 +950,8 @@ final class RecordingManager {
             firstError = error
         }
 
-        guard includeCoaching else { return firstError }
+        // A template can turn coaching off: one call fewer, faster and cheaper.
+        guard includeCoaching, template.coachingEnabled else { return firstError }
 
         // Coaching + follow-ups report, with the user's real talk balance
         // (seconds of speech, the same number the live gauge and timeline show).
@@ -951,7 +961,8 @@ final class RecordingManager {
                 transcript: transcript,
                 talkPercentMe: talkPercentMe,
                 instructions: instructions,
-                counterpart: counterpart
+                counterpart: counterpart,
+                template: template
             )
             meeting.coaching = coaching
             try? modelContext?.save()

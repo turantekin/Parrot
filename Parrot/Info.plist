@@ -6,6 +6,21 @@
 	<string>.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Parrot call profile</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.uygar.parrot.profile</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleHelpBookFolder</key>
@@ -41,10 +56,10 @@
 	<string>Parrot records your meeting's audio (what you hear) to transcribe it on-device. It never sees your screen.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Parrot reads your calendar to name your meetings and know who's on the call. It never changes your calendar, and nothing leaves your Mac.</string>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Parrot adds a call's next steps to a Parrot list in Reminders when you ask it to.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Parrot records your microphone so it can transcribe your side of the meeting on-device.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Parrot adds a call's next steps to a Parrot list in Reminders when you ask it to.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Parrot captures system audio from your meetings via screen recording. Only audio is used — never screen content.</string>
 	<key>SUAutomaticallyUpdate</key>
@@ -59,5 +74,25 @@
 	<string>5+CifCVb0y0I1NthwWggSCNDRclBd19qGUx5tC2uGU4=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Parrot call profile</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.uygar.parrot.profile</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>parrotprofile</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

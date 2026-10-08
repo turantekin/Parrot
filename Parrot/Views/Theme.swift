@@ -157,11 +157,13 @@ enum Theme {
         static let chatMaxWidth: CGFloat = 760
         /// Ask Parrot's "thinking" dots.
         static let thinkingDot: CGFloat = 5
-        /// A calendar's colour dot in the calendar picker.
-        static let calendarDot: CGFloat = 8
+        /// Report scorecards: one step of the five-step score bar.
+        static let scoreStep = CGSize(width: 14, height: 6)
         /// The floating live-nudge pill: width and its rounded ends.
         static let pillWidth: CGFloat = 460
         static let pillRadius: CGFloat = 22
+        /// A calendar's colour dot in the calendar picker.
+        static let calendarDot: CGFloat = 8
         /// The menu-bar label: recording dot, and the gap between its parts.
         static let menuBarDot: CGFloat = 6
         static let menuBarGap: CGFloat = 4

@@ -38,6 +38,9 @@ enum AIApps {
             examples: ["Coach me across my last 10 calls: where do I talk too much?", "Redo my last sales call's report with MEDDIC."]),
         Job(title: "Prepare",
             examples: ["Brief me for my call with Acme in 10 minutes.", "What's still open with Sarah?"]),
+        Job(title: "Tune my Assistant",
+            examples: ["Improve my Sales discovery profile from my last 10 calls.",
+                       "Make my interview report match our hiring scorecard."]),
     ]
 
     /// Once, on the first launch with this page: the switch already on means
@@ -155,6 +158,7 @@ struct AIAppsPageView: View {
     @AppStorage(MCPAccess.reportsKey) private var reports = true
     @AppStorage(MCPAccess.notesKey) private var notes = true
     @AppStorage(MCPAccess.cardsKey) private var cards = false
+    @AppStorage(MCPServer.suggestionsKey) private var suggestions = true
     @Query(sort: \CallProfile.sortOrder) private var profiles: [CallProfile]
     @State private var excluded: Set<UUID> = []
     /// Bumped to re-read the counters the --mcp process writes (another process: no KVO).
@@ -172,7 +176,7 @@ struct AIAppsPageView: View {
                 Text("Claude & AI Apps")
                     .font(Theme.Typography.title())
                     .foregroundStyle(Theme.Colors.ink)
-                Text("Use your meetings in Claude, Codex or Cursor: search them, catch up, draft follow-ups. Read-only, and your own plan does the thinking.")
+                Text("Use your meetings in Claude, Codex or Cursor: search them, catch up, draft follow-ups, improve your profiles. Nothing changes without your OK, and your own plan does the thinking.")
                     .font(Theme.Typography.lede)
                     .foregroundStyle(Theme.Colors.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -184,6 +188,10 @@ struct AIAppsPageView: View {
 
             SettingsCard(title: "Connection") {
                 SettingsToggleRow(title: "Allow AI apps to read my meetings", first: true, isOn: $enabled)
+                SettingsToggleRow(title: "Let AI apps suggest profiles",
+                                  detail: "Claude, Cursor or Codex can send a suggested profile. You review every change in Parrot first.",
+                                  isOn: $suggestions)
+                    .disabled(!enabled)
                 SettingsRow {
                     Label(statusLine, systemImage: enabled && AIApps.isConnected() ? "checkmark.circle.fill" : "circle")
                         .font(Theme.Typography.secondary)
@@ -208,7 +216,7 @@ struct AIAppsPageView: View {
                     .fixedSize()
                 }
                 SettingsRow {
-                    Text("Never shown: meetings marked on-device only, audio, API keys and settings. AI apps can't change, delete or record anything.")
+                    Text("Never shown: meetings marked on-device only, audio, API keys and settings. AI apps can't change, delete or record meetings. Profile suggestions wait for your review.")
                         .font(Theme.Typography.secondary)
                         .foregroundStyle(Theme.Colors.ink2)
                         .fixedSize(horizontal: false, vertical: true)

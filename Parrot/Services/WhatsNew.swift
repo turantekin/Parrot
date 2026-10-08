@@ -13,12 +13,11 @@ struct WhatsNew: Equatable {
 
     /// The entry for the version being released. Empty highlights until the
     /// next release writes its own: no card, no notes.
-    static let current = WhatsNew(version: "0.27.3", headline: "Fresh feathers! Parrot 0.27.3", highlights: [
-        "The Assistant's first tip now arrives once the call gets down to business.",
-        // 0.27.2 was out for hours: most people skip straight here, so it carries forward.
-        "No report on a meeting? Write report on its Report tab makes one, Assistant on or off.",
-        "On speakers, fewer echoes land under your name, even when you do most of the talking.",
-        "Clicking a line in a long transcript jumps there right away.",
+    static let current = WhatsNew(version: "0.28.0", headline: "Parrot 0.28.0 learned a few new tricks", highlights: [
+        "Each kind of call gets its own report, with a scorecard for interviews.",
+        "Rewrite an old report with any profile, and undo it in one click.",
+        "Share profiles with a colleague, or let Claude suggest a better one for you to review.",
+        "A parrot in your menu bar shows the call time, and Join & Record starts your next call.",
     ])
 
     /// For the help shot and the harness.

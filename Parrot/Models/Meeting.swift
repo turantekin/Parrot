@@ -8,6 +8,14 @@ enum MeetingStatus: String, Codable {
     case failed
 }
 
+/// What a "Rewrite Report" replaced: enough to put it back exactly.
+struct PreviousReport: Codable, Equatable {
+    var summary: String?
+    var coaching: String?
+    var templateData: Data?
+    var profileID: UUID?
+}
+
 @Model
 final class Meeting {
     var id: UUID
@@ -41,6 +49,13 @@ final class Meeting {
     /// Denormalized [ProfileKind] used at record time, so the report renders with
     /// the right kind labels/colors even if the profile is later edited/deleted.
     var profileSnapshotData: Data?
+    /// The report template this meeting's report was written with (JSON
+    /// ReportTemplate), so it renders the same after the profile changes.
+    /// nil = the standard report (every meeting before Profiles 2.0).
+    var reportTemplateData: Data? = nil
+    /// The report a "Rewrite Report" replaced (JSON PreviousReport), for its
+    /// one level of undo. Defaulted → old rows migrate.
+    var previousReportData: Data? = nil
     /// Per-call AI usage/cost snapshot (AIUsage JSON); nil for meetings recorded
     /// before cost tracking existed — those show no cost row.
     var aiUsageData: Data?
@@ -184,6 +199,16 @@ final class Meeting {
     var snapshotKinds: [ProfileKind] {
         guard let data = profileSnapshotData else { return [] }
         return (try? JSONDecoder().decode([ProfileKind].self, from: data)) ?? []
+    }
+
+    /// nil = the standard report.
+    var reportTemplate: ReportTemplate? {
+        reportTemplateData.flatMap { try? JSONDecoder().decode(ReportTemplate.self, from: $0) }
+    }
+
+    var previousReport: PreviousReport? {
+        get { previousReportData.flatMap { try? JSONDecoder().decode(PreviousReport.self, from: $0) } }
+        set { previousReportData = newValue.flatMap { try? JSONEncoder().encode($0) } }
     }
 
     /// Me's share of the speaking time, nil when nobody spoke. Seconds, not

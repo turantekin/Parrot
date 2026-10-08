@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="report, write report, no report, summary, coaching, talk balance, cost, price, tokens, export, markdown, polish, speakers, who said what, name speaker, remember voices, live speaker labels">
+<meta name="keywords" content="report, write report, no report, summary, coaching, talk balance, cost, price, tokens, export, markdown, polish, speakers, who said what, name speaker, remember voices, live speaker labels, scorecard, rewrite, rewrite report, undo rewrite, keep working, stop rewrite, report template, profile">
 <title>Reports and costs</title>
 <link rel="canonical" href="https://openparrot.app/help/reports.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -19,8 +19,10 @@
 
 <h2>What you get after a call</h2>
 <p>When a recording stops (and the Assistant is set up), Parrot writes a report
-in the background: an overview of the call, pain points, key points and next
-steps, plus a coaching section that looks at how <em>you</em> did: talk
+in the background. What it covers depends on the call's
+<a href="profiles.html#report">profile</a>: by default an overview of the call,
+pain points, key points and next steps; budget, decision-maker and timeline
+for a sales call; a scorecard for an interview. Most also get a coaching section that looks at how <em>you</em> did: talk
 balance, what went well, what to try next time, and which objections came up
 and whether they got handled. The insights the Assistant raised live also land
 in the meeting, so nothing from the call evaporates.</p>
@@ -44,6 +46,41 @@ and a promise or next step with no line behind it is marked
 <strong>unverified</strong>, so an AI slip can't turn into a commitment you
 think somebody made. Reports written before this feature look the same as
 before.</p>
+
+<h2 id="scorecards">Scorecards</h2>
+<p>Profiles like Interview and Investor pitch score the call on a few
+criteria. Each row shows the score out of 5, the reason, and the moment that
+backs it; click the time to hear it.</p>
+
+<img src="img/report-scorecard.png" alt="A scorecard in a report: four criteria, three scored with a time each, one with not enough evidence">
+
+<p>A score only shows when it points to a real moment in the call. If the AI
+gave a score without one, the row says <strong>no moment cited</strong>; if the
+call didn't show enough, <strong>not enough evidence</strong>. Scorecards judge
+only what was said, never personal traits. They help you take notes: you make
+the call.</p>
+
+<h2 id="rewrite">Rewrite a report</h2>
+<p>Changed a profile, or recorded a call under the wrong one? <strong>Rewrite
+Report…</strong> (top right on the meeting page) writes the report again from
+the transcript, with any profile's report. The meeting moves to that
+profile.</p>
+
+<img src="img/rewrite-report.png" alt="Rewrite this report: pick a profile and see what the report will have">
+
+<ul>
+  <li>The current report is kept. <strong>Undo Rewrite</strong>, at the top of
+  the report, puts it back (one step).</li>
+  <li>An on-device only meeting is always rewritten by the AI on your Mac.
+  Rewriting with an on-device only profile makes the meeting on-device only
+  too, and undo doesn't change that back.</li>
+  <li>A rewrite doesn't send the webhook again or add Reminders again.</li>
+  <li>With a local model it can take a minute or more, so Parrot shows which
+  step it's on (the report, then the coaching) and for how long.
+  <strong>Keep working</strong> closes the window while it carries on: the
+  meeting page shows it until it's done. <strong>Stop</strong> keeps the old
+  report.</li>
+</ul>
 
 <h2>Who said what</h2>
 <p>After a call Parrot tells the voices apart on your Mac and labels them

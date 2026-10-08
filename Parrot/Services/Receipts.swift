@@ -102,8 +102,15 @@ enum Receipts {
     /// True for section titles whose bullets are claims about promises —
     /// the ones where an invented line does real harm ("you promised the
     /// contract by Friday"). A bullet there with no valid receipt is flagged.
-    static func isCommitmentSection(_ title: String?) -> Bool {
-        guard let t = title?.lowercased() else { return false }
+    /// `template` is the meeting's report template (nil = standard): a
+    /// section it defines answers with its own `commitments` flag, so a
+    /// custom "Promises made" counts and a "Follow-up questions" doesn't.
+    /// Required on purpose: a caller that forgot it would silently drop a
+    /// custom template's commitments from Reminders, open items and AI apps.
+    static func isCommitmentSection(_ title: String?, in template: ReportTemplate?) -> Bool {
+        guard let title else { return false }
+        if let flagged = template?.commitmentFlag(forTitle: title) { return flagged }
+        let t = title.lowercased()
         return ["next step", "commit", "follow", "action item", "promise"].contains { t.contains($0) }
     }
 

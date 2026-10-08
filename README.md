@@ -75,7 +75,7 @@ Chat with all your calls (⌘K): *"What did I promise Acme?"*, then *"and what d
 
 ### 🤝 Use your meetings in Claude
 
-Free, no meeting bot, no 30-day limit, and your meetings stay on your Mac until you ask. Connect Claude Desktop in one click (or Claude Code, Codex for ChatGPT plans, or Cursor) and your own plan does the thinking: *"What did I promise last week?"*, *"Brief me for my call with Acme"*, *"Draft the follow-up for this morning's call"*, *"Coach me across my last 10 calls"*. Claude gets real speaker names, long transcripts in pages, promises with their owners, talk time, and four ready-made actions in its **+** menu (weekly digest, follow-up email, prep for a call, PRD from calls). It's read-only: you choose what it sees (transcripts, reports, notes, Assistant cards, whole call types), on-device-only meetings are never shown, and Parrot tells you how often it was read. Open **Claude & AI Apps** in the sidebar. [How it works](https://openparrot.app/help/claude.html).
+Free, no meeting bot, no 30-day limit, and your meetings stay on your Mac until you ask. Connect Claude Desktop in one click (or Claude Code, Codex for ChatGPT plans, or Cursor) and your own plan does the thinking: *"What did I promise last week?"*, *"Brief me for my call with Acme"*, *"Draft the follow-up for this morning's call"*, *"Coach me across my last 10 calls"*. Claude gets real speaker names, long transcripts in pages, promises with their owners, talk time, and four ready-made actions in its **+** menu (weekly digest, follow-up email, prep for a call, PRD from calls). It can't change your meetings: you choose what it sees (transcripts, reports, notes, Assistant cards, whole call types), on-device-only meetings are never shown, and Parrot tells you how often it was read. The one thing it can send back is a suggested profile, which waits for your review. Open **Claude & AI Apps** in the sidebar. [How it works](https://openparrot.app/help/claude.html).
 
 ### 🎭 Call profiles: one app, every kind of call
 
@@ -83,8 +83,11 @@ Free, no meeting bot, no 30-day limit, and your meetings stay on your Mac until 
 
 Tell Parrot what kind of call it is, and the profile decides what the Assistant watches for and how the report is written.
 
-- **Seven built-ins:** Default, Sales discovery, 1:1 coaching, Interview, Customer support, Vendor call, Generic. Sales looks for objections and buying signals; Interview for follow-ups and red flags; a 1:1 gets reflections and open questions.
+- **Eight built-ins:** Default, Sales discovery, 1:1 coaching, Interview, Customer support, Vendor call, Investor pitch, Generic. Sales looks for objections and buying signals; Interview for follow-ups and red flags; a 1:1 gets reflections and open questions.
+- **A report of its own:** each profile shapes the report after its calls. Sections in your own words, as bullets or paragraphs; a **scorecard** that scores criteria from 1 to 5, each with the moment that shows it; which section holds promises; and whether to coach. A sales report asks about budget, who decides and timeline; an interview gets a scorecard.
 - **Make your own:** name it, say who the other side is, write a persona and rules, choose which documents it uses, add your own card types (with color, icon, "keep on screen until handled") and gauges.
+- **Share it:** export a `.parrotprofile` for a colleague, or import theirs. Parrot shows every change before it applies one, and a file can switch on-device only on, never off. The last five versions of each profile are kept, one click to restore.
+- **Let Claude tune it:** Claude can read your recent calls and suggest a better profile. It lands in Parrot for you to review: Apply, Save as new, or Discard.
 
 ### 🗣️ Speaker names: names, not "Speaker 2"
 
@@ -102,7 +105,8 @@ Tell Parrot what kind of call it is, and the profile decides what the Assistant 
 <p align="center"><img src=".github/readme/after.png" alt="A post-call report: summary, pain points, talk balance, objections handled and missed, what went well, what to improve, and commitments" width="480"></p>
 
 - **How the call went:** a timeline at the top of the report with your talk share against theirs minute by minute, the profile's main gauge over the call, and numbered moments (tips, turning points, your marks) with Play.
-- **Summary:** overview, pain points, key points, next steps.
+- **Summary:** shaped by the call's profile; by default overview, pain points, key points, next steps.
+- **Rewrite Report:** recorded under the wrong profile, or changed one since? Rewrite any past report with any profile, and undo it in one click.
 - **Receipts on every point.** Each bullet carries a time chip (`12:34`): click it for the exact quote, *Play from Here* or *Show in Transcript*. Chips are checked against the transcript on your Mac, and a promise nobody actually made is marked *unverified* instead of stated as fact.
 - **Moments you marked** during the call (the *Mark* button, or ⌃⌥M from any app) get their own card, and the report is written knowing they mattered.
 - **Share it:** a follow-up email with only the promises actually made (opens in Mail, addressed to the invitees), next steps into Apple Reminders, Markdown notes into your Obsidian vault or any folder (automatically, if you like), or a webhook to Zapier/Make/n8n for Slack, Notion and CRMs.
@@ -151,7 +155,7 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 - **Import recordings.** Drop an audio file (m4a, mp3, wav, aac, aiff, caf) on the window and it's transcribed, split by speaker and summarised like a live call.
 - **Export** a meeting as Markdown, TXT (notes, report, Assistant cards and transcript in one file) or SRT subtitles.
 - **Searchable history.** Search titles and transcripts, meetings grouped by day, with a talk-ratio strip on each.
-- **Menu bar item** to start and stop from anywhere, and a dashboard with your meetings, hours and words.
+- **A parrot in your menu bar.** Start and stop from anywhere, see the call time (and whether you're muted) at a glance, switch profile, copy your last report, and with your calendar connected, join your next call and record it in one click. Home keeps a dashboard of your meetings, hours and words.
 - **Keeps itself up to date** with signed Sparkle updates that install when you quit, never during a recording. A notification says when one is ready (*Restart now* if you can't wait), and Home shows what's new once you're on it.
 - **A real user guide** inside the app (Help > Parrot Help, searchable and offline), also [on the web](https://openparrot.app/help).
 - **Bug reports in two clicks.** The ladybug in the corner writes the boring parts (version, model, settings) and hands you a pre-filled GitHub issue to check and post yourself.

@@ -38,7 +38,8 @@ extension RecordingManager {
             transcript: meeting.promptTranscript,
             counterpart: meeting.profile?.counterpart ?? "the other person",
             people: Array(Set(people)).sorted(),
-            nextSteps: LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 12))
+            nextSteps: LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching,
+                                               template: meeting.reportTemplate, limit: 12))
         // A private meeting's email is written by the local model, whatever
         // the reports brain is set to.
         let provider = callAnalysisEngine.provider
@@ -51,7 +52,8 @@ extension RecordingManager {
 
     /// Next steps and commitments → Apple Reminders.
     func addNextStepsToReminders(_ meeting: Meeting) async throws -> Int {
-        let items = LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching, limit: 20)
+        let items = LastCallBrief.openItems(summary: meeting.summary, coaching: meeting.coaching,
+                                            template: meeting.reportTemplate, limit: 20)
         guard !items.isEmpty else { return 0 }
         return try await reminders.add(items, from: meeting.title)
     }

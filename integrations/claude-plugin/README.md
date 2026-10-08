@@ -1,6 +1,6 @@
 # Parrot for Claude
 
-Your meetings from [Parrot](https://openparrot.app), the free, local Mac app that records your calls and writes the transcript with real speaker names, available in Claude. Read-only.
+Your meetings from [Parrot](https://openparrot.app), the free, local Mac app that records your calls and writes the transcript with real speaker names, available in Claude. Claude reads; nothing changes without your OK.
 
 Ask things like:
 
@@ -17,9 +17,9 @@ Ask things like:
 
 ## What's inside
 
-- An MCP server: Parrot itself (`Parrot --mcp`), started by `server/launch.sh`, which finds Parrot in Applications or by its app id. No network, no writes.
-- Tools: `list_meetings`, `get_meeting`, `search_meetings`, `get_transcript`, `list_commitments`, `export_meeting`, `meeting_stats`, `list_profiles`, `get_profile`. All read-only; `export_meeting` saves a copy of one meeting to Downloads/Parrot Exports.
-- Skills: weekly digest, follow-up email, prep for a call, PRD from calls.
+- An MCP server: Parrot itself (`Parrot --mcp`), started by `server/launch.sh`, which finds Parrot in Applications or by its app id. No network. It only writes a meeting export you ask for, and suggested profiles that wait for your review.
+- Tools: `list_meetings`, `get_meeting`, `search_meetings`, `get_transcript`, `list_commitments`, `export_meeting`, `meeting_stats`, `list_profiles`, `get_profile`, `suggest_profile`. All read-only except two: `export_meeting` saves a copy of one meeting to Downloads/Parrot Exports, and `suggest_profile` leaves a suggested call profile that changes nothing until the user applies it in Parrot.
+- Skills: weekly digest, follow-up email, prep for a call, PRD from calls, create a profile, improve a profile, design a report.
 
 ## For reviewers
 
