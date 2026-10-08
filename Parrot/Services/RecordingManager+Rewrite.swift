@@ -1,6 +1,22 @@
 import Foundation
 import SwiftData
 
+/// A report rewrite in flight, or one that just failed (task nil, failure
+/// set). Local models take a minute or more, so the sheet and the meeting
+/// page show which of the two AI calls is running and for how long.
+struct RewriteRun {
+    let profileName: String
+    let startedAt = Date.now
+    var step = 1, steps = 2
+    var failure: String?
+    var task: Task<Void, Never>?
+
+    var stepText: String {
+        let what = step == 1 ? "Writing the report" : "Adding coaching"
+        return steps > 1 ? "\(what) (\(step) of \(steps))" : what
+    }
+}
+
 /// "Rewrite Report" (Profiles 2.0, R3): the report and coaching are written
 /// again from the transcript with a profile's current report template, and
 /// the meeting moves to that profile. One level of undo: the report it
@@ -15,7 +31,9 @@ extension RecordingManager {
     /// Never re-runs the after-call actions (webhook, Reminders, export):
     /// a rewrite is a new reading, not a new call.
     // ponytail: the rewrite's tokens aren't added to the meeting's cost row.
-    func rewriteReport(_ meeting: Meeting, with profile: CallProfile) async throws {
+    /// `onStep(step, steps)`: before each AI call, for the progress line.
+    func rewriteReport(_ meeting: Meeting, with profile: CallProfile,
+                       onStep: (_ step: Int, _ steps: Int) -> Void = { _, _ in }) async throws {
         guard meeting.status == .done, !meeting.segments.isEmpty else {
             throw rewriteFailure("This meeting has no transcript to rewrite from.")
         }
@@ -39,16 +57,24 @@ extension RecordingManager {
         let coach = template.coachingEnabled && meeting.importedAt == nil
         let talk = meeting.talkPercentMe ?? 0
 
-        let (summary, coaching) = try await CloudGate.$scopeLocal.withValue(local) {
-            let summary = try await provider.summarize(
+        let steps = coach ? 2 : 1
+        onStep(1, steps)
+        let summary = try await CloudGate.$scopeLocal.withValue(local) {
+            try await provider.summarize(
                 transcript: transcript, insightTitles: insightTitles, bookmarks: bookmarks,
                 instructions: profile.tone, counterpart: profile.counterpart, template: template)
-            let coaching = coach ? try? await provider.coachingReport(
-                transcript: transcript, talkPercentMe: talk, instructions: profile.tone,
-                counterpart: profile.counterpart, template: template) : nil
-            return (summary, coaching)
         }
-        // Cancelled while the AI was writing (the sheet's Cancel): keep the old one.
+        // Stopped while the AI was writing: keep the old report, skip coaching.
+        try Task.checkCancellation()
+        var coaching: String?
+        if coach {
+            onStep(2, steps)
+            coaching = await CloudGate.$scopeLocal.withValue(local) {
+                try? await provider.coachingReport(
+                    transcript: transcript, talkPercentMe: talk, instructions: profile.tone,
+                    counterpart: profile.counterpart, template: template)
+            }
+        }
         try Task.checkCancellation()
 
         meeting.previousReport = PreviousReport(summary: meeting.summary, coaching: meeting.coaching,
@@ -62,6 +88,34 @@ extension RecordingManager {
         meeting.coaching = coaching
         try? modelContext?.save()
         await memory.index(meeting)
+    }
+
+    /// Runs a rewrite that outlives the sheet ("Keep working"). Success
+    /// clears the run (the meeting shows its Rewritten banner); a failure
+    /// stays until OK so the user learns why, sheet open or not.
+    func startRewrite(_ meeting: Meeting, with profile: CallProfile) {
+        let id = meeting.id
+        guard rewrites[id]?.task == nil else { return }
+        rewrites[id] = RewriteRun(profileName: profile.name)
+        rewrites[id]?.task = Task {
+            do {
+                try await rewriteReport(meeting, with: profile) { step, steps in
+                    self.rewrites[id]?.step = step
+                    self.rewrites[id]?.steps = steps
+                }
+                rewrites[id] = nil
+            } catch {
+                guard !Task.isCancelled else { return }  // Stop already cleared it
+                rewrites[id]?.task = nil
+                rewrites[id]?.failure = "Couldn't rewrite: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Stop: the old report stays. Also clears a failed run (its OK).
+    func stopRewrite(_ meeting: Meeting) {
+        rewrites[meeting.id]?.task?.cancel()
+        rewrites[meeting.id] = nil
     }
 
     /// Puts back the report the last rewrite replaced. Privacy stays as it

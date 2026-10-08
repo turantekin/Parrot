@@ -88,6 +88,9 @@ final class RecordingManager {
 
     /// Non-nil while a file import runs — drives the import banner in the UI.
     private(set) var importProgress: ImportProgress?
+    /// Report rewrites running (or just failed), by meeting id. Here, not in
+    /// the sheet, so "Keep working" can close the sheet; see startRewrite.
+    var rewrites: [UUID: RewriteRun] = [:]
 
     struct ImportProgress: Equatable {
         var fileName: String

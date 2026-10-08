@@ -547,6 +547,7 @@ struct MeetingDetailView: View {
             Group {
                 if meeting.summary == nil && meeting.coaching == nil {
                     VStack(alignment: .leading, spacing: 16) {
+                        RewritingBanner(meeting: meeting)
                         if meeting.status == .processing || writingReport {
                             reportGeneratingRow("Writing your report…")
                         } else {
@@ -576,7 +577,10 @@ struct MeetingDetailView: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 16) {
-                        if meeting.previousReport != nil { RewrittenBanner(meeting: meeting) }
+                        RewritingBanner(meeting: meeting)
+                        if meeting.previousReport != nil && recordingManager.rewrites[meeting.id] == nil {
+                            RewrittenBanner(meeting: meeting)
+                        }
                         AIAppsReportTip(meeting: meeting)
                         toneCard
                         ReportContentView(

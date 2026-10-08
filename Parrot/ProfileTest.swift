@@ -5029,6 +5029,30 @@ enum ProfileTest {
             do { try await rm.rewriteReport(untouched, with: therapy) } catch { threw = true }
             check("rewrite: a failed AI call changes nothing", threw && untouched.summary?.hasPrefix("Old summary") == true
                   && untouched.profile?.id == named("Default").id && !untouched.onDeviceOnly && untouched.previousReport == nil)
+
+            // Keep working: the run lives on the manager, so it outlives the sheet.
+            let bg = meeting("Globex intro", profile: named("Default"))
+            rm.startRewrite(bg, with: therapy)  // the AI still fails
+            await rm.rewrites[bg.id]?.task?.value
+            check("keep working: a failed run stays to say why", rm.rewrites[bg.id]?.task == nil
+                  && rm.rewrites[bg.id]?.failure?.hasPrefix("Couldn't rewrite") == true)
+            rm.stopRewrite(bg)
+            check("keep working: OK clears a failed run", rm.rewrites[bg.id] == nil)
+            ai.fail = false
+            rm.startRewrite(bg, with: named("Interview"))
+            await rm.rewrites[bg.id]?.task?.value
+            check("keep working: a finished run clears, the new report is saved",
+                  rm.rewrites[bg.id] == nil && bg.summary?.hasPrefix("Rewritten") == true)
+            let stopped = meeting("Initech demo", profile: named("Default"))
+            rm.startRewrite(stopped, with: named("Interview"))
+            let running = rm.rewrites[stopped.id]?.task
+            rm.stopRewrite(stopped)
+            await running?.value
+            check("stop: the old report stays and nothing lingers",
+                  rm.rewrites[stopped.id] == nil && stopped.summary?.hasPrefix("Old summary") == true)
+            check("progress: step lines", RewriteRun(profileName: "X").stepText == "Writing the report (1 of 2)"
+                  && RewriteRun(profileName: "X", step: 2).stepText == "Adding coaching (2 of 2)"
+                  && RewriteRun(profileName: "X", steps: 1).stepText == "Writing the report")
             sem.signal()
         }
         while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: .now + 0.01) }
