@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Security
 
 /// Raw insight returned by a provider; the engine attaches call timing.
@@ -690,6 +691,13 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 enum APIKeyStore {
     private static let service = "com.uygar.parrot"
 
+    /// Keys by account, nil value = known missing. A live call asked
+    /// `isConfigured` on every transcript segment: ~280 main-thread Keychain
+    /// round trips in 10 minutes (2026-10-07). save/delete below write through,
+    /// so it can't go stale inside the app.
+    /// ponytail: a key changed outside the app (`security` CLI) shows after relaunch.
+    private static let cache = OSAllocatedUnfairLock(initialState: [String: String?]())
+
     /// Returns false if the keychain rejected the write — the UI must say so,
     /// or the user believes the key is saved and every call fails "missing key".
     @discardableResult
@@ -702,7 +710,9 @@ enum APIKeyStore {
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
         ]
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else { return false }
+        cache.withLock { _ = $0.updateValue(key, forKey: account) }
+        return true
     }
 
     /// `load` off the main thread. A Keychain read can wait on a macOS
@@ -719,6 +729,7 @@ enum APIKeyStore {
         // --help-shots too: screenshots never read a key or call a service.
         let args = ProcessInfo.processInfo.arguments
         if args.contains("--profile-test") || args.contains("--help-shots") { return nil }
+        if let hit = cache.withLock({ $0[account] }) { return hit }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -727,9 +738,14 @@ enum APIKeyStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        // Remember only a definite answer: a locked keychain or a declined
+        // prompt must be asked again, not cached as "no key".
+        guard status == errSecSuccess || status == errSecItemNotFound else { return nil }
+        let key = (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        // A save/delete that landed during the read is newer: keep it.
+        cache.withLock { if $0.index(forKey: account) == nil { $0.updateValue(key, forKey: account) } }
+        return key
     }
 
     static func delete(account: String = "claude-api-key") {
@@ -739,5 +755,6 @@ enum APIKeyStore {
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+        cache.withLock { _ = $0.updateValue(nil, forKey: account) }
     }
 }
