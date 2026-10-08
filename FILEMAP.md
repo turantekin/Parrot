@@ -11,7 +11,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Parrot/ProfileTest.swift` | 1750 | `--profile-test`: headless logic harness, ~540 checks |
 | `Parrot/ProfileTest+Parakeet.swift` | 130 | `--profile-test` checks for Parakeet: language router, per-side probe, recommendation, rewind, imports |
 | `Parrot/SnapshotTool.swift` | 1360 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--language-test` runs the live language check on a saved track; `--echo-replay` scores a recorded call's Me lines with the echo gate; `--liveloop-test` takes `LIVELOOP_MIC` to feed both tracks; `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama |
-| `Parrot/CopilotHarness.swift` | 326 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency) |
+| `Parrot/CopilotHarness.swift` | 359 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency; `--real` sends passes to real Claude Haiku and prints each card's call time) |
 | `Parrot/ToneHarness.swift` | 200 | `--nudge-replay [id] [--store path]` (a saved call through the live nudge rules, on a copy of the store), `--tone-snapshot <png>` (report card, pill, banner; light + dark), `--pill-test [png]` (a real pill on screen, captured with ScreenCaptureKit to prove it's left out; `PILL_TEST_SHARED=1` is the control) |
 | `Parrot/ProfileTest+Nudges.swift` | 298 | `--profile-test` checks for live nudges, the tone timeline and seconds-based talk share |
 
