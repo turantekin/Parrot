@@ -67,7 +67,7 @@ struct CopilotPanelView: View {
             Image(systemName: "sparkles")
                 .foregroundStyle(Theme.Colors.accent)
 
-            Text("Copilot")
+            Text("Assistant")
                 .font(.appHeadline)
 
             Spacer()
@@ -90,8 +90,8 @@ struct CopilotPanelView: View {
                 }
                 .buttonStyle(.plain)
                 .help(engine.isPaused
-                    ? "Resume Copilot"
-                    : "Pause Copilot — nothing is sent and nothing is spent while paused")
+                    ? "Resume the Assistant"
+                    : "Pause the Assistant. Nothing is sent and nothing is spent while paused.")
             }
 
             statusBadge
@@ -137,7 +137,7 @@ struct CopilotPanelView: View {
                 Image(systemName: "key.fill")
                     .font(.appTitle2)
                     .foregroundStyle(Theme.Colors.ink2)
-                Text("Copilot needs a Claude API key to suggest answers in real time.")
+                Text("The Assistant needs a Claude API key to suggest answers in real time.")
                     .font(.appCallout)
                     .foregroundStyle(Theme.Colors.ink2)
                     .multilineTextAlignment(.center)
@@ -254,7 +254,7 @@ struct CopilotPanelView: View {
                 .font(.appTitle2)
                 .foregroundStyle(Theme.Colors.ink3)
             Text(engine.isPaused
-                ? "Copilot is paused.\nNothing is sent while paused — press play to get suggestions again."
+                ? "The Assistant is paused.\nNothing is sent while paused. Press play to get suggestions again."
                 : "Listening to the call.\nSuggestions, blockers and action items will appear here as the conversation unfolds.")
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.ink3)

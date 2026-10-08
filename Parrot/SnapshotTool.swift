@@ -133,6 +133,77 @@ extension TranscribeTest {
 /// .app bundle — TCC decides by bundle identity. Uses a pumped main run loop,
 /// not the semaphore pattern: startCapture is @MainActor and the level/rescue
 /// hops dispatch to main, so a blocked main thread would deadlock them.
+/// `--echo-replay <mic.caf> <system.caf> [lines.tsv]`: scores a recorded
+/// call's Me lines with the loudness echo gate, to calibrate it on real
+/// speaker calls. lines.tsv is one stored line per row: start, end, speaker
+/// label, text (tab separated). Without it, prints only how far the mic
+/// trails the system track. Recordings from before 0.24.0 started the tracks
+/// seconds apart; that offset is measured and taken out first.
+enum EchoReplay {
+    static func run(micPath: String, systemPath: String, linesPath: String?) {
+        typealias G = EchoGate
+        guard let mic = load(micPath), let system = load(systemPath) else {
+            print("echo-replay: can't read the audio files"); exit(1)
+        }
+        let micEnv = G.envelope(mic[...]), themEnv = G.envelope(system[...])
+        // Whole-call delay within ±10 s, in log level like the gate.
+        func level(_ x: Float) -> Float { log10(x + 1e-4) }
+        let a = micEnv.map(level), b = themEnv.map(level)
+        var bestLag = 0, bestR: Float = -1
+        for lag in -500...500 {
+            let lo = max(0, lag), hi = min(a.count, b.count + lag)
+            guard hi - lo > 500 else { continue }
+            let ma = a[lo..<hi].reduce(0, +) / Float(hi - lo), mb = b[(lo - lag)..<(hi - lag)].reduce(0, +) / Float(hi - lo)
+            var ab: Float = 0, aa: Float = 0, bb: Float = 0
+            for i in lo..<hi {
+                let x = a[i] - ma, y = b[i - lag] - mb
+                ab += x * y; aa += x * x; bb += y * y
+            }
+            let r = aa > 0 && bb > 0 ? ab / (aa * bb).squareRoot() : 0
+            if r > bestR { bestR = r; bestLag = lag }
+        }
+        // ponytail: only old misaligned recordings with clear bleed get shifted;
+        // new ones are scored as the live gate sees them. Without bleed (headphones)
+        // the best lag is noise.
+        let shift = bestR < 0.3 || (-G.maxLead...G.maxLag).contains(bestLag) ? 0 : bestLag
+        print(String(format: "mic trails system by %d ms (whole-call r=%.2f)%@", bestLag * 20, bestR,
+                     shift == 0 ? "" : " — old recording, shifting by that much"))
+        guard let linesPath, let text = try? String(contentsOfFile: linesPath, encoding: .utf8) else { return }
+
+        let lines = text.split(separator: "\n").compactMap { row -> (start: Double, end: Double, label: String, text: String)? in
+            let f = row.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+            guard f.count == 4, let s = Double(f[0]), let e = Double(f[1]) else { return nil }
+            return (s, e, f[2], f[3])
+        }
+        // Both envelopes on the mic's clock, as they are live since 0.24.0.
+        let theirs = shift >= 0 ? Array(repeating: 0, count: shift) + themEnv : Array(themEnv.dropFirst(-shift))
+        var mine = 0, dropped = 0
+        for line in lines where line.label == "Me" {
+            let lo = max(0, Int(line.start * 16000)), hi = min(mic.count, Int(line.end * 16000))
+            guard hi > lo else { continue }
+            mine += 1
+            let verdict = G.check(clip: Array(mic[lo..<hi]), mic: micEnv, them: theirs, at: lo / G.hop)
+            if verdict.isEcho { dropped += 1 }
+            let overlapping = lines.filter { $0.label != "Me" && $0.start < line.end && $0.end > line.start }
+                .map(\.text).joined(separator: " / ")
+            print(String(format: "%7.1f-%7.1f bleed=%5.2f whileTalking=%5.2f follows=%5.2f lag=%2d talk=%.2f %@ | %@  ‖ them: %@",
+                         line.start, line.end, verdict.bleed.follows, verdict.talkBleed.follows, verdict.clip.follows, verdict.clip.lag,
+                         verdict.clip.themTalking, verdict.isEcho ? "DROP" : "keep", line.text,
+                         String(overlapping.prefix(90))))
+        }
+        print("Me lines: \(mine) | the gate drops \(dropped)")
+    }
+
+    private static func load(_ path: String) -> [Float]? {
+        guard let file = try? AVAudioFile(forReading: URL(fileURLWithPath: path)),
+              file.processingFormat.sampleRate == 16000,
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+              (try? file.read(into: buffer)) != nil,
+              let ch = buffer.floatChannelData?[0] else { return nil }
+        return Array(UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
+    }
+}
+
 enum CaptureTest {
     /// Cross-queue tallies from the onAudioBuffer callback (audio queues).
     private final class BufferCounter: @unchecked Sendable {
@@ -177,8 +248,17 @@ enum CaptureTest {
         print("=== capture-test — macOS \(ProcessInfo.processInfo.operatingSystemVersionString) ===")
         let manager = AudioCaptureManager()
         let counter = BufferCounter()
+        // CAPTURE_TEST_STALL_MS=50 blocks every 20th system buffer that long,
+        // like transcription holding its buffer lock: the tap must not lose
+        // audio while its consumer is briefly stuck (issue #100).
+        let stallMs = Int(ProcessInfo.processInfo.environment["CAPTURE_TEST_STALL_MS"] ?? "") ?? 0
+        nonisolated(unsafe) var systemSeen = 0
         manager.onAudioBuffer = { buffer, source in
             counter.record(buffer: buffer, source: source)
+            if stallMs > 0, source == .them {
+                systemSeen += 1
+                if systemSeen % 20 == 0 { usleep(useconds_t(stallMs * 1000)) }
+            }
         }
         do {
             try await manager.startCapture()
@@ -189,7 +269,21 @@ enum CaptureTest {
         print("backend: \(manager.captureBackend.rawValue) | input: \(manager.inputDeviceName) | output: \(manager.outputDeviceName)")
         print("screen-recording preflight (SCK fallback available): \(CGPreflightScreenCaptureAccess())")
 
-        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        // CAPTURE_TEST_MUTE=1: "Mute me" for the middle third (#96). The mic
+        // file must keep its length with silence there, and the watchdog must
+        // not mistake our silence for another app grabbing the mic.
+        let muteTest = ProcessInfo.processInfo.environment["CAPTURE_TEST_MUTE"] != nil
+        if muteTest {
+            let third = UInt64(seconds / 3 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: third)
+            manager.setMicMuted(true)
+            try? await Task.sleep(nanoseconds: third)
+            print("while muted — mic signal lost: \(manager.micSignalLost) | not hearing you: \(manager.micSeemsDead)")
+            manager.setMicMuted(false)
+            try? await Task.sleep(nanoseconds: third)
+        } else {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
 
         let endBackend = manager.captureBackend  // stopCapture resets it
         let systemURL = manager.systemAudioURL
@@ -200,10 +294,22 @@ enum CaptureTest {
         print(String(format: "live buffers — system: %d (peak %.4f) | mic: %d (peak %.4f)",
                      stats.systemBuffers, stats.systemPeak, stats.micBuffers, stats.micPeak))
         print("backend at end: \(endBackend.rawValue) | tap grant proven: \(UserDefaults.standard.bool(forKey: PermissionFlow.tapProvenKey))")
+        print(String(format: "system audio skipped by the tap: %.3f s%@", manager.systemLostSeconds,
+                     stallMs > 0 ? " (stalling \(stallMs) ms every 20th buffer)" : ""))
 
         let systemStats = fileStats(systemURL)
         print("system .caf: \(systemStats.text)")
         print("mic .caf: \(fileStats(micURL).text)")
+        if muteTest, let micURL, let file = try? AVAudioFile(forReading: micURL),
+           let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+           (try? file.read(into: buffer)) != nil, let ch = buffer.floatChannelData?[0] {
+            let n = Int(buffer.frameLength), third = n / 3
+            // Skip 0.3 s at each edge of the muted third: the toggles land between buffers.
+            let pad = Int(0.3 * file.processingFormat.sampleRate)
+            func level(_ r: Range<Int>) -> Float { r.reduce(Float(0)) { $0 + abs(ch[$1]) } / Float(max(1, r.count)) }
+            print(String(format: "mic level by third — before %.5f | muted %.5f | after %.5f",
+                         level(0..<third), level((third + pad)..<(2 * third - pad)), level((2 * third)..<n)))
+        }
 
         let pass = systemStats.peak > 0.01
         print(pass ? "CAPTURE OK — real system audio in the file"
@@ -314,13 +420,22 @@ enum HelpShots {
             meSeconds: 41, themSeconds: 52,
             brief: "Renewal call with Acme. Legal wants to know where the data is stored.")
 
-        // Two documents so the Knowledge page shows rows, notes, and profile tags.
+        // Folders, an own Use for, an off folder and an unused document, so
+        // the Knowledge page shows every state.
+        let vendorProfile = (try? context.fetch(FetchDescriptor<CallProfile>()))?
+            .first { $0.name == "Vendor call" }
+        let dealFolder = KBFolder(name: "Acme deal", scope: .only(Set([salesProfile?.id].compactMap { $0 })))
+        let oldFolder = KBFolder(name: "Old deals", scope: .off)
         rm.knowledgeBase.seedForSnapshot(documents: [
-            KBDocument(name: "security-faq.pdf", note: "Use for security and data questions",
-                       chunkCount: 14, addedAt: .now, profileIDs: Set([salesProfile?.id].compactMap { $0 })),
-            KBDocument(name: "pricing-2026.md", note: "Use for pricing questions",
-                       chunkCount: 9, addedAt: .now, profileIDs: Set([salesProfile?.id].compactMap { $0 })),
-        ])
+            KBDocument(name: "security-faq.pdf", note: "Security and data answers for buyers",
+                       chunkCount: 14, addedAt: .now, folderID: dealFolder.id),
+            KBDocument(name: "pricing-2026.md", note: "Plans and discounts, 2026",
+                       chunkCount: 9, addedAt: .now, folderID: dealFolder.id),
+            KBDocument(name: "mutual-nda.md", note: "Signed NDA, Sept 2026", chunkCount: 4, addedAt: .now,
+                       folderID: dealFolder.id, scope: .only(Set([vendorProfile?.id].compactMap { $0 }))),
+            KBDocument(name: "northwind-proposal.md", chunkCount: 12, addedAt: .now, folderID: oldFolder.id),
+            KBDocument(name: "roadmap.md", chunkCount: 20, addedAt: .now, scope: .off),
+        ], folders: [dealFolder, oldFolder])
 
         func settings(_ section: SettingsSection) -> some View {
             SettingsView(isEmbedded: false, initialSection: section)
@@ -342,6 +457,8 @@ enum HelpShots {
         shot("settings-transcription.png", size: .init(width: 780, height: 620), settings(.transcription))
         shot("settings-copilot.png", size: .init(width: 780, height: 620), settings(.copilot))
         shot("settings-knowledge.png", size: .init(width: 780, height: 620), settings(.knowledge))
+        shot("whats-new-card.png", size: .init(width: 640, height: 260),
+             WhatsNewCard(news: .sample) {}.padding(Theme.Metrics.pad).background(Theme.Colors.canvas))
         shot("settings-connections.png", size: .init(width: 780, height: 620), settings(.connections))
         shot("settings-privacy.png", size: .init(width: 780, height: 620), settings(.privacy))
         let acmeRef = AskEngine.MeetingRef(ref: "M1", meetingID: meeting.id, title: meeting.title,
@@ -502,9 +619,12 @@ enum HelpShots {
     /// settles (Forms, Lists, async images), then cache the bitmap.
     @MainActor
     private static func windowRender(_ view: some View, size: NSSize, to path: String) -> Bool {
+        // The sharpest screen sets the bitmap scale, so a 1x main monitor
+        // doesn't halve the guide's pictures.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless], backing: .buffered, defer: false)
+            styleMask: [.borderless], backing: .buffered, defer: false,
+            screen: NSScreen.screens.max { $0.backingScaleFactor < $1.backingScaleFactor })
         window.colorSpace = .sRGB
         // `--dark` renders the same shots in dark mode, for checking a PR; the
         // user guide ships the light set.
@@ -567,13 +687,13 @@ enum LiveLoopTest {
                 exit(0)
             }
 
-            var emitted: [(text: String, start: TimeInterval, end: TimeInterval)] = []
-            engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime)) }
+            var emitted: [(text: String, start: TimeInterval, end: TimeInterval, who: String)] = []
+            engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime, r.source.label)) }
             // A Parakeet rewind replaces lines, as RecordingManager does in the app.
-            // ponytail: the harness feeds one side only, so the range alone decides.
+            // ponytail: one side's rewind may drop the other side's lines in its range.
             engine.onReplace = { _, range, results in
                 emitted.removeAll { range.contains($0.start) }
-                emitted += results.map { ($0.text, $0.startTime, $0.endTime) }
+                emitted += results.map { ($0.text, $0.startTime, $0.endTime, $0.source.label) }
                 emitted.sort { $0.start < $1.start }
             }
 
@@ -582,28 +702,38 @@ enum LiveLoopTest {
                 print("liveloop-test: audio load failed — \(error)"); exit(1)
             }
             print("liveloop-test: \(samples.count) samples (\(String(format: "%.1f", Double(samples.count) / 16000))s)")
+            // LIVELOOP_MIC=<file> feeds a second track as Me, in step with the
+            // first (Them): a recorded call's mic and system tracks, to see the
+            // echo gate and the bleed dedupe work in the real loop.
+            var mic: [Float] = []
+            if let micPath = ProcessInfo.processInfo.environment["LIVELOOP_MIC"] {
+                do { mic = try loadSamples16k(path: micPath) } catch {
+                    print("liveloop-test: mic load failed — \(error)"); exit(1)
+                }
+            }
 
             engine.startTranscribing(meetingStartTime: .now)
             let realtime = ProcessInfo.processInfo.environment["LIVELOOP_REALTIME"] != nil
             let slice = 3200  // 200 ms, the ballpark capture delivers
             var i = 0
-            while i < samples.count {
+            while i < max(samples.count, mic.count) {
                 let end = min(i + slice, samples.count)
-                engine.appendAudio(pcmBuffer(Array(samples[i..<end])), source: .them)
+                if i < end { engine.appendAudio(pcmBuffer(Array(samples[i..<end])), source: .them) }
+                if i < mic.count { engine.appendAudio(pcmBuffer(Array(mic[i..<min(i + slice, mic.count)])), source: .me) }
                 // LIVELOOP_NOSWITCH=1 leaves the banner unanswered (keeps a pin).
                 if let heard = engine.languageMismatch, ProcessInfo.processInfo.environment["LIVELOOP_NOSWITCH"] == nil {
                     print(String(format: "liveloop-test: at %.1fs heard %@, switching", Double(end) / 16000, heard))
                     engine.switchLanguage(to: heard)
                 }
                 if realtime { try? await Task.sleep(for: .milliseconds(200)) }
-                i = end
+                i += slice
             }
             await engine.stopTranscribing()  // drain the tail
             try? await Task.sleep(for: .seconds(0.5))  // let queued onSegment hops land
 
             print("=== liveloop-test — \(emitted.count) segment(s) ===")
             for seg in emitted {
-                print(String(format: "[%6.2f – %6.2f] %@", seg.start, seg.end, seg.text))
+                print(String(format: "[%6.2f – %6.2f] %@%@", seg.start, seg.end, mic.isEmpty ? "" : seg.who + ": ", seg.text))
             }
             exit(0)
         }
@@ -773,7 +903,7 @@ enum CopilotSnapshot {
     /// of the given profile, drawn with the app's real colors and icons.
     private static func legend(profile: CallProfile?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Parrot Copilot — what each card means")
+            Text("Parrot Assistant: what each card means")
                 .font(Theme.Typography.title(20))
                 .foregroundStyle(Theme.Colors.ink)
 

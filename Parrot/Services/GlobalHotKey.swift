@@ -22,6 +22,11 @@ final class GlobalHotKey {
             modifiers: UInt32(controlKey | optionKey),
             display: "⌃⌥M"
         )
+        static let muteMe = Combo(
+            keyCode: UInt32(kVK_ANSI_M),
+            modifiers: UInt32(controlKey | optionKey | shiftKey),
+            display: "⌃⌥⇧M"
+        )
     }
 
     private var hotKeyRef: EventHotKeyRef?

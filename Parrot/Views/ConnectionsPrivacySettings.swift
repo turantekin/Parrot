@@ -144,9 +144,9 @@ struct PrivacySettingsPage: View {
     var body: some View {
         SettingsPage {
             SettingsCard(title: "On-device Only",
-                         blurb: "One switch for nothing leaves this Mac: Whisper transcribes, Ollama runs the copilot and reports, and there's no polish pass, no TypeSafe answers, no webhook. Meetings recorded this way stay out of cloud Ask and AI apps later too. To do this for some calls only, turn it on for a profile instead (Settings → Profiles).") {
+                         blurb: "One switch for nothing leaves this Mac: Whisper transcribes, Ollama runs the Assistant and reports, and there's no polish pass, no TypeSafe answers, no webhook. Meetings recorded this way stay out of cloud Ask and AI apps later too. To do this for some calls only, turn it on for a profile instead (Settings → Profiles).") {
                 SettingsToggleRow(title: "On-device only, for every call",
-                                  detail: "Set up Ollama under Copilot first, or the copilot and reports have nothing to run on.",
+                                  detail: "Set up Ollama on the Assistant page first, or the Assistant and reports have nothing to run on.",
                                   first: true, isOn: $onDeviceOnly)
             }
 

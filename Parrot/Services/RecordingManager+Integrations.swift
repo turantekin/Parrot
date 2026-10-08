@@ -31,7 +31,7 @@ extension RecordingManager {
             throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "This meeting has no transcript."])
         }
         guard callAnalysisEngine.provider.isConfigured else {
-            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "Set up the Copilot's AI in Settings first."])
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "Set up the Assistant's AI in Settings first."])
         }
         let people = meeting.attendees.map(\.displayName) + meeting.otherSpeakerLabels.compactMap { meeting.speakerNames[$0] }
         let user = FollowUpEmail.userContent(

@@ -7,7 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class LiveNudgeSession {
-    static let defaultsKey = "liveNudges"
+    nonisolated static let defaultsKey = "liveNudges"
     /// On unless turned off in Settings → Copilot → Live Nudges.
     nonisolated static var isEnabled: Bool { UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? true }
 

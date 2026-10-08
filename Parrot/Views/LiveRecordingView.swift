@@ -105,6 +105,9 @@ struct LiveRecordingView: View {
             consentButton
                 .padding(.trailing, Theme.Metrics.controlGap)
 
+            muteButton
+                .padding(.trailing, Theme.Metrics.controlGap)
+
             markButton
                 .padding(.trailing, Theme.Metrics.controlGap)
 
@@ -120,7 +123,7 @@ struct LiveRecordingView: View {
                         .foregroundStyle(showCopilot ? Theme.Colors.accent : Theme.Colors.ink2)
                 }
                 .buttonStyle(.plain)
-                .help(showCopilot ? "Hide Copilot" : "Show Copilot")
+                .help(showCopilot ? "Hide the Assistant" : "Show the Assistant")
                 .padding(.trailing, 12)
             }
 
@@ -174,6 +177,24 @@ struct LiveRecordingView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(consent?.summary.capitalizedFirst ?? "Tell everyone the call is recorded, and keep a record of it")
+    }
+
+    // MARK: - Mute me
+
+    /// Parrot's own mute (#96): it opens the mic itself, so muting in Zoom or
+    /// Teams never reaches it.
+    private var muteButton: some View {
+        Button {
+            recordingManager.toggleMute()
+        } label: {
+            Label(recordingManager.isMuted ? "Unmute me" : "Mute me",
+                  systemImage: recordingManager.isMuted ? "mic.slash.fill" : "mic.fill")
+                .font(.appHeadline)
+                .foregroundStyle(recordingManager.isMuted ? Theme.Colors.warn : Theme.Colors.accent)
+        }
+        .buttonStyle(.plain)
+        .disabled(recordingManager.isStopping)
+        .help("Stop recording your side until you unmute. Muting in Zoom or Teams doesn't reach Parrot. \(GlobalHotKey.Combo.muteMe.display) works from any app.")
     }
 
     // MARK: - Mark moment
@@ -242,12 +263,17 @@ struct LiveRecordingView: View {
     private var deviceBar: some View {
         let cap = recordingManager.audioCaptureManager
         return HStack(spacing: 12) {
-            Image(systemName: cap.micActive ? "mic.fill" : "mic.slash.fill")
-                .foregroundStyle(cap.micActive ? Theme.Colors.good : Theme.Colors.warn)
+            Image(systemName: cap.micActive && !cap.micMuted ? "mic.fill" : "mic.slash.fill")
+                .foregroundStyle(cap.micActive && !cap.micMuted ? Theme.Colors.good : Theme.Colors.warn)
             Text(cap.inputDeviceName.isEmpty ? "No input" : cap.inputDeviceName)
                 .font(.appCaption)
                 .lineLimit(1)
             MicLevelView(level: cap.micLevel)
+            if cap.micMuted {
+                Label("muted — Parrot isn't recording you", systemImage: "mic.slash.circle.fill")
+                    .font(.appCaption2)
+                    .foregroundStyle(Theme.Colors.warn)
+            }
             if !cap.micActive || cap.micSeemsDead {
                 Button {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)

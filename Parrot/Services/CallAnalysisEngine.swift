@@ -409,7 +409,7 @@ final class CallAnalysisEngine {
             instructions: profile?.tone ?? "",
             callBrief: callBrief,
             allowGeneralKnowledge: profile?.allowGeneralKnowledge ?? true,
-            knownDocumentNames: profile.map { knowledgeBase?.documentNames(for: $0.id) ?? [] } ?? (knowledgeBase?.documents.map(\.name) ?? []),
+            knownDocumentNames: knowledgeBase?.documentsInPlay(for: profile?.id) ?? [],
             persona: profile?.persona ?? "",
             counterpart: profile?.counterpart ?? "the other person",
             kinds: profile?.kinds ?? [],
@@ -599,10 +599,10 @@ final class CallAnalysisEngine {
     /// Dev harness observation hook (--copilot-replay): every insertion, wall time.
     var onInsightInserted: ((Insight) -> Void)?
 
-    static let wrappingUpKey = "wrapping_up"
-    static let nextStepKey = "next_step_agreed"
+    nonisolated static let wrappingUpKey = "wrapping_up"
+    nonisolated static let nextStepKey = "next_step_agreed"
     /// Insight kinds that mean "they asked and it's still open".
-    static let questionKinds: Set<String> = ["question", "unanswered_question"]
+    nonisolated static let questionKinds: Set<String> = ["question", "unanswered_question"]
 
     /// After every successful pass: gauges, open items and the wrap-up flags,
     /// for live nudges and the report's mood line.

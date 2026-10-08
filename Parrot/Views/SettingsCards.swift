@@ -47,6 +47,8 @@ struct SettingsCard<Content: View>: View {
 /// One row in a card. Every row but the first draws a hairline above itself.
 struct SettingsRow<Content: View>: View {
     var first = false
+    /// A header row's fill (Knowledge folders).
+    var tint: Color? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -56,6 +58,7 @@ struct SettingsRow<Content: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+                .background(tint ?? .clear)
         }
     }
 }

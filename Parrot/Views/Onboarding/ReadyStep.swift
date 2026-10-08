@@ -52,7 +52,7 @@ struct ReadyStep: View {
     static func title(_ status: CopilotStatus, mode: OnboardingMode) -> String {
         guard mode == .copilot else { return "Ready to go" }
         switch status {
-        case .on, .waitingForModel: return "Copilot is set up"
+        case .on, .waitingForModel: return "The Assistant is set up"
         case .finishOllama, .needsClaudeKey, .off: return "Almost there"
         }
     }
@@ -60,18 +60,18 @@ struct ReadyStep: View {
     static func copy(_ status: CopilotStatus, path: CopilotPath?, ollamaModel: String) -> (title: String, detail: String) {
         switch status {
         case .on where path == .private:
-            ("Copilot is on, running on this Mac", "\(ollamaModel). Nothing leaves your Mac.")
+            ("The Assistant is on, running on this Mac", "\(ollamaModel). Nothing leaves your Mac.")
         case .on:
-            ("Copilot is on, using Claude", "Only text is sent.")
+            ("The Assistant is on, using Claude", "Only text is sent.")
         case .waitingForModel(let progress):
-            ("Copilot turns on when \(ollamaModel) finishes",
+            ("The Assistant turns on when \(ollamaModel) finishes",
              progress.map { "\(Int($0 * 100))% downloaded. Keep going." } ?? "Starting the download.")
         case .finishOllama:
-            ("Copilot is almost there", "Finish the Ollama setup from the card on Home.")
+            ("The Assistant is almost there", "Finish the Ollama setup from the card on Home.")
         case .needsClaudeKey:
-            ("Copilot needs a working Claude key", "Add it from the card on Home.")
+            ("The Assistant needs a working Claude key", "Add it from the card on Home.")
         case .off:
-            ("Copilot is off for now", "Set it up any time from the card on Home.")
+            ("The Assistant is off for now", "Set it up any time from the card on Home.")
         }
     }
 }

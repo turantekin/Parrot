@@ -15,7 +15,7 @@ enum CopilotProviderKind: String, CaseIterable, Identifiable {
         switch self {
         case .claude: "Claude (cloud)"
         case .ollama: "Ollama (local)"
-        case .custom: "Custom server"
+        case .custom: "Other AI service"
         }
     }
 
@@ -178,7 +178,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult {
         guard let config = currentConfig() else {
-            throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
+            throw AnalysisError.badResponse("Assistant model not set up. Check Settings → Assistant.")
         }
 
         let sys = ClaudeAnalysisProvider.systemPrompt(
@@ -202,7 +202,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
                    instructions: String,
                    counterpart: String = "the other person", template: ReportTemplate) async throws -> String {
         guard let config = currentConfig() else {
-            throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
+            throw AnalysisError.badResponse("Assistant model not set up. Check Settings → Assistant.")
         }
         return try await plainChat(
             system: ClaudeAnalysisProvider.summarySystemPrompt(counterpart: counterpart, template: template),
@@ -215,7 +215,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
                         counterpart: String = "the other person", template: ReportTemplate) async throws -> String {
         guard let config = currentConfig() else {
-            throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
+            throw AnalysisError.badResponse("Assistant model not set up. Check Settings → Assistant.")
         }
         return try await plainChat(
             system: ClaudeAnalysisProvider.coachingSystemPrompt(counterpart: counterpart, template: template),
@@ -227,7 +227,7 @@ final class OpenAICompatibleProvider: AnalysisProvider {
 
     func complete(system: String, user: String, maxTokens: Int) async throws -> String {
         guard let config = currentConfig() else {
-            throw AnalysisError.badResponse("Copilot model not configured — check Settings → Copilot.")
+            throw AnalysisError.badResponse("Assistant model not set up. Check Settings → Assistant.")
         }
         return try await plainChat(system: system, user: user, maxTokens: maxTokens, config: config)
     }

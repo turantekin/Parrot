@@ -8,9 +8,12 @@ struct SidebarView: View {
 
     @Environment(RecordingManager.self) private var recordingManager
     @Environment(AppSession.self) private var appSession
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
     /// Edit → Find (⌘F) lands here.
     @FocusState private var searchFocused: Bool
+    /// Meetings the search matched; nil while there's no search.
+    @State private var matches: Set<UUID>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -109,6 +112,15 @@ struct SidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .parrotFocusSearch)) { _ in
             searchFocused = true
         }
+        // Ask the database once per pause in typing (or new meeting). Searching
+        // in the body re-read every line of every meeting on each save: ~1.3 s
+        // frozen per save with 16k lines, the whole of a call (Oct 6).
+        .task(id: "\(meetings.count)|\(searchText)") {
+            guard !searchText.isEmpty else { matches = nil; return }
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            matches = Self.meetingIDs(matching: searchText, in: modelContext)
+        }
     }
 
     // Group by day label, ordered most-recent-first (meetings already sorted desc).
@@ -120,11 +132,19 @@ struct SidebarView: View {
     }
 
     private func filtered(_ list: [Meeting]) -> [Meeting] {
-        guard !searchText.isEmpty else { return list }
-        return list.filter { meeting in
-            meeting.title.localizedCaseInsensitiveContains(searchText) ||
-            meeting.segments.contains { $0.text.localizedCaseInsensitiveContains(searchText) }
-        }
+        guard let matches else { return list }
+        return list.filter { matches.contains($0.id) }
+    }
+
+    /// Ids of the meetings whose title or any transcript line contains
+    /// `query`, ignoring case and accents ("gorusme" finds "Görüşme").
+    /// Runs in the database, not over loaded objects.
+    static func meetingIDs(matching query: String, in context: ModelContext) -> Set<UUID> {
+        let titled = FetchDescriptor<Meeting>(predicate: #Predicate { $0.title.localizedStandardContains(query) })
+        let said = FetchDescriptor<TranscriptSegment>(predicate: #Predicate { $0.text.localizedStandardContains(query) })
+        let byTitle = ((try? context.fetch(titled)) ?? []).map(\.id)
+        let byLine = ((try? context.fetch(said)) ?? []).compactMap { $0.meeting?.id }
+        return Set(byTitle).union(byLine)
     }
 
     private func dateGroupLabel(for date: Date) -> String {

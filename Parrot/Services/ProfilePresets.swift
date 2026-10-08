@@ -50,7 +50,7 @@ enum ProfilePresets {
     static func makeDefault(persona: String, tone: String, allowGeneralKnowledge: Bool) -> CallProfile {
         shipped(CallProfile(
             id: defaultProfileID, name: "Default", iconSystemName: "person.wave.2",
-            summary: "General-purpose copilot (your current setup).",
+            summary: "General-purpose Assistant (your current setup).",
             isBuiltIn: true, sortOrder: 0, persona: persona, tone: tone,
             counterpart: "the other person",
             allowGeneralKnowledge: allowGeneralKnowledge, presetVersion: presetVersion,
@@ -88,7 +88,7 @@ enum ProfilePresets {
             CallProfile(id: coachingID, name: "1:1 coaching", iconSystemName: "heart.text.square",
                 summary: "Supportive listening for coaching / 1:1s.",
                 isBuiltIn: true, sortOrder: 2,
-                persona: "You are a warm, non-judgmental coaching copilot. Help the user listen deeply, reflect back, and ask open questions. Never frame the other person as an objection or obstacle.",
+                persona: "You are a warm, non-judgmental coaching assistant. Help the user listen deeply, reflect back, and ask open questions. Never frame the other person as an objection or obstacle.",
                 tone: "", counterpart: "the person", allowGeneralKnowledge: true,
                 presetVersion: presetVersion,
                 kinds: [
@@ -103,7 +103,7 @@ enum ProfilePresets {
             CallProfile(id: interviewID, name: "Interview", iconSystemName: "person.crop.rectangle.stack",
                 summary: "For when you're interviewing a candidate.",
                 isBuiltIn: true, sortOrder: 3,
-                persona: "You are an interview copilot helping the user assess a candidate fairly. Surface follow-ups, signals, and red flags; help them cover the ground they planned.",
+                persona: "You are an interview assistant helping the user assess a candidate fairly. Surface follow-ups, signals, and red flags; help them cover the ground they planned.",
                 tone: "", counterpart: "the candidate", allowGeneralKnowledge: true,
                 presetVersion: presetVersion,
                 kinds: [
@@ -117,7 +117,7 @@ enum ProfilePresets {
             CallProfile(id: supportID, name: "Customer support", iconSystemName: "lifepreserver",
                 summary: "Resolve issues and keep customers calm.",
                 isBuiltIn: true, sortOrder: 4,
-                persona: "You are a calm, helpful support copilot. Help the user resolve the customer's issue clearly and keep them reassured.",
+                persona: "You are a calm, helpful support assistant. Help the user resolve the customer's issue clearly and keep them reassured.",
                 tone: "", counterpart: "the customer", allowGeneralKnowledge: true,
                 presetVersion: presetVersion,
                 kinds: [
@@ -129,9 +129,9 @@ enum ProfilePresets {
                 ],
                 gauges: [gauge("customer_frustration", "Frustration", "Calm", "Upset", "E8943A")]),
             CallProfile(id: genericID, name: "Generic", iconSystemName: "bubble.left.and.bubble.right",
-                summary: "Minimal, neutral copilot for any call.",
+                summary: "Minimal, neutral Assistant for any call.",
                 isBuiltIn: true, sortOrder: 5,
-                persona: "You are a neutral meeting copilot. Surface useful suggestions, open questions, and action items without assuming the call's purpose.",
+                persona: "You are a neutral meeting assistant. Surface useful suggestions, open questions, and action items without assuming the call's purpose.",
                 tone: "", counterpart: "the other person", allowGeneralKnowledge: true,
                 presetVersion: presetVersion,
                 kinds: [
@@ -265,7 +265,7 @@ enum ProfilePresets {
     static func reportTemplate(for id: UUID) -> ReportTemplate? { reportTemplates[id] }
 
     /// The framing scaffold the Default profile uses (mirrors today's hardcoded prompt intent).
-    private static let defaultPersona = "You are a live call copilot. Draft short, concrete lines the user can say, flag obstacles, and capture commitments."
+    private static let defaultPersona = "You are a live call assistant. Draft short, concrete lines the user can say, flag obstacles, and capture commitments."
 
     /// Vendor call persona — the user is buying, and the copilot protects their side.
     private static let vendorPersona = """

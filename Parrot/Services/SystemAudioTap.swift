@@ -16,7 +16,7 @@ import os
 /// AudioCaptureManager).
 @available(macOS 15.0, *)
 final class SystemAudioTap {
-    /// Converted 16 kHz mono buffers, delivered on the tap's IO queue.
+    /// Converted 16 kHz mono buffers, in order, on a serial queue of their own.
     var onBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
@@ -28,10 +28,20 @@ final class SystemAudioTap {
     /// IO callbacks and the format-change listener share this queue, so the
     /// converter/sourceFormat pair is never read while being rebuilt.
     private let queue = DispatchQueue(label: "com.uygar.parrot.audio.tap", qos: .userInteractive)
+    /// onBuffer runs here, not in the IO callback: Core Audio skips whatever
+    /// time the callback overruns, so a consumer stuck on a lock for 50 ms
+    /// lost 50 ms of "Them" (measured with --capture-test, issue #100).
+    private let deliveryQueue = DispatchQueue(label: "com.uygar.parrot.audio.tap.deliver", qos: .userInteractive)
     private var formatListener: AudioObjectPropertyListenerBlock?
     /// Uptime when start() began; the first IO callback logs its delay from
     /// here once, then zeroes it. IO queue only after start() returns.
     private var startedAt: TimeInterval = 0
+    /// Audio Core Audio skipped because a callback ran late, heard as a click
+    /// in "Them". Found from jumps in the input sample time. IO queue; read
+    /// after stop().
+    private(set) var lostSeconds: Double = 0
+    private var lostGaps = 0
+    private var nextSampleTime: Float64 = -1
 
     init(targetFormat: AVAudioFormat) {
         self.targetFormat = targetFormat
@@ -103,8 +113,8 @@ final class SystemAudioTap {
             let aggregateMs = ms(t1)
             let t2 = ProcessInfo.processInfo.systemUptime
 
-            err = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) { [weak self] _, inInputData, _, _, _ in
-                self?.deliver(inInputData)
+            err = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, queue) { [weak self] _, inInputData, inInputTime, _, _ in
+                self?.deliver(inInputData, at: inInputTime.pointee)
             }
             guard err == noErr, ioProcID != nil else {
                 throw TapError.coreAudio(stage: "IO proc", status: err)
@@ -141,6 +151,7 @@ final class SystemAudioTap {
         if let ioProcID, aggregateID != kAudioObjectUnknown {
             AudioDeviceStop(aggregateID, ioProcID)
             AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
+            AudioCaptureManager.oslog.log("system tap stopped: \(self.lostGaps, privacy: .public) gaps, \(self.lostSeconds, format: .fixed(precision: 3), privacy: .public) s of audio skipped")
         }
         ioProcID = nil
         if aggregateID != kAudioObjectUnknown {
@@ -174,8 +185,8 @@ final class SystemAudioTap {
     // MARK: - IO path
 
     /// IO-queue only. Wraps the raw buffer list, resamples to the target
-    /// format, and hands the result to `onBuffer`.
-    private func deliver(_ bufferList: UnsafePointer<AudioBufferList>) {
+    /// format, and hands the result to `onBuffer` on the delivery queue.
+    private func deliver(_ bufferList: UnsafePointer<AudioBufferList>, at time: AudioTimeStamp) {
         if startedAt > 0 {
             let delay = ProcessInfo.processInfo.systemUptime - startedAt
             startedAt = 0
@@ -187,6 +198,18 @@ final class SystemAudioTap {
                 bufferListNoCopy: UnsafeMutablePointer(mutating: bufferList),
                 deallocator: nil),
               source.frameLength > 0 else { return }
+
+        if time.mFlags.contains(.sampleTimeValid) {
+            if nextSampleTime >= 0, time.mSampleTime > nextSampleTime + 1 {
+                lostSeconds += (time.mSampleTime - nextSampleTime) / sourceFormat.sampleRate
+                lostGaps += 1
+                // ponytail: first few, then every 100th, so a bad call can't flood the log.
+                if lostGaps <= 5 || lostGaps % 100 == 0 {
+                    AudioCaptureManager.oslog.log("system tap skipped audio: \(self.lostGaps, privacy: .public) gaps, \(self.lostSeconds, format: .fixed(precision: 3), privacy: .public) s lost so far")
+                }
+            }
+            nextSampleTime = time.mSampleTime + Float64(source.frameLength)
+        }
 
         let capacity = AVAudioFrameCount(
             (Double(source.frameLength) * targetFormat.sampleRate / sourceFormat.sampleRate).rounded(.up)
@@ -207,8 +230,8 @@ final class SystemAudioTap {
             outStatus.pointee = .haveData
             return source
         }
-        guard error == nil, converted.frameLength > 0 else { return }
-        onBuffer?(converted)
+        guard error == nil, converted.frameLength > 0, let onBuffer else { return }
+        deliveryQueue.async { onBuffer(converted) }
     }
 
     // MARK: - Format handling
@@ -246,6 +269,7 @@ final class SystemAudioTap {
            current.sampleRate == asbd.mSampleRate,
            current.channelCount == asbd.mChannelsPerFrame { return }
         try? rebuildConverter(from: asbd)
+        nextSampleTime = -1  // the device clock may restart with the new rate
         AudioCaptureManager.oslog.log("system tap format changed — now \(asbd.mSampleRate, privacy: .public) Hz ×\(asbd.mChannelsPerFrame, privacy: .public)ch")
     }
 

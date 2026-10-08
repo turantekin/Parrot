@@ -88,7 +88,7 @@ howto:
 	@echo 'macOS 14 only: Screen Recording takes effect after a restart — quit and reopen if the row stays red.'
 	@echo
 	@echo 'Then pick a WhisperKit model in onboarding (`base` is a good default; it downloads on'
-	@echo 'first use). Everything runs on-device — cloud engines and the Copilot are opt-in and'
+	@echo 'first use). Everything runs on-device. Cloud engines and the Assistant are opt-in and'
 	@echo 'need your own API keys, set in Settings.'
 	@echo
 	@echo 'Run `make help` for other targets.'

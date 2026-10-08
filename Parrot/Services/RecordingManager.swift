@@ -70,6 +70,9 @@ final class RecordingManager {
     /// cancel the draining loop and share buffers with the old session. Readable
     /// so the live view can show a "Finalizing…" state.
     private(set) var isStopping = false
+    /// Post-call chains still writing a report. Counted before their task
+    /// starts, so the update notice can't slip in between stop and report.
+    private var chainsInFlight = 0
     private var timer: Timer?
     private(set) var modelContext: ModelContext?
 
@@ -138,6 +141,12 @@ final class RecordingManager {
         // recording until the model below is ready.
         callWatcher.recordingManager = self
         callWatcher.start()
+        // Starts Sparkle at launch (not only when Settings opens) and keeps
+        // Restart now away from a call, its report, and imports.
+        AppUpdater.shared.isBusy = { [weak self] in
+            guard let self else { return false }
+            return isRecording || isBusy || chainsInFlight > 0
+        }
         // Catch the memory up with meetings finished before it existed (or
         // changed since): background, low priority, local only.
         Task { await syncMemory() }
@@ -254,6 +263,20 @@ final class RecordingManager {
         markHotKey.register(.markMoment) { [weak self] in
             Task { @MainActor in self?.markMoment() }
         }
+    }
+
+    /// ⌃⌥⇧M mutes your side from any app (#96): Zoom's own mute never reaches
+    /// Parrot. Held only while recording, like Mark's.
+    private let muteHotKey = GlobalHotKey()
+    private var lastMuteToggle = Date.distantPast
+
+    var isMuted: Bool { audioCaptureManager.micMuted }
+
+    func toggleMute() {
+        // With Parrot in front, the global shortcut and the menu's own both fire.
+        guard Date().timeIntervalSince(lastMuteToggle) > 0.3 else { return }
+        lastMuteToggle = Date()
+        audioCaptureManager.setMicMuted(!audioCaptureManager.micMuted)
     }
 
     /// Settings toggled mid-call: take effect now, not next recording.
@@ -455,6 +478,9 @@ final class RecordingManager {
         lastIdleReminderAt = nil
         lastMarked = nil
         registerMarkHotKey()
+        muteHotKey.register(.muteMe) { [weak self] in
+            Task { @MainActor in self?.toggleMute() }
+        }
 
         // Experimental live speaker labels: re-diarize the call-so-far so
         // "Them" bubbles upgrade to stable Speaker N mid-call. Paced by
@@ -502,6 +528,7 @@ final class RecordingManager {
         timer = nil
         NudgePillController.shared.hide()
         markHotKey.unregister()
+        muteHotKey.unregister()
         // A "Still recording?" left in Notification Center is stale once stopped.
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.idleReminderID])
         liveSweepTask?.cancel()
@@ -549,6 +576,7 @@ final class RecordingManager {
             // start (and fill liveAnchors) before this chain reaches diarization.
             let anchors = liveAnchors
             liveAnchors = [:]
+            chainsInFlight += 1
             Task {
                 // A private meeting's report and after-call actions stay on
                 // this Mac; a call recording meanwhile is unaffected.
@@ -561,9 +589,14 @@ final class RecordingManager {
         isRecording = false
         elapsedTime = 0
         recordingStartTime = nil
+        AppUpdater.shared.becameIdle()
     }
 
     private func runPostCallChain(_ meetingRef: Meeting, anchors: [String: [Float]]) async {
+        defer {
+            chainsInFlight -= 1
+            AppUpdater.shared.becameIdle()
+        }
         let polishSeconds = await polishTranscript(meeting: meetingRef)
         await postProcess(meeting: meetingRef, anchors: anchors)
         if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
@@ -634,7 +667,10 @@ final class RecordingManager {
     }
 
     private func runImportWork(meeting: Meeting, audioURL: URL) async {
-        defer { importProgress = nil }
+        defer {
+            importProgress = nil
+            AppUpdater.shared.becameIdle()
+        }
 
         // 1. Whole-file, on-device transcription. Every segment is "Them" (one
         //    mixed track, no mic channel to tag "Me"); diarization splits it below.
@@ -767,19 +803,19 @@ final class RecordingManager {
         // the same sentence then lands twice, "Them" from system audio and
         // "Me" from the mic (and inflates diarization/talk-ratio). The system
         // copy is authoritative for anything both streams heard, so a Me
-        // segment that near-duplicates a Them segment within a beat is echo,
+        // segment that near-duplicates an other-side segment close by is echo,
         // whichever order they decoded in. (Surfaced by the speakers-playback
         // live test 2026-08-01; previously masked by the glossary decode bug.)
-        let bleedWindow: TimeInterval = 2.5
-        let neighbors = meeting.segments.filter { abs($0.startTime - result.startTime) <= bleedWindow }
+        let incoming: BleedLine = (result.startTime, result.endTime, result.text)
         if result.source == .me,
-           neighbors.contains(where: { $0.speakerLabel == AudioSource.them.label
-               && Self.isEchoDuplicate($0.text, result.text) }) {
+           meeting.segments.contains(where: {
+               Self.isBleed(me: incoming, other: ($0.startTime, $0.endTime, $0.text), otherLabel: $0.speakerLabel) }) {
             return
         }
         if result.source == .them {
-            for stored in neighbors where stored.speakerLabel == AudioSource.me.label
-                && Self.isEchoDuplicate(stored.text, result.text) {
+            for stored in meeting.segments where stored.speakerLabel == AudioSource.me.label
+                && Self.isBleed(me: (stored.startTime, stored.endTime, stored.text), other: incoming,
+                                otherLabel: result.source.label) {
                 modelContext.delete(stored)
             }
         }
@@ -797,29 +833,94 @@ final class RecordingManager {
         try? modelContext.save()
     }
 
+    typealias BleedLine = (start: TimeInterval, end: TimeInterval, text: String)
+
+    /// A Me line that near-duplicates an other-side line close by is bleed.
+    /// The other side is anything but Me: from 45 s in, live sweeps relabel
+    /// "Them" to "Speaker N", so matching on "Them" let late echoes through.
+    /// Close by: both start within 2.5 s, or the mic decoded only a piece of a
+    /// longer line, so the Me line sits inside it. That needs 3+ words: short
+    /// replies ("Okay", "Tabii") are what people say while the other side
+    /// talks. A plain overlap test, without these limits, dropped real Me
+    /// lines on the owner's store (a long Me line around a short "Okay. So").
+    nonisolated static func isBleed(me: BleedLine, other: BleedLine, otherLabel: String?) -> Bool {
+        guard otherLabel != AudioSource.me.label else { return false }
+        let startsTogether = abs(me.start - other.start) <= 2.5
+        let inside = me.start >= other.start - 0.5 && me.end <= other.end + 0.5
+        guard startsTogether || inside, isEchoDuplicate(other.text, me.text) else { return false }
+        return startsTogether || echoTokens(me.text).count >= 3
+    }
+
     /// Near-verbatim match for the echo-dedup above: Whisper decodes the bleed
     /// with small variances ("I am" vs "I'm"), so exact equality is too strict.
     /// High token overlap + the tight time window keeps a human genuinely
     /// echoing the other side (rare inside 2.5s) from being eaten.
     nonisolated static func isEchoDuplicate(_ a: String, _ b: String) -> Bool {
-        func tokens(_ s: String) -> Set<String> {
-            Set(s.lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter { $0.count > 1 })
-        }
-        let ta = tokens(a), tb = tokens(b)
+        let ta = echoTokens(a), tb = echoTokens(b)
         guard !ta.isEmpty, !tb.isEmpty else { return false }
-        return Double(ta.intersection(tb).count) / Double(min(ta.count, tb.count)) >= 0.8
+        let (small, big) = ta.count <= tb.count ? (ta, tb) : (tb, ta)
+        let exact = small.intersection(big).count
+        // Misheard words only help a long line that's already mostly the same
+        // words. Short replies reuse the other side's words with a new ending
+        // ("görüyor musun?" "Görüyorum."), and counting those deleted real
+        // answers when replayed over the owner's store.
+        let misheard = small.count >= 4 && Double(exact) / Double(small.count) >= 0.6
+            ? small.subtracting(big).filter { word in big.contains { isEchoWord(word, $0) } }.count
+            : 0
+        return Double(exact + misheard) / Double(small.count) >= 0.8
+    }
+
+    /// Whether two words are the same word heard twice. The echo canceller
+    /// leaves a muffled copy, so the decoder mishears letters, not meaning:
+    /// "wörtlich" comes back as "wirklich", "ausdrucken" as "ausgucken".
+    nonisolated static func isEchoWord(_ a: String, _ b: String) -> Bool {
+        // Short words differ in meaning, not hearing: das/was, ist/isst, kann/dann.
+        guard a.count >= 5, b.count >= 5 else { return false }
+        // Letters added + removed (a swap counts 2), against both lengths:
+        // wörtlich/wirklich 4 of 16, ausdrucken/ausgucken 3 of 19.
+        return Double(Array(a).difference(from: Array(b)).count) <= Double(a.count + b.count) / 4
+    }
+
+    private nonisolated static func echoTokens(_ s: String) -> Set<String> {
+        Set(s.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 1 })
     }
 
     // MARK: - Post-Call Summary
 
+    /// The Report tab's Write report (#107): the report for a saved meeting
+    /// that has none, because the Assistant was off or its AI failed then.
+    /// Explicit, so it runs even with the Assistant off; private meetings stay
+    /// on this Mac, as the follow-up email does.
+    func writeReport(_ meeting: Meeting) async throws {
+        guard !meeting.segments.isEmpty else {
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "This meeting has no transcript."])
+        }
+        guard callAnalysisEngine.provider.isConfigured else {
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "Set up the Assistant's AI in Settings first."])
+        }
+        // Restart now waits for it, like the report after a call.
+        chainsInFlight += 1
+        defer {
+            chainsInFlight -= 1
+            AppUpdater.shared.becameIdle()
+        }
+        let error = await CloudGate.$scopeLocal.withValue(!CloudGate.mayLeaveMac(meeting) || CloudGate.forcesLocal) {
+            await generateSummary(meeting: meeting, includeCoaching: meeting.importedAt == nil)
+        }
+        if meeting.summary == nil, meeting.coaching == nil, let error { throw error }
+    }
+
     /// `includeCoaching` is false for imported files: a single mixed track has no
     /// "Me" channel, so talk-ratio/coaching would be measured against 0% and read
     /// as broken. The summary itself works fine from any transcript.
-    private func generateSummary(meeting: Meeting, includeCoaching: Bool = true) async {
+    /// Best-effort; returns the first failure for Write report to show.
+    @discardableResult
+    private func generateSummary(meeting: Meeting, includeCoaching: Bool = true) async -> Error? {
         let segments = meeting.sortedSegments
-        guard !segments.isEmpty else { return }
+        guard !segments.isEmpty else { return nil }
+        var firstError: Error?
 
         let transcript = meeting.promptTranscript
         let insightTitles = meeting.sortedInsights.map { "\($0.style.label): \($0.title)" }
@@ -843,12 +944,14 @@ final class RecordingManager {
             try? modelContext?.save()
         } catch {
             // Best-effort: the transcript and insights are already saved.
+            firstError = error
         }
 
         // A template can turn coaching off: one call fewer, faster and cheaper.
-        guard includeCoaching, template.coachingEnabled else { return }
+        guard includeCoaching, template.coachingEnabled else { return firstError }
 
-        // Coaching + follow-ups report, with the user's real talk balance.
+        // Coaching + follow-ups report, with the user's real talk balance
+        // (seconds of speech, the same number the live gauge and timeline show).
         let talkPercentMe = meeting.talkPercentMe ?? 0
         do {
             let coaching = try await callAnalysisEngine.provider.coachingReport(
@@ -862,7 +965,9 @@ final class RecordingManager {
             try? modelContext?.save()
         } catch {
             // Best-effort.
+            firstError = firstError ?? error
         }
+        return firstError
     }
 
     // MARK: - Post-call polish

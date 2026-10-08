@@ -38,6 +38,8 @@ final class AudioCaptureManager: NSObject {
     /// The live SystemAudioTap on macOS 15+. Typed AnyObject because
     /// @available(macOS 15) types can't be stored properties at target 14.
     private var processTap: AnyObject?
+    /// System audio the tap skipped in the last recording (late callbacks).
+    @ObservationIgnored private(set) var systemLostSeconds: Double = 0
     /// True once the tap delivered any nonzero sample this recording. An
     /// unauthorized tap "works" but produces exact zeros forever (measured, no
     /// error/status API exists), so first real audio is the only proof of the
@@ -178,7 +180,7 @@ final class AudioCaptureManager: NSObject {
     /// rather than recent silence, because in a call the user is routinely silent for
     /// far longer than a few seconds while the other side is speaking.
     var micSeemsDead: Bool {
-        isCapturing && micActive && !micEverHadSignal && micPeakLevel < 0.0008
+        isCapturing && micActive && !micMuted && !micEverHadSignal && micPeakLevel < 0.0008
             && Date().timeIntervalSince(lastMicSignalAt) > 15
     }
 
@@ -191,8 +193,25 @@ final class AudioCaptureManager: NSObject {
     /// `micEverHadSignal` and clears the hint for the session; mutually
     /// exclusive with `micSeemsDead` via the same peak split.
     var micVeryQuiet: Bool {
-        isCapturing && micActive && !micEverHadSignal && micPeakLevel >= 0.0008
+        isCapturing && micActive && !micMuted && !micEverHadSignal && micPeakLevel >= 0.0008
             && Date().timeIntervalSince(lastMicSignalAt) > 15
+    }
+
+    /// "Mute me" (#96): Zoom's mute never reaches Parrot, which opens the mic
+    /// itself. The mic keeps running, so the echo canceller and the recording
+    /// clock stay in step, but your side records silence. Set on main, read on
+    /// the mic tap thread, like `isCapturing`.
+    private(set) var micMuted = false
+
+    func setMicMuted(_ muted: Bool) {
+        micMuted = muted
+        if !muted { lastMicSignalAt = Date() }  // a fresh 15 s before "not hearing you"
+    }
+
+    /// Silence of the same length while muted. After the watchdog, which reads
+    /// the raw mic: zeros there would look like another app grabbing it.
+    static func micOut(_ cleaned: [Float], muted: Bool) -> [Float] {
+        muted ? [Float](repeating: 0, count: cleaned.count) : cleaned
     }
 
     /// Called with PCM audio buffers suitable for WhisperKit, tagged with which
@@ -270,6 +289,7 @@ final class AudioCaptureManager: NSObject {
         }
 
         lastMicSignalAt = Date()  // capture start; the "dead mic" warning waits on this
+        micMuted = false
         micEverHadSignal = false
         micPeakLevel = 0
         echoCancellerStarved = false
@@ -288,6 +308,7 @@ final class AudioCaptureManager: NSObject {
         micActive = false
         micEverHadSignal = false
         micSignalLost = false
+        micMuted = false
         audioLevel = 0
         micLevel = 0
         micPeakLevel = 0
@@ -296,6 +317,7 @@ final class AudioCaptureManager: NSObject {
         // Stop system audio stream (whichever backend is live)
         if #available(macOS 15.0, *), let tap = processTap as? SystemAudioTap {
             tap.stop()
+            systemLostSeconds = tap.lostSeconds
         }
         processTap = nil
         if let stream {
@@ -561,7 +583,8 @@ final class AudioCaptureManager: NSObject {
                 // empty/quiet frames, but only the OS produces exact zeros.
                 let verdict = self.micWatchdog.observe(meanAbs: Self.meanAbs(micFloats), at: Date())
                 if verdict != .ok { self.handleMicWatchdog(verdict) }
-                let cleaned = self.echoCanceller?.process(mic: micFloats) ?? micFloats
+                let cleaned = Self.micOut(self.echoCanceller?.process(mic: micFloats) ?? micFloats,
+                                          muted: self.micMuted)
                 if Self.audioDebugEnabled {
                     self.dbgMic.add(
                         raw: Self.meanAbs(micFloats),

@@ -206,7 +206,7 @@ struct AIAppsPageView: View {
                 SettingsToggleRow(title: "Transcripts", detail: "Every line, with speaker names.", first: true, isOn: $transcripts)
                 SettingsToggleRow(title: "Reports", detail: "Summary, next steps and coaching.", isOn: $reports)
                 SettingsToggleRow(title: "My notes", isOn: $notes)
-                SettingsToggleRow(title: "Copilot cards", detail: "What Copilot showed during the call.", isOn: $cards)
+                SettingsToggleRow(title: "Assistant cards", detail: "What the Assistant showed during the call.", isOn: $cards)
                 SettingsLabeledRow(title: "Hide these call types", detail: excludedSummary) {
                     Menu("Choose") {
                         ForEach(profiles) { p in

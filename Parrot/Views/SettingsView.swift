@@ -15,7 +15,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .recording: "Recording"
         case .transcription: "Transcription"
-        case .copilot: "Copilot"
+        case .copilot: "Assistant"
         case .apiKeys: "API Keys"
         case .knowledge: "Knowledge"
         case .profiles: "Profiles"
@@ -85,8 +85,6 @@ struct SettingsView: View {
     @AppStorage("liveSpeakerLabels") private var liveSpeakerLabels = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \SpeakerProfile.name) private var voiceProfiles: [SpeakerProfile]
-    @Query(sort: \CallProfile.sortOrder) private var allProfiles: [CallProfile]
-    @State private var showFileImporter = false
     /// There's no Save button — @AppStorage persists on every change. This
     /// drives a small transient "Saved" chip so that's visible, debounced so
     /// typing in a field shows one toast when the user pauses, not per key.
@@ -177,7 +175,7 @@ struct SettingsView: View {
                 case .transcription: transcriptionPage
                 case .copilot: copilotPage
                 case .apiKeys: apiKeysPage
-                case .knowledge: knowledgePage
+                case .knowledge: KnowledgeSettingsView()
                 case .profiles: ProfilesSettingsView()
                 case .connections: ConnectionsSettingsPage()
                 case .privacy: PrivacySettingsPage()
@@ -272,7 +270,7 @@ struct SettingsView: View {
                 SettingsLabeledRow(title: "User guide", detail: "Every screen explained, with setup and troubleshooting.") {
                     Button("Open User Guide") { NSApp.showHelp(nil) }
                 }
-                SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions, Copilot and speech model.") {
+                SettingsLabeledRow(title: "Welcome tour", detail: "The first-run tour: permissions, the Assistant and speech model.") {
                     Button("Show Welcome Tour") {
                         MeetingActions.showWelcomeTour()
                         // The tour is a sheet on the main window; get out of its way.
@@ -512,15 +510,15 @@ struct SettingsView: View {
     private var copilotPage: some View {
         let liveKind = CopilotProviderKind(rawValue: copilotProvider) ?? .claude
         return SettingsPage {
-            SettingsCard(title: "Live Call Copilot") {
+            SettingsCard(title: "Live Call Assistant") {
                 SettingsToggleRow(
-                    title: "Enable Copilot during recordings",
+                    title: "Enable the Assistant during recordings",
                     detail: "Suggests answers, flags blockers, and captures action items live. No button needed.",
                     first: true,
                     isOn: $copilotEnabled
                 )
-                SettingsLabeledRow(title: "Guided setup", detail: "Pick Private, Balanced or Cloud and get Copilot running.") {
-                    Button("Set up Copilot") {
+                SettingsLabeledRow(title: "Guided setup", detail: "Pick Private, Balanced or Cloud and get the Assistant running.") {
+                    Button("Set up the Assistant") {
                         MeetingActions.showCopilotSetup()
                         if !isEmbedded { NSApp.keyWindow?.performClose(nil) }
                     }
@@ -533,7 +531,7 @@ struct SettingsView: View {
             SettingsCard(title: "Live Nudges") {
                 SettingsToggleRow(
                     title: "Show live nudges",
-                    detail: "Short tips during a call, like when they've gone quiet after something you said. Works without Copilot too.",
+                    detail: "Short tips during a call, like when they've gone quiet after something you said. Works without the Assistant too.",
                     first: true,
                     isOn: $liveNudges
                 )
@@ -544,7 +542,7 @@ struct SettingsView: View {
             // live, mid-call. Fast + Standard = the original behavior.
             SettingsCard(title: "Pace") {
                 SettingsBlockRow(
-                    title: "How often Copilot asks the model",
+                    title: "How often the Assistant asks the model",
                     detail: (CopilotPace(rawValue: copilotPace) ?? .fast).caption,
                     first: true
                 ) {
@@ -558,7 +556,7 @@ struct SettingsView: View {
                 }
                 SettingsLabeledRow(
                     title: "Conversation sent per request",
-                    detail: "Only recent talk is sent. Insight cards always go along, so Copilot still remembers the whole call. Smaller is cheaper and faster, especially on free or local models."
+                    detail: "Only recent talk is sent. Insight cards always go along, so the Assistant still remembers the whole call. Smaller is cheaper and faster, especially on free or local models."
                 ) {
                     Picker("", selection: $copilotWindow) {
                         ForEach(CopilotWindow.allCases) { window in
@@ -671,13 +669,13 @@ struct SettingsView: View {
             }
         case .custom:
             SettingsLabeledRow(title: "Server URL") {
-                TextField("", text: $copilotCustomBaseURL, prompt: Text("https://api.openai.com/v1"))
+                TextField("", text: $copilotCustomBaseURL, prompt: Text("https://openrouter.ai/api/v1"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 280)
             }
             SettingsLabeledRow(title: "Model") {
-                TextField("", text: $copilotCustomModel, prompt: Text("gpt-5-mini"))
+                TextField("", text: $copilotCustomModel, prompt: Text("google/gemini-2.5-flash"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
@@ -687,7 +685,7 @@ struct SettingsView: View {
                     label: "API key",
                     account: "custom-llm-api-key",
                     placeholder: "optional — not needed for local servers",
-                    hint: "Any OpenAI-compatible server: OpenAI, Gemini, Groq, OpenRouter, LM Studio… Costs aren't estimated for custom servers."
+                    hint: "Any service that speaks the OpenAI API: OpenRouter, OpenAI, Gemini, Groq, LM Studio… Costs aren't estimated for these."
                 )
             }
         }
@@ -720,7 +718,7 @@ struct SettingsView: View {
 
     private var apiKeysPage: some View {
         SettingsPage {
-            SettingsCard(title: "Claude", blurb: "Powers the copilot. Only transcript text is sent; audio never leaves your Mac.") {
+            SettingsCard(title: "Claude", blurb: "Powers the Assistant. Only transcript text is sent; audio never leaves your Mac.") {
                 SettingsRow(first: true) {
                     ProviderKeyField(
                         label: "Claude API key",
@@ -765,61 +763,6 @@ struct SettingsView: View {
             }
 
             Hint("All keys are stored in your macOS keychain, never in the app's files.")
-        }
-    }
-
-    // MARK: - Knowledge
-
-    private var knowledgePage: some View {
-        let kb = recordingManager.knowledgeBase
-        return SettingsPage {
-            SettingsCard(
-                title: "Documents",
-                blurb: "The copilot grounds its answers in these and cites the source. Indexed on this Mac, never uploaded."
-            ) {
-                if kb.documents.isEmpty {
-                    SettingsRow(first: true) {
-                        Text("No documents yet. Add a pricing sheet or an FAQ and the copilot can quote it.")
-                            .font(Theme.Typography.secondary)
-                            .foregroundStyle(Theme.Colors.ink3)
-                    }
-                }
-                ForEach(Array(kb.documents.enumerated()), id: \.element.id) { index, document in
-                    SettingsRow(first: index == 0) {
-                        KBDocumentRow(document: document, knowledgeBase: kb, profiles: allProfiles)
-                    }
-                }
-                SettingsRow {
-                    HStack(spacing: 10) {
-                        Button("Add Documents…") {
-                            showFileImporter = true
-                        }
-                        if kb.isIndexing {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Embedding on this Mac…")
-                                .font(Theme.Typography.secondary)
-                                .foregroundStyle(Theme.Colors.ink2)
-                        }
-                        if let error = kb.lastError {
-                            Label(error, systemImage: "exclamationmark.triangle")
-                                .font(Theme.Typography.secondary)
-                                .foregroundStyle(Theme.Colors.warn)
-                        }
-                    }
-                }
-            }
-        }
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.pdf, .plainText, .text],
-            allowsMultipleSelection: true
-        ) { result in
-            if case .success(let urls) = result {
-                Task {
-                    await recordingManager.knowledgeBase.addDocuments(at: urls)
-                }
-            }
         }
     }
 }
@@ -897,101 +840,6 @@ struct Hint: View {
             .font(Theme.Typography.secondary)
             .foregroundStyle(Theme.Colors.ink2)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-// MARK: - Knowledge Base Document Row
-
-struct KBDocumentRow: View {
-    let document: KBDocument
-    let knowledgeBase: KnowledgeBaseService
-    /// Every call profile, so the row can show and toggle which ones use this document.
-    let profiles: [CallProfile]
-
-    @State private var note: String
-    /// Removal asks first: a document is work the user prepared, and the
-    /// trash icon sits next to a text field they click into all the time.
-    @State private var confirmingRemove = false
-
-    init(document: KBDocument, knowledgeBase: KnowledgeBaseService, profiles: [CallProfile]) {
-        self.document = document
-        self.knowledgeBase = knowledgeBase
-        self.profiles = profiles
-        _note = State(initialValue: document.note)
-    }
-
-    private var isPDF: Bool { document.name.lowercased().hasSuffix(".pdf") }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: isPDF ? "doc.richtext" : "doc.text")
-                    .foregroundStyle(Theme.Colors.accent)
-                    .padding(.top, 1)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(document.name)
-                        .font(Theme.Typography.sans(13, .medium))
-                        .lineLimit(1)
-                    TextField(
-                        "When should the copilot use this? e.g. \"use for pricing questions\"",
-                        text: $note
-                    )
-                    .textFieldStyle(.plain)
-                    .font(Theme.Typography.secondary)
-                    .foregroundStyle(Theme.Colors.ink2)
-                    .onSubmit {
-                        knowledgeBase.updateNote(note, for: document)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                Text("\(document.chunkCount) chunks · on-device")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink3)
-                    .monospacedDigit()
-                    .lineLimit(1)
-
-                Button {
-                    confirmingRemove = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(Theme.Typography.caption)
-                        .foregroundStyle(Theme.Colors.ink3)
-                }
-                .buttonStyle(.plain)
-                .help("Remove from knowledge base")
-                .confirmationDialog("Remove \(document.name)?", isPresented: $confirmingRemove) {
-                    Button("Remove", role: .destructive) { knowledgeBase.removeDocument(document) }
-                } message: {
-                    Text("The copilot stops using it right away. You can add the file again any time.")
-                }
-            }
-
-            // Which profiles may quote it. Same data Profiles → documents edits.
-            FlowLayout(spacing: 6) {
-                Text("Use for")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.ink3)
-                    .padding(.vertical, 4)
-                ForEach(profiles) { profile in
-                    Button {
-                        toggle(profile)
-                    } label: {
-                        TagChip(label: profile.name, on: document.profileIDs.contains(profile.id))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.leading, 24)
-        }
-    }
-
-    private func toggle(_ profile: CallProfile) {
-        var ids = document.profileIDs
-        if ids.contains(profile.id) { ids.remove(profile.id) } else { ids.insert(profile.id) }
-        knowledgeBase.setProfiles(ids, for: document)
     }
 }
 

@@ -37,7 +37,7 @@ struct DocumentsInPlayRow: View {
                     .help("Add documents, or tag them into this profile, in Settings → Knowledge")
             }
             if names.isEmpty {
-                Text("None yet. Add a pricing sheet or an FAQ and the copilot can quote it.")
+                Text("None yet. Add a pricing sheet or an FAQ and the Assistant can quote it.")
                     .font(Theme.Typography.secondary)
                     .foregroundStyle(Theme.Colors.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -102,7 +102,7 @@ struct LiveBriefCard: View {
 
             if expanded {
                 Text(engine.callBrief.isEmpty
-                    ? "No brief for this call. Next time, type a line on the dashboard before you hit record, so the copilot knows who you're talking to."
+                    ? "No brief for this call. Next time, type a line on the dashboard before you hit record, so the Assistant knows who you're talking to."
                     : engine.callBrief)
                     .font(Theme.Typography.body)
                     .foregroundStyle(engine.callBrief.isEmpty ? Theme.Colors.ink3 : Theme.Colors.ink)

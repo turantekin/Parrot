@@ -82,7 +82,7 @@ enum ExportService {
         }
 
         if parts.contains(.cards), !meeting.insights.isEmpty {
-            output += "\n=== Copilot Insights ===\n\n"
+            output += "\n=== Assistant Insights ===\n\n"
             for insight in meeting.sortedInsights {
                 let style = KindResolver.style(forKey: insight.kindRaw, profile: meeting.profile, snapshot: meeting.snapshotKinds)
                 var line = "[\(insight.formattedCallTime)] \(style.label): \(insight.title)"

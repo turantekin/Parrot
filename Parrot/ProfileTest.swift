@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import Security
+import WhisperKit
 
 /// Offscreen logic harness. Run: `.build/debug/Parrot --profile-test`
 /// Prints PASS/FAIL per check and exits non-zero on any failure.
@@ -34,6 +35,8 @@ enum ProfileTest {
         testPermissionFlow()
         testMicWatchdog()
         testCaptureClock()
+        testEchoGate()
+        testMuteMe()
         testModelFolderMatch()
         testBugReport()
         testSegmenter()
@@ -53,6 +56,7 @@ enum ProfileTest {
         testSpeakerNames()
         testVoiceProfiles()
         testTranscriptTruncate()
+        testPlaybackMix()
         testReceiptStamps()
         testReceiptIndex()
         testReportReceipts()
@@ -94,6 +98,7 @@ enum ProfileTest {
         testAskDeepTestFixes()
         testAskReviewFixes()
         testAskRouting()
+        testWriteReport()
         testOnboardingFlow()
         testCopilotSetupState()
         testProviderKeyCheck()
@@ -124,8 +129,367 @@ enum ProfileTest {
         testParakeetDoubt()
         testRewindRange()
         testImportRoute()
+        testNudgeModels()
+        testNudgeRules()
+        testToneTimeline()
+        testTalkSeconds()
+        testNudgeCopilotRules()
+        testNudgeLimiter()
+        testCopilotFlags()
+        testNudgeSession()
+        testNudgeReplay()
+        testKnowledgeModel()
+        testKnowledgeService()
+        testKnowledgeStoreUpgrade()
+        testKnowledgeList()
+        testSidebarSearch()
+        testTranscriptClick()
+        testWhatsNew()
+        testUpdateNotice()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    @MainActor
+    static func testUpdateNotice() {
+        check("update notice: the title", UpdateNotice.title(version: "0.28.0") == "Parrot 0.28.0 is perched and ready")
+        check("update notice: posts when free", UpdateNotice.onReady(version: "0.28.0", alreadyPosted: nil, busy: false) == .post)
+        check("update notice: waits during a call", UpdateNotice.onReady(version: "0.28.0", alreadyPosted: nil, busy: true) == .hold)
+        check("update notice: once per version", UpdateNotice.onReady(version: "0.28.0", alreadyPosted: "0.28.0", busy: false) == .skip)
+
+        var recording = true
+        var installed = 0
+        let updater = AppUpdater(startSparkle: false)
+        updater.isBusy = { recording }
+        updater.updateReady(version: "0.28.0") { installed += 1 }
+        check("update notice: held while recording, posted when it stops", updater.postedVersion == nil)
+        updater.restartNow()
+        check("update notice: restart refused while recording",
+              installed == 0 && updater.lastNoticeBody == UpdateNotice.busyBody)
+        // The call has stopped but its report is still being written: still busy.
+        updater.becameIdle()
+        check("update notice: no notice while the call is still being processed", updater.postedVersion == nil)
+        recording = false
+        updater.becameIdle()
+        check("update notice: held notice goes out when the call stops", updater.postedVersion == "0.28.0")
+        updater.restartNow()
+        check("update notice: restart installs when free", installed == 1)
+
+        // Told, then a call starts and Restart now is refused: the offer comes
+        // back once the call and its report are done.
+        var busy = false
+        let again = AppUpdater(startSparkle: false)
+        again.isBusy = { busy }
+        again.updateReady(version: "0.28.1") {}
+        busy = true
+        again.restartNow()
+        busy = false
+        again.becameIdle()
+        check("update notice: a refused restart is offered again after the call",
+              again.postedVersion == "0.28.1" && again.lastNoticeBody == UpdateNotice.body)
+    }
+
+    static func testWhatsNew() {
+        let news = WhatsNew(version: "0.28.0", headline: "Fresh feathers! Parrot 0.28.0",
+                            highlights: ["Folders for your documents.", "Calls stay smooth on long days."])
+        let quiet = WhatsNew(version: "0.28.0", headline: "", highlights: [])
+        check("whats new: shows after an update", WhatsNew.shouldShowCard(running: "0.28.0", news: news, seen: "0.27.0", onboarded: true))
+        check("whats new: the first release with the card shows it too", WhatsNew.shouldShowCard(running: "0.28.0", news: news, seen: "", onboarded: true))
+        check("whats new: not twice", !WhatsNew.shouldShowCard(running: "0.28.0", news: news, seen: "0.28.0", onboarded: true))
+        check("whats new: never for another version", !WhatsNew.shouldShowCard(running: "0.28.1", news: news, seen: "", onboarded: true))
+        check("whats new: a quiet release shows nothing", !WhatsNew.shouldShowCard(running: "0.28.0", news: quiet, seen: "", onboarded: true))
+        check("whats new: never before onboarding ends", !WhatsNew.shouldShowCard(running: "0.28.0", news: news, seen: "", onboarded: false))
+        check("whats new: a fresh install is marked seen before onboarding ends",
+              WhatsNew.seenAfterLaunch(running: "0.28.0", seen: "", onboarded: false) == "0.28.0"
+                && WhatsNew.seenAfterLaunch(running: "0.28.0", seen: "0.27.0", onboarded: true) == "0.27.0")
+
+        check("whats new: links the changelog entry", news.changelogURL.absoluteString == "https://openparrot.app/changelog#v0.28.0")
+        let html = news.html()
+        check("whats new: html has the headline, list and link",
+              html.contains("<h3>Fresh feathers! Parrot 0.28.0</h3>") && html.contains("<li>Folders for your documents.</li>")
+                && html.contains("href=\"https://openparrot.app/changelog#v0.28.0\">Read the full story</a>"))
+        check("whats new: html is a fragment Sparkle embeds", !html.lowercased().contains("<body") && !html.lowercased().contains("doctype"))
+        check("whats new: html escapes text",
+              WhatsNew(version: "1", headline: "A & B", highlights: ["<b>x</b>", "\"y\""]).html().contains("A &amp; B")
+                && WhatsNew(version: "1", headline: "A", highlights: ["<b>x</b>", "\"y\""]).html().contains("&lt;b&gt;x&lt;/b&gt;"))
+        check("whats new: a quiet release has no html", quiet.html().isEmpty)
+
+        check("whats new: good copy passes", news.copyProblems.isEmpty && quiet.copyProblems.isEmpty)
+        check("whats new: copy rules catch em-dashes, counts and length",
+              !WhatsNew(version: "1", headline: "A — B", highlights: ["x", "y"]).copyProblems.isEmpty
+                && !WhatsNew(version: "1", headline: "A", highlights: ["only one"]).copyProblems.isEmpty
+                && !WhatsNew(version: "1", headline: "A", highlights: ["a", "b", "c", "d", "e"]).copyProblems.isEmpty
+                && !WhatsNew(version: "1", headline: "A", highlights: [String(repeating: "x", count: 91), "b"]).copyProblems.isEmpty
+                && !WhatsNew(version: "1", headline: "", highlights: ["a", "b"]).copyProblems.isEmpty)
+        check("whats new: the shipped entry follows the rules", WhatsNew.current.copyProblems.isEmpty && WhatsNew.sample.copyProblems.isEmpty)
+
+        check("whats new: html refuses another version", WhatsNew.printHTML(for: "0.27.9", news: news) == 1)
+        check("whats new: html refuses broken copy",
+              WhatsNew.printHTML(for: "1", news: WhatsNew(version: "1", headline: "A", highlights: ["one"])) == 1)
+        check("whats new: html for the right version", WhatsNew.printHTML(for: "0.28.0", news: quiet) == 0)
+    }
+
+    static func testKnowledgeModel() {
+        let sales = UUID(), vendor = UUID()
+        check("kb: all allows any call type", KBScope.all.allows(sales) && KBScope.all.allows(nil))
+        check("kb: off allows nothing", !KBScope.off.allows(sales) && !KBScope.off.allows(nil))
+        check("kb: only allows its types", KBScope.only([sales]).allows(sales) && !KBScope.only([sales]).allows(vendor))
+        check("kb: no call type means everything not off", KBScope.only([sales]).allows(nil))
+        check("kb: a deleted call type matches no live call", !KBScope.only([UUID()]).allows(sales))
+        // From "All call types" no single type shows ticked, so picking one
+        // means "just this one" (narrowing a folder), never "all but this".
+        check("kb: picking a type from all gives just that type", KBScope.all.toggling(sales) == .only([sales]))
+        check("kb: ticking from off", KBScope.off.toggling(sales) == .only([sales]))
+        check("kb: unticking the last type is off", KBScope.only([sales]).toggling(sales) == .off)
+        check("kb: adding copies into sets that have the source", KBScope.only([sales]).adding(vendor, whereHas: sales) == .only([sales, vendor]))
+        check("kb: adding leaves other scopes alone",
+              KBScope.all.adding(vendor, whereHas: sales) == .all && KBScope.only([vendor]).adding(sales, whereHas: UUID()) == .only([vendor]))
+
+        let deal = KBFolder(name: "Acme deal", scope: .only([sales]))
+        let paused = KBFolder(name: "Old deals", scope: .off)
+        let inherits = KBDocument(name: "pricing.md", chunkCount: 1, addedAt: .now, folderID: deal.id)
+        let own = KBDocument(name: "nda.md", chunkCount: 1, addedAt: .now, folderID: paused.id, scope: .only([vendor]))
+        let loose = KBDocument(name: "faq.md", chunkCount: 1, addedAt: .now)
+        check("kb: same as folder takes the folder's", inherits.effectiveScope(in: [deal, paused]) == .only([sales]))
+        check("kb: own Use for beats an off folder", own.effectiveScope(in: [deal, paused]) == .only([vendor]))
+        check("kb: no folder is all call types", loose.effectiveScope(in: [deal]) == .all)
+        check("kb: a missing folder falls back to all", inherits.effectiveScope(in: []) == .all)
+
+        let tagged = KBDocument(name: "a.md", chunkCount: 1, addedAt: .now, profileIDs: [sales]).migrated()
+        let untagged = KBDocument(name: "b.md", chunkCount: 1, addedAt: .now).migrated()
+        check("kb: upgrade keeps tags as own Use for", tagged.scope == .only([sales]) && tagged.folderID == nil && tagged.profileIDs.isEmpty)
+        check("kb: upgrade turns no tags into off", untagged.scope == .off)
+
+        check("kb: display name hides the extension",
+              KBDocument(name: "05 - Service agreement.md", chunkCount: 1, addedAt: .now).displayName == "05 - Service agreement")
+        check("kb: display name keeps an unknown extension",
+              KBDocument(name: "notes v1.2", chunkCount: 1, addedAt: .now).displayName == "notes v1.2")
+
+        // Round trip: a No-folder, Same-as-folder document writes neither key
+        // and must come back as nil/nil (the per-document legacy trap).
+        let back = (try? JSONEncoder().encode(loose)).flatMap { try? JSONDecoder().decode(KBDocument.self, from: $0) }
+        check("kb: nil folder and scope survive a round trip", back != nil && back?.folderID == nil && back?.scope == nil)
+        let ownBack = (try? JSONEncoder().encode(own)).flatMap { try? JSONDecoder().decode(KBDocument.self, from: $0) }
+        check("kb: own scope survives a round trip", ownBack?.scope == .only([vendor]) && ownBack?.folderID == paused.id)
+    }
+
+    @MainActor
+    static func testKnowledgeService() {
+        let kb = KnowledgeBaseService(persistent: false)
+        let sales = UUID(), vendor = UUID()
+        let deal = KBFolder(name: "Acme deal", scope: .only([sales]))
+        let paused = KBFolder(name: "Old deals", scope: .off)
+        let inDeal = KBDocument(name: "pricing.md", chunkCount: 1, addedAt: .now, folderID: deal.id)
+        let ownInDeal = KBDocument(name: "nda.md", chunkCount: 1, addedAt: .now, folderID: deal.id, scope: .only([vendor]))
+        let inPaused = KBDocument(name: "old-plan.md", chunkCount: 1, addedAt: .now, folderID: paused.id)
+        let loose = KBDocument(name: "faq.md", chunkCount: 1, addedAt: .now)
+        kb.seedForSnapshot(documents: [inDeal, ownInDeal, inPaused, loose], folders: [deal, paused])
+
+        check("kb: in play follows the folder", Set(kb.documentsInPlay(for: sales)) == ["pricing.md", "faq.md"])
+        check("kb: own Use for wins", Set(kb.documentsInPlay(for: vendor)) == ["nda.md", "faq.md"])
+        check("kb: no call type skips only off", Set(kb.documentsInPlay(for: nil)) == ["pricing.md", "nda.md", "faq.md"])
+        check("kb: documents in a folder, by name", kb.documents(in: deal.id).map(\.name) == ["nda.md", "pricing.md"])
+
+        kb.move(inDeal, to: paused.id)
+        check("kb: a moved document follows its new folder", !kb.documentsInPlay(for: sales).contains("pricing.md"))
+        kb.move(ownInDeal, to: nil)
+        check("kb: a moved document keeps its own Use for",
+              kb.documentsInPlay(for: vendor).contains("nda.md") && !kb.documentsInPlay(for: sales).contains("nda.md"))
+
+        kb.deleteFolder(paused)
+        let oldPlan = kb.documents.first { $0.name == "old-plan.md" }
+        check("kb: deleting an off folder keeps its documents off",
+              oldPlan?.folderID == nil && oldPlan?.scope == .off && !kb.documentsInPlay(for: nil).contains("old-plan.md"))
+        check("kb: deleting a folder never deletes documents", kb.documents.count == 4 && kb.folders.map(\.name) == ["Acme deal"])
+
+        kb.renameFolder(deal, to: "   ")
+        check("kb: a blank name keeps the folder's name", kb.folders.first?.name == "Acme deal")
+        kb.renameFolder(deal, to: "Northwind deal")
+        check("kb: rename", kb.folders.first?.name == "Northwind deal")
+
+        kb.copyProfileTags(from: sales, to: vendor)
+        check("kb: a new call type gets the source's folders", kb.folders.first?.scope == .only([sales, vendor]))
+
+        let tag = UUID()
+        kb.tagAllDocuments(into: tag)
+        check("kb: first seeding turns off documents on for that type",
+              kb.documentsInPlay(for: tag).contains("old-plan.md") && kb.documentsInPlay(for: tag).contains("nda.md"))
+
+        // Re-adding a file is an update: About line, folder and Use for stay.
+        let old = KBDocument(name: "terms.md", note: "Signed terms, 2026", chunkCount: 3, addedAt: .distantPast,
+                             folderID: deal.id, scope: .only([vendor]))
+        let updated = KnowledgeBaseService.replacing([old], with: KBDocument(name: "terms.md", chunkCount: 5, addedAt: .now))
+        check("kb: re-adding keeps About, folder and Use for",
+              updated.count == 1 && updated[0].note == "Signed terms, 2026" && updated[0].folderID == deal.id
+                && updated[0].scope == .only([vendor]) && updated[0].chunkCount == 5)
+
+        // Two deals often hold files with the same name: adding one into a
+        // different folder must not replace the other deal's document.
+        let docs = [old, KBDocument(name: "faq.md", chunkCount: 1, addedAt: .now)]
+        let other = KBFolder(name: "Northwind deal")
+        let folders = [deal, other]
+        check("kb: same name in another folder is refused",
+              KnowledgeBaseService.addConflict(name: "terms.md", into: other.id, documents: docs, folders: folders)
+                == "terms.md is already in “Acme deal”. Rename the file to keep both.")
+        check("kb: same name from No folder into a folder is refused",
+              KnowledgeBaseService.addConflict(name: "faq.md", into: other.id, documents: docs, folders: folders)
+                == "faq.md is already in No folder. Rename the file to keep both.")
+        check("kb: re-adding into its own folder is an update",
+              KnowledgeBaseService.addConflict(name: "terms.md", into: deal.id, documents: docs, folders: folders) == nil)
+        check("kb: re-adding from Add documents is an update",
+              KnowledgeBaseService.addConflict(name: "terms.md", into: nil, documents: docs, folders: folders) == nil)
+        // A folder deleted while a file was still indexing into it: the
+        // document must show under No folder, where its .all scope matches.
+        let orphans = KnowledgeBaseService(persistent: false)
+        orphans.seedForSnapshot(documents: [KBDocument(name: "late.md", chunkCount: 1, addedAt: .now, folderID: UUID())],
+                                folders: [deal])
+        check("kb: a document whose folder is gone shows under No folder", orphans.documents(in: nil).map(\.name) == ["late.md"])
+        check("kb: a new name never conflicts",
+              KnowledgeBaseService.addConflict(name: "new.md", into: other.id, documents: docs, folders: folders) == nil)
+    }
+
+    @MainActor
+    static func testKnowledgeStoreUpgrade() {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("kb-upgrade-\(UUID().uuidString)", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let index = dir.appendingPathComponent("index.json")
+        let backup = dir.appendingPathComponent("index-backup-before-folders.json")
+        let sales = UUID()
+        let legacy = """
+        {"documents":[
+          {"id":"\(UUID().uuidString)","name":"tagged.md","note":"","chunkCount":1,"addedAt":0,"profileIDs":["\(sales.uuidString)"]},
+          {"id":"\(UUID().uuidString)","name":"untagged.md","note":"","chunkCount":1,"addedAt":0}
+        ],"chunks":[]}
+        """
+        try? Data(legacy.utf8).write(to: index)
+        setenv("PARROT_KB_INDEX", index.path, 1)
+        defer { unsetenv("PARROT_KB_INDEX"); try? fm.removeItem(at: dir) }
+
+        let kb = KnowledgeBaseService()
+        check("kb upgrade: tags become own Use for", kb.documents.first { $0.name == "tagged.md" }?.scope == .only([sales]))
+        check("kb upgrade: untagged documents stay off, now visibly", kb.documents.first { $0.name == "untagged.md" }?.scope == .off)
+        check("kb upgrade: nothing is copied before a save", !fm.fileExists(atPath: backup.path))
+
+        // A document added after the upgrade: No folder, Same as folder.
+        kb.seedForSnapshot(documents: kb.documents + [KBDocument(name: "fresh.md", chunkCount: 1, addedAt: .now)], folders: kb.folders)
+        kb.createFolder(name: "Acme deal")  // saves
+        check("kb upgrade: the first save keeps a backup", fm.fileExists(atPath: backup.path))
+        let written = (try? String(contentsOf: index, encoding: .utf8)) ?? ""
+        check("kb upgrade: the index is now version 2", written.contains("\"version\":2"))
+        check("kb upgrade: old tags are no longer written", !written.contains("profileIDs"))
+
+        let reopened = KnowledgeBaseService()
+        let fresh = reopened.documents.first { $0.name == "fresh.md" }
+        check("kb upgrade: a new document stays in play after relaunch",
+              fresh != nil && fresh?.scope == nil && fresh.map { reopened.isInPlay($0, callType: sales) } == true)
+        check("kb upgrade: folders come back", reopened.folders.map(\.name) == ["Acme deal"])
+    }
+
+    @MainActor
+    static func testKnowledgeList() {
+        let presets = ProfilePresets.all()
+        guard let sales = presets.first(where: { $0.name == "Sales discovery" }),
+              let vendor = presets.first(where: { $0.name == "Vendor call" }) else {
+            check("kb list: presets present", false); return
+        }
+        typealias L = KnowledgeList
+        check("kb list: inheriting shows Same as folder", L.pill(own: nil, inherited: .only([sales.id]), profiles: presets) == .sameAsFolder)
+        check("kb list: No folder default shows Same as folder", L.pill(own: nil, inherited: .all, profiles: presets) == .sameAsFolder)
+        check("kb list: own types are highlighted", L.pill(own: .only([vendor.id]), inherited: .all, profiles: presets) == .types(["Vendor call"], own: true))
+        check("kb list: a folder's types are not highlighted", L.pill(own: .only([sales.id]), inherited: nil, profiles: presets) == .types(["Sales discovery"], own: false))
+        check("kb list: inheriting off shows not used", L.pill(own: nil, inherited: .off, profiles: presets) == .notUsed)
+        check("kb list: an off folder shows paused", L.pill(own: .off, inherited: nil, profiles: presets) == .paused)
+        check("kb list: only deleted call types shows not used", L.pill(own: .only([UUID()]), inherited: .all, profiles: presets) == .notUsed)
+
+        let doc = KBDocument(name: "05 - Service agreement.md", note: "Signed görüşme notes", chunkCount: 1, addedAt: .now)
+        check("kb list: search ignores case", L.matches(doc, "SERVICE"))
+        check("kb list: search reads the About line, accents ignored", L.matches(doc, "gorusme"))
+        // Turkish dotless ı is a letter, not an accented i: fold it by hand.
+        let turkish = KBDocument(name: "Çalışma planı.md", chunkCount: 1, addedAt: .now)
+        check("kb list: search finds Turkish typed without Turkish letters", L.matches(turkish, "calisma plani"))
+        check("kb list: search finds Turkish capitals", L.matches(turkish, "ÇALIŞMA"))
+        check("kb list: a blank search matches", L.matches(doc, "  "))
+        check("kb list: search misses", !L.matches(doc, "invoice"))
+
+        check("kb list: delete message counts",
+              L.deleteMessage(count: 9) == "Its 9 documents move to No folder and keep their settings."
+                && L.deleteMessage(count: 1) == "Its document moves to No folder and keeps its settings.")
+        check("kb list: closing then opening a folder", L.toggled("a", in: "b") == "a,b" && L.toggled("a", in: "a,b") == "b")
+    }
+
+    /// #54: a click on a long transcript sorted it twice and counted
+    /// speakers by decoding the names once per line.
+    @MainActor
+    static func testTranscriptClick() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { check("click: container", false); return }
+        let context = container.mainContext
+        let m = Meeting(title: "Acme review")
+        context.insert(m)
+        func add(_ start: Double, _ label: String) -> TranscriptSegment {
+            let s = TranscriptSegment(startTime: start, endTime: start + 2, text: "Line at \(start)", speakerLabel: label)
+            s.meeting = m
+            context.insert(s)
+            return s
+        }
+        for start in [30.0, 10, 20, 0] { _ = add(start, start == 10 ? "Speaker 2" : "Speaker 1") }
+        try? context.save()
+
+        let cache = SortedLines()
+        check("click: lines come back in time order", cache.of(m).map(\.startTime) == [0, 10, 20, 30])
+        let late = add(25, "Me")
+        check("click: a new line is sorted in", cache.of(m).map(\.startTime) == [0, 10, 20, 25, 30])
+        context.delete(late)
+        try? context.save()
+        check("click: a removed line is gone", cache.of(m).map(\.startTime) == [0, 10, 20, 30])
+        // Polish swaps every line for new ones, same count.
+        for s in m.segments { context.delete(s) }
+        try? context.save()
+        for start in [5.0, 15, 35, 45] { _ = add(start, "Speaker 1") }
+        try? context.save()
+        check("click: replaced lines are never served stale", cache.of(m).map(\.startTime) == [5, 15, 35, 45])
+
+        let lines = cache.of(m)
+        check("click: before the first line nothing plays", SortedLines.playing(at: 2, in: lines) == nil)
+        check("click: a line plays from its start", SortedLines.playing(at: 15, in: lines)?.startTime == 15)
+        check("click: between lines the earlier one plays", SortedLines.playing(at: 34.9, in: lines)?.startTime == 15)
+        check("click: after the last line it keeps playing", SortedLines.playing(at: 900, in: lines)?.startTime == 45)
+        check("click: no lines, nothing plays", SortedLines.playing(at: 10, in: []) == nil)
+        let twins = [add(50, "Me"), add(50, "Speaker 1")]
+        let sameStart = SortedLines.playing(at: 50, in: cache.of(m))
+        check("click: two lines at one time pick the later one", sameStart?.id == cache.of(m).last?.id && twins.contains { $0.id == sameStart?.id })
+
+        m.speakerNames = ["Speaker 1": "Sam", "Speaker 2": "Sam"]
+        check("click: speaker count still merges one named voice", m.speakerCount == 2)
+    }
+
+    /// Sidebar search runs in the database: titles and transcript lines,
+    /// any case, never a meeting that doesn't say it.
+    @MainActor
+    static func testSidebarSearch() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { check("search: in-memory store", false); return }
+        let context = container.mainContext
+        let funnel = Meeting(title: "Website funnel review")
+        let turkish = Meeting(title: "Weekly sync")
+        let other = Meeting(title: "Budget")
+        [funnel, turkish, other].forEach(context.insert)
+        for (meeting, text) in [(turkish, "Görüşme yarın saat üçte"), (other, "Numbers look fine")] {
+            let line = TranscriptSegment(startTime: 0, endTime: 2, text: text)
+            context.insert(line)
+            line.meeting = meeting
+        }
+        try? context.save()
+        let ids = { SidebarView.meetingIDs(matching: $0, in: context) }
+        check("search: title, any case", ids("FUNNEL") == [funnel.id])
+        check("search: transcript line, any case", ids("görüşme") == [turkish.id] && ids("GÖRÜŞME") == [turkish.id])
+        check("search: accents ignored", ids("gorusme") == [turkish.id])
+        check("search: a word nobody said matches nothing", ids("zzqx").isEmpty)
     }
 
     static func testKindStyleFallback() {
@@ -179,18 +543,10 @@ enum ProfileTest {
     @MainActor
     static func testKBScoping() {
         let kb = KnowledgeBaseService(persistent: false)
-        // Synchronous: unknown profile UUID always returns empty names list.
-        check("documentNames empty for unknown profile", kb.documentNames(for: UUID()).isEmpty)
-        // Synchronous: after tagging all docs into a fresh ID, every doc contains it.
+        check("documentsInPlay for an unknown profile is empty on an empty KB", kb.documentsInPlay(for: UUID()).isEmpty)
         let tagID = UUID()
         kb.tagAllDocuments(into: tagID)
-        // If kb has any documents, they should all contain tagID. Vacuously true on empty KB.
-        check("tagAllDocuments tags every document", kb.documents.allSatisfy { $0.profileIDs.contains(tagID) })
-        // Scoped search for unknown profile: since search() early-returns [] when chunks is empty
-        // (CLI KB is always empty), and for a truly unknown profile even with chunks the allowedNames
-        // set would be empty making snapshot empty. We assert via documentNames proxy — a freshly
-        // created UUID has no documents tagged into it.
-        check("documentNames for untagged profile is empty", kb.documentNames(for: UUID()).isEmpty)
+        check("tagAllDocuments on an empty KB is a no-op", kb.documents.isEmpty)
     }
 
     @MainActor
@@ -416,6 +772,45 @@ enum ProfileTest {
               !RecordingManager.isEchoDuplicate(
                 "Okay sure.",
                 "Can you send me the retention report before Tuesday?"))
+        // Issue #98: the mic re-heard the speakers through the echo canceller
+        // and two words came out misheard (6 of 8 exact, under the 0.8 bar).
+        check("bleed: garbled echo with misheard words is echo",
+              RecordingManager.isEchoDuplicate(
+                "kann sich zwar sehr gut wörtlich ausdrucken, aber...",
+                "Kann sich zwar sehr gut wirklich ausgucken, aber"))
+        check("bleed: same words, different message is not echo",
+              !RecordingManager.isEchoDuplicate(
+                "Wir müssen die Rechnung bis Freitag schicken.",
+                "Wir müssen die Rechnungen nicht mehr schicken."))
+        // Replies reuse the other side's words with a new ending. On the owner's
+        // store a loose match would have deleted real answers like these.
+        check("bleed: an answer reusing the question's words is kept",
+              !RecordingManager.isEchoDuplicate("Ekranı görüyor musun şimdi?", "Görüyorum şimdi."))
+        check("bleed: a question after their thanks is kept",
+              !RecordingManager.isEchoDuplicate("Thank you.", "What did you think, Sam?"))
+        // After a live sweep the other side is "Speaker N", not "Them".
+        let line = "Raporu yarın sabah sana gönderirim, tamam mı?"
+        let echo: RecordingManager.BleedLine = (10, 13, line), twin: RecordingManager.BleedLine = (10.1, 13, line)
+        check("bleed: echo of a swept Speaker 1 line still drops",
+              RecordingManager.isBleed(me: echo, other: twin, otherLabel: "Speaker 1"))
+        check("bleed: echo of an unswept Them line still drops",
+              RecordingManager.isBleed(me: echo, other: twin, otherLabel: "Them"))
+        check("bleed: a Me line never dedupes against Me",
+              !RecordingManager.isBleed(me: echo, other: twin, otherLabel: "Me"))
+        // The mic decodes only a piece of a long line, starting past 2.5 s.
+        let long: RecordingManager.BleedLine =
+            (100, 108.6, "Bu hafta çok yoğundum abi, raporu bitiremedim. Cuma gününe kadar sana gönderirim.")
+        check("bleed: piece inside a longer line drops",
+              RecordingManager.isBleed(me: (105.4, 108.5, "Cuma gününe kadar sana gönderirim."),
+                                       other: long, otherLabel: "Speaker 2"))
+        check("bleed: same piece outside the line's span is kept",
+              !RecordingManager.isBleed(me: (110, 113, "Cuma gününe kadar sana gönderirim."),
+                                        other: long, otherLabel: "Speaker 2"))
+        check("bleed: one-word reply inside a long line is kept",
+              !RecordingManager.isBleed(me: (103, 103.6, "Abi."), other: long, otherLabel: "Speaker 2"))
+        check("bleed: long Me line around a short line is kept",
+              !RecordingManager.isBleed(me: (95, 110, "Tamam, cuma gününe kadar dedin ama geçen hafta da öyle demiştin."),
+                                        other: (104, 105, "Cuma gününe kadar."), otherLabel: "Speaker 2"))
     }
 
     static func testWAVEncoder() {
@@ -542,6 +937,16 @@ enum ProfileTest {
     // Both tracks share one clock: a stream that starts late or goes quiet
     // owes silence (Sep 28 call: the other side's track began 18.5 s late,
     // so playback put every answer before its question).
+    /// "Mute me" (#96): silence of the same length, so the mic track and the
+    /// recording clock stay in step; unmuted audio passes untouched.
+    static func testMuteMe() {
+        let voice: [Float] = [0.2, -0.1, 0.05, 0]
+        check("mute me: muted mic becomes silence of the same length",
+              AudioCaptureManager.micOut(voice, muted: true) == [0, 0, 0, 0])
+        check("mute me: unmuted mic passes untouched", AudioCaptureManager.micOut(voice, muted: false) == voice)
+        check("mute me: its shortcut isn't Mark's", GlobalHotKey.Combo.muteMe != GlobalHotKey.Combo.markMoment)
+    }
+
     static func testCaptureClock() {
         let owed = { (elapsed: Double, written: Int) in
             AudioCaptureManager.silenceOwed(elapsed: elapsed, written: written, incoming: 160, sampleRate: 16000)
@@ -954,6 +1359,30 @@ enum ProfileTest {
               Meeting.noteLines(1) == "1 line" && Meeting.noteLines(2) == "2 lines")
     }
 
+    // Playback on speakers: the mic's leftover echo of the other side is
+    // ducked while only they talk (HN, 2026-09-30: "2 audio streams").
+    static func testPlaybackMix() {
+        let segs = [
+            TranscriptSegment(startTime: 0, endTime: 10, text: "x", speakerLabel: "Them"),
+            TranscriptSegment(startTime: 10, endTime: 15, text: "x", speakerLabel: "Me"),
+            TranscriptSegment(startTime: 13, endTime: 20, text: "x", speakerLabel: "Them"),
+            TranscriptSegment(startTime: 30, endTime: 35, text: "x", speakerLabel: "Speaker 2"),
+        ]
+        let duck = PlaybackMix.ducked
+        let v = { PlaybackMix.micVolume(segments: segs, at: $0) }
+        check("mix: them only ducks the mic", v(2) == duck)
+        check("mix: me only is full", v(11.5) == 1)
+        check("mix: both talking is full", v(14) == 1)
+        check("mix: a gap is full", v(25) == 1)
+        check("mix: past the last line is full", v(99) == 1)
+        check("mix: no lines is full", PlaybackMix.micVolume(segments: [], at: 2) == 1)
+        check("mix: a diarized voice counts as them", v(32) == duck)
+        check("mix: holds through a short pause after them", v(20.5) == duck)
+        check("mix: comes up just before my line", v(9.8) == 1)
+        check("mix: stays down until then", v(9.5) == duck)
+        check("mix: ducked level is quiet but not silent", duck > 0 && duck <= 0.2)
+    }
+
     static func testLiveLabelStability() {
         typealias M = RecordingManager
         let anchors: [String: [Float]] = ["Speaker 1": [1, 0, 0], "Speaker 2": [0, 1, 0]]
@@ -1301,6 +1730,91 @@ enum ProfileTest {
             prompts.append(system + "\n" + user)
             return "SAME"
         }
+    }
+
+    /// Stands in for the reports AI: counts calls, can be unset or fail.
+    private final class WriteReportRecorder: AnalysisProvider, @unchecked Sendable {
+        var configured = true
+        var failure: Error?
+        var summaries = 0
+        var coachings = 0
+        var isConfigured: Bool { configured }
+        func analyze(_ request: AnalysisRequest) async throws -> AnalysisResult { throw AnalysisError.missingAPIKey }
+        func summarize(transcript: String, insightTitles: [String], bookmarks: [String],
+                       instructions: String, counterpart: String, template: ReportTemplate) async throws -> String {
+            summaries += 1
+            if let failure { throw failure }
+            return "Summary"
+        }
+        func coachingReport(transcript: String, talkPercentMe: Int, instructions: String,
+                            counterpart: String, template: ReportTemplate) async throws -> String {
+            coachings += 1
+            if let failure { throw failure }
+            return "Coaching"
+        }
+        func complete(system: String, user: String, maxTokens: Int) async throws -> String { "" }
+    }
+
+    /// #107: Write report on a saved meeting that has none.
+    @MainActor
+    static func testWriteReport() {
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(
+            for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ) else { check("write report: container", false); return }
+        let context = container.mainContext
+        let ai = WriteReportRecorder()
+        let rm = RecordingManager(memory: MeetingMemory(directory: nil), chats: AskChatStore(directory: nil), provider: ai)
+        rm.attachForHarness(modelContext: context)
+        func meeting(lines: Int, imported: Bool = false) -> Meeting {
+            let m = Meeting(title: "Acme check-in")
+            m.status = .done
+            if imported { m.importedAt = .now }
+            context.insert(m)
+            for i in 0..<lines {
+                let s = TranscriptSegment(startTime: Double(i * 5), endTime: Double(i * 5 + 4),
+                                          text: "Line \(i)", speakerLabel: i.isMultiple(of: 2) ? "Me" : "Them")
+                s.meeting = m
+                context.insert(s)
+            }
+            return m
+        }
+        func write(_ m: Meeting) async -> String? {
+            do { try await rm.writeReport(m); return nil } catch { return error.localizedDescription }
+        }
+
+        let sem = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            let empty = await write(meeting(lines: 0))
+            check("write report: no transcript says so", empty == "This meeting has no transcript.")
+
+            ai.configured = false
+            let unset = meeting(lines: 4)
+            let unsetError = await write(unset)
+            check("write report: no AI set up says where to fix it", unsetError == "Set up the Assistant's AI in Settings first.")
+            check("write report: no AI set up never calls it", ai.summaries == 0)
+
+            ai.configured = true
+            ai.failure = AnalysisError.badResponse("Could not connect to the server.")
+            let failing = meeting(lines: 4)
+            let failError = await write(failing)
+            check("write report: the AI's error is shown", failError == "Could not connect to the server.")
+            check("write report: a failure leaves no report", failing.summary == nil && failing.coaching == nil)
+
+            ai.failure = nil
+            let ok = meeting(lines: 4)
+            let okError = await write(ok)
+            check("write report: succeeds", okError == nil)
+            check("write report: summary and coaching written", ok.summary == "Summary" && ok.coaching == "Coaching")
+
+            let coachingBefore = ai.coachings
+            let imported = meeting(lines: 4, imported: true)
+            _ = await write(imported)
+            check("write report: imported file gets the summary", imported.summary == "Summary")
+            check("write report: imported file gets no coaching", ai.coachings == coachingBefore && imported.coaching == nil)
+            sem.signal()
+        }
+        while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: .now + 0.01) }
     }
 
     /// The whole `ask` path with a cloud AI: an on-device-only meeting never
@@ -1865,6 +2379,102 @@ enum ProfileTest {
         check("fast query with no context is the question", E.fastPathQuery(question: "Is it extra?", before: "") == "Is it extra?")
     }
 
+    /// Loudness echo gate (#98) on a made-up 20 s call: noise shaped into
+    /// 80-240 ms syllables with gaps, deterministic so the checks never flake.
+    /// The clip under test is seconds 16-18 of the mic.
+    static func testEchoGate() {
+        typealias G = EchoGate
+        func speech(seed: UInt64, seconds: Double, level: Float = 0.1) -> [Float] {
+            var x = seed
+            func next() -> Float {  // 0..<1
+                x = x &* 6364136223846793005 &+ 1442695040888963407
+                return Float(x >> 40) / Float(1 << 24)
+            }
+            let total = Int(seconds * 16000)
+            var out: [Float] = []
+            var on = true
+            while out.count < total {
+                let amp = on ? level * (0.4 + next()) : level * 0.005
+                for _ in 0..<((4 + Int(next() * 9)) * G.hop) { out.append(amp * (next() * 2 - 1)) }
+                on.toggle()
+            }
+            return Array(out.prefix(total))
+        }
+        func shifted(_ s: [Float], frames: Int, gain: Float) -> [Float] {  // later by `frames`, or earlier if negative
+            let pad = Array(repeating: Float(0), count: abs(frames) * G.hop)
+            let moved = frames >= 0 ? pad + s.dropLast(frames * G.hop) : Array(s.dropFirst(-frames * G.hop)) + pad
+            return moved.map { $0 * gain }
+        }
+        func mix(_ a: [Float], _ b: [Float]) -> [Float] { zip(a, b).map(+) }
+        func inClip(_ base: [Float], _ insert: [Float]) -> [Float] {  // insert's 16-18 s into base
+            var out = base
+            out.replaceSubrange(256_000..<288_000, with: insert[256_000..<288_000])
+            return out
+        }
+
+        check("echo gate: envelope is the mean level per 20 ms",
+              G.envelope(Array(repeating: Float(-0.5), count: 640)[...]) == [0.5, 0.5])
+
+        let them = speech(seed: 1, seconds: 20)
+        // Live audio arrives in odd-sized buffers (170 from the tap, 1600 from the mic).
+        var levels = G.Levels()
+        let sizes = [170, 1600, 7, 320, 5000]
+        var at = 0, i = 0
+        while at < 64_000 {
+            let next = min(at + sizes[i % sizes.count], 64_000)
+            levels.add(them[at..<next])
+            at = next
+            i += 1
+        }
+        check("echo gate: running levels match the envelope", levels.frames == G.envelope(them[0..<64_000]))
+        let themEnv = G.envelope(them[...])
+        let hiss = speech(seed: 9, seconds: 20, level: 0.001)
+        let me = speech(seed: 2, seconds: 20)
+        func verdict(_ mic: [Float], them env: [Float] = themEnv) -> G.Verdict {
+            G.check(clip: Array(mic[256_000..<288_000]), mic: G.envelope(mic[...]), them: env, at: 256_000 / G.hop)
+        }
+
+        // Speakers: the mic hears them all call, 60 ms late (or 40 ms early on our clock).
+        let speakers = mix(shifted(them, frames: 3, gain: 0.08), hiss)
+        let echo = verdict(speakers)
+        check("echo gate: their voice 60 ms late in my mic is echo", echo.isEcho && echo.clip.lag == 3)
+        let early = verdict(mix(shifted(them, frames: -2, gain: 0.08), hiss))
+        check("echo gate: echo placed 40 ms early on our clock is still echo", early.isEcho && early.clip.lag == -2)
+        check("echo gate: talking over them on speakers is kept",
+              !verdict(inClip(speakers, mix(speakers, me))).isEcho)
+        let silent = G.envelope(speech(seed: 1, seconds: 20, level: 0.00001)[...])
+        check("echo gate: my voice while they're silent is kept",
+              !verdict(inClip(speakers, me), them: silent).isEcho)
+        check("echo gate: none of their audio yet means keep",
+              !verdict(speakers, them: []).isEcho)
+
+        // Headphones: the mic never hears them, so a short reply that happens
+        // to rise and fall with them is still mine (the "Hıhı" lines of a real
+        // 45-minute headphone call scored 0.6-0.9 on the clip alone).
+        let headphones = mix(me, hiss)
+        let lookalike = verdict(inClip(headphones, mix(shifted(them, frames: 3, gain: 0.08), hiss)))
+        check("echo gate: on headphones a clip that tracks them is kept", !lookalike.isEcho && lookalike.clip.follows > 0.6)
+        check("echo gate: headphones read as no bleed", verdict(headphones).bleed.follows < G.minBleed)
+
+        // #98: on speakers while I do most of the talking. My loud turns in
+        // their silences dragged the whole-window correlation below zero, so
+        // the gate never fired; while they talk, the mic still follows them.
+        func only(_ s: [Float], _ seconds: [Range<Double>]) -> [Float] {
+            s.enumerated().map { i, x in seconds.contains { $0.contains(Double(i) / 16000) } ? x : 0 }
+        }
+        let theirs = only(them, [0..<3, 9..<11, 16..<18])
+        let mine = only(speech(seed: 2, seconds: 20, level: 0.3), [3..<9, 11..<16, 18..<20])
+        let theirsEnv = G.envelope(theirs[...])
+        let busy = verdict(mix(mix(shifted(theirs, frames: 3, gain: 0.08), mine), hiss), them: theirsEnv)
+        check("echo gate: on speakers, echo is caught when I do most of the talking", busy.isEcho)
+        check("echo gate: ...by the while-they-talk check, not the whole-window one",
+              busy.bleed.follows < G.minBleed && busy.talkBleed.follows >= G.minTalkBleed)
+        let busyHeadphones = verdict(mix(mine, hiss), them: theirsEnv)
+        check("echo gate: on headphones, doing most of the talking reads as no bleed",
+              !busyHeadphones.isEcho && busyHeadphones.bleed.follows < G.minBleed
+                && busyHeadphones.talkBleed.follows < G.minTalkBleed)
+    }
+
     static func testGlossaryPrompt() {
         check("glossary prompt joins vocabulary terms", TranscriptionEngine.glossaryPrompt(from: "Launchese, Uygar\n") == "Glossary: Launchese, Uygar.")
         check("glossary prompt nil when empty", TranscriptionEngine.glossaryPrompt(from: " \n") == nil)
@@ -1872,6 +2482,19 @@ enum ProfileTest {
         check("groq fields carry the vocabulary prompt", with.contains { $0.0 == "prompt" && $0.1 == "Glossary: Launchese." })
         let without = GroqTranscriber.fields(language: nil, responseFormat: "json", prompt: nil)
         check("groq fields omit an absent prompt", !without.contains { $0.0 == "prompt" })
+
+        // WhisperKit forces the language only through the prefill. A retry that
+        // dropped it decoded German calls in whatever language Whisper guessed
+        // (issue #98: English filler lines with German pinned).
+        var pinned = DecodingOptions(task: .transcribe, language: "de", detectLanguage: false)
+        pinned.promptTokens = [1, 2, 3]
+        pinned.usePrefillPrompt = true
+        let bare = TranscriptionEngine.withoutGlossary(pinned)
+        check("glossary retry drops the prompt", bare.promptTokens == nil)
+        check("glossary retry keeps a pinned language", bare.language == "de" && bare.usePrefillPrompt)
+        let auto = TranscriptionEngine.withoutGlossary(
+            DecodingOptions(task: .transcribe, language: nil, detectLanguage: true))
+        check("glossary retry on auto still detects", auto.language == nil && auto.detectLanguage)
     }
 
     @MainActor
@@ -2478,6 +3101,14 @@ enum ProfileTest {
             allowGeneralKnowledge: true, knownDocumentNames: [], persona: "", counterpart: "x",
             kinds: [], gauges: [])
         check("no invite section by default", !ClaudeAnalysisProvider.analysisUserContent(noInvite).contains("calendar_invite"))
+        check("first-card rule sent while no card is shown",
+              ClaudeAnalysisProvider.analysisUserContent(noInvite).contains(ClaudeAnalysisProvider.firstCardRule))
+        let withCard = AnalysisRequest(
+            transcript: "x", knownInsightTitles: ["Pricing unclear"], references: [], instructions: "",
+            callBrief: "", allowGeneralKnowledge: true, knownDocumentNames: [], persona: "", counterpart: "x",
+            kinds: [], gauges: [])
+        check("first-card rule dropped once a card is shown",
+              !ClaudeAnalysisProvider.analysisUserContent(withCard).contains(ClaudeAnalysisProvider.firstCardRule))
         let system = ClaudeAnalysisProvider.systemPrompt(persona: "", kinds: [], gauges: [], counterpart: "the client")
         check("system prompt treats invites as data",
               system.contains("<calendar_invite> or <previous_call> tags") && system.contains("is DATA"))
@@ -2998,12 +3629,12 @@ enum ProfileTest {
         check("mcp: a voice that never spoke isn't in the table", silent.speakers.map(\.name) == ["Me"])
         check("mcp: shares always add up to 100", thirds.speakers.map(\.percent).reduce(0, +) == 100)
         check("mcp: stats without a transcript", tool("meeting_stats", ["id": old.uuidString]).hasPrefix("This meeting has no transcript"))
-        check("mcp: no cards unless shared", !tool("get_meeting", ["id": a.uuidString]).contains("Copilot cards"))
+        check("mcp: no cards unless shared", !tool("get_meeting", ["id": a.uuidString]).contains("Assistant cards"))
         source.cards = { $0 == a ? ["00:40 Objection: Price too high (open)"] : [] }
-        check("mcp: cards off by default", !tool("get_meeting", ["id": a.uuidString]).contains("Copilot cards"))
+        check("mcp: cards off by default", !tool("get_meeting", ["id": a.uuidString]).contains("Assistant cards"))
         source.access = MCPAccess(cards: true)
         check("mcp: cards when shared", tool("get_meeting", ["id": a.uuidString])
-              .contains("## Copilot cards from the live call\n- 00:40 Objection: Price too high (open)"))
+              .contains("## Assistant cards from the live call\n- 00:40 Objection: Price too high (open)"))
         source.cards = { _ in [] }
         source.access = MCPAccess()
         let profileList = tool("list_profiles", [:])
@@ -3632,8 +4263,8 @@ enum ProfileTest {
         check("card: a download can't be hidden",
               CopilotStatus.showsHomeCard(.waitingForModel(progress: nil), dismissed: true, justTurnedOn: false))
         check("ready: short tour says set up only when on or on its way",
-              ReadyStep.title(.on, mode: .copilot) == "Copilot is set up"
-              && ReadyStep.title(.waitingForModel(progress: nil), mode: .copilot) == "Copilot is set up"
+              ReadyStep.title(.on, mode: .copilot) == "The Assistant is set up"
+              && ReadyStep.title(.waitingForModel(progress: nil), mode: .copilot) == "The Assistant is set up"
               && ReadyStep.title(.needsClaudeKey, mode: .copilot) == "Almost there"
               && ReadyStep.title(.off, mode: .full) == "Ready to go")
         check("card: dismiss hides the nudge",

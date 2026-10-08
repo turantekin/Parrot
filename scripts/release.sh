@@ -50,6 +50,13 @@ echo "==> swift build -c release (pinned: Package.resolved)"
 # swift-collections 1.7 build dyld-crashes at launch on macOS 26.6.
 swift build -c release --force-resolved-versions
 
+# The "What's new" card and the notes in Sparkle's update window come from
+# Parrot/Services/WhatsNew.swift. A release it doesn't describe would tell
+# nobody anything, so stop here, before notarizing (see /release-docs).
+echo "==> checking WhatsNew.swift is written for $VERSION"
+WHATS_NEW_HTML="$(.build/release/Parrot --whats-new-html "$VERSION")" || {
+  echo "!! Update Parrot/Services/WhatsNew.swift for $VERSION first." >&2; exit 1; }
+
 echo "==> assembling $APP"
 rm -rf "$DIST"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -154,9 +161,11 @@ fi
 echo "==> generating the Sparkle appcast"
 GENERATE_APPCAST=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
 if [ -x "$GENERATE_APPCAST" ]; then
+  # Sparkle embeds an HTML fragment named like the DMG as this update's notes.
+  [ -n "$WHATS_NEW_HTML" ] && printf '%s\n' "$WHATS_NEW_HTML" > "$DIST/Parrot-$VERSION.html"
   "$GENERATE_APPCAST" \
     --download-url-prefix "https://github.com/turantekin/Parrot/releases/download/v$VERSION/" \
-    --full-release-notes-url "https://github.com/turantekin/Parrot/releases" \
+    --full-release-notes-url "https://openparrot.app/changelog" \
     --maximum-versions 1 \
     "$DIST"
   cp "$DIST/appcast.xml" docs/appcast.xml

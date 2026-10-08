@@ -49,7 +49,7 @@ enum MCPServer {
         /// The transcript as a receipts index, for commitment owners (only
         /// list_commitments pays for it). Names and times, no text leaves.
         var receipts: (UUID) -> ReceiptIndex
-        /// Copilot cards from the live call, one line each; empty unless shared.
+        /// Assistant cards from the live call, one line each; empty unless shared.
         var cards: (UUID) -> [String]
         /// Call profiles (config, not meeting content), in the app's order.
         var profiles: () -> [CallProfile]
@@ -349,7 +349,7 @@ enum MCPServer {
         [
             "name": "list_profiles",
             "title": "List call profiles",
-            "description": "The user's call profiles (sales, interview…): what each is for, what it calls the other side, the Copilot card types with what triggers them, and the gauges.",
+            "description": "The user's call profiles (sales, interview…): what each is for, what it calls the other side, the Assistant card types with what triggers them, and the gauges.",
             "inputSchema": ["type": "object", "properties": [String: Any]()],
         ],
         [
@@ -482,7 +482,7 @@ enum MCPServer {
             let unshared = [(access.reports, "reports"), (access.transcripts, "transcripts"), (access.notes, "notes")]
                 .filter { !$0.0 }.map(\.1)
             let cards = source.cards(m.id)
-            if !cards.isEmpty { out += "\n\n## Copilot cards from the live call\n" + cards.map { "- \($0)" }.joined(separator: "\n") }
+            if !cards.isEmpty { out += "\n\n## Assistant cards from the live call\n" + cards.map { "- \($0)" }.joined(separator: "\n") }
             if (args["include_transcript"] as? Bool) == true {
                 let page = transcriptPage(source.transcript(m.id), from: 0, to: nil, maxLines: defaultPageLines)
                 out += "\n\n## Transcript\n" + page.lines.map(lineText).joined(separator: "\n")

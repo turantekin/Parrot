@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Security
 
 /// Raw insight returned by a provider; the engine attaches call timing.
@@ -100,7 +101,7 @@ enum AnalysisError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey: "No Claude API key set. Add one in Settings → Copilot."
+        case .missingAPIKey: "No Claude API key set. Add one in Settings → Assistant."
         case .badResponse(let message): message
         }
     }
@@ -286,6 +287,17 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 
     // MARK: - Live Analysis
 
+    /// Sent only while no card has been shown yet, so the user isn't left
+    /// staring at an empty panel once the call gets down to business.
+    static let firstCardRule = """
+    Nothing has been shown to the user yet, so the "empty list is fine" default does not \
+    apply until the first insight is out. As soon as either side talks about their \
+    business, needs, product or terms, return ONE insight now: the most useful one for the \
+    user so far, using the kinds above. A question worth asking counts. People's roles, \
+    careers and life news are still small talk. Base it on what was actually said, and \
+    return none while the talk is only greetings or small talk.
+    """
+
     /// Assembles the analysis user turn — shared verbatim by every provider so
     /// all backends receive identical grounding/instructions.
     static func analysisUserContent(_ request: AnalysisRequest) -> String {
@@ -335,6 +347,9 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
               + "doesn't cover a question, say so briefly in the suggestion instead of "
               + "answering from general knowledge, and leave \"source\" unset.")
 
+        // Until the first card, "an empty list is fine" kept a Turkish vendor
+        // call blank for 9.7 min (2026-10-07) while every pass succeeded.
+        if request.knownInsightTitles.isEmpty { sections.append(firstCardRule) }
         sections.append("Already shown insights (do not repeat):\n\(knownList)")
         sections.append("Rolling transcript (oldest to newest):\n<transcript>\n\(request.transcript)\n</transcript>")
 
@@ -691,6 +706,13 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
 enum APIKeyStore {
     private static let service = "com.uygar.parrot"
 
+    /// Keys by account, nil value = known missing. A live call asked
+    /// `isConfigured` on every transcript segment: ~280 main-thread Keychain
+    /// round trips in 10 minutes (2026-10-07). save/delete below write through,
+    /// so it can't go stale inside the app.
+    /// ponytail: a key changed outside the app (`security` CLI) shows after relaunch.
+    private static let cache = OSAllocatedUnfairLock(initialState: [String: String?]())
+
     /// Returns false if the keychain rejected the write — the UI must say so,
     /// or the user believes the key is saved and every call fails "missing key".
     @discardableResult
@@ -703,7 +725,9 @@ enum APIKeyStore {
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
         ]
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else { return false }
+        cache.withLock { _ = $0.updateValue(key, forKey: account) }
+        return true
     }
 
     /// `load` off the main thread. A Keychain read can wait on a macOS
@@ -720,6 +744,7 @@ enum APIKeyStore {
         // --help-shots too: screenshots never read a key or call a service.
         let args = ProcessInfo.processInfo.arguments
         if args.contains("--profile-test") || args.contains("--help-shots") { return nil }
+        if let hit = cache.withLock({ $0[account] }) { return hit }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -728,9 +753,14 @@ enum APIKeyStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        // Remember only a definite answer: a locked keychain or a declined
+        // prompt must be asked again, not cached as "no key".
+        guard status == errSecSuccess || status == errSecItemNotFound else { return nil }
+        let key = (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        // A save/delete that landed during the read is newer: keep it.
+        cache.withLock { if $0.index(forKey: account) == nil { $0.updateValue(key, forKey: account) } }
+        return key
     }
 
     static func delete(account: String = "claude-api-key") {
@@ -740,5 +770,6 @@ enum APIKeyStore {
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+        cache.withLock { _ = $0.updateValue(nil, forKey: account) }
     }
 }

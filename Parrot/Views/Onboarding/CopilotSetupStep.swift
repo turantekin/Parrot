@@ -8,9 +8,9 @@ struct CopilotSetupStep: View {
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 14) {
-            StepHeader(title: "Set up Copilot")
-            CopilotHeroCard(title: "Copilot", subtitle: heroLine) {
-                Toggle("Copilot", isOn: $model.copilotOn)
+            StepHeader(title: "Set up the Assistant")
+            CopilotHeroCard(title: "Assistant", subtitle: heroLine) {
+                Toggle("Assistant", isOn: $model.copilotOn)
                     .labelsHidden()
                     .toggleStyle(.switch)
             }
@@ -145,12 +145,12 @@ private struct OllamaSetupRows: View {
         let status = ollama.status(for: name)
         if case .pulling(let progress) = status {
             DownloadRow(title: "Downloading \(name)", progress: progress,
-                        note: "Keep going. Copilot turns on by itself when it's done.")
+                        note: "Keep going. The Assistant turns on by itself when it's done.")
         } else if status == .ready {
             done("\(name) is ready")
         } else if serverUp, !ollama.isPulling {
             PermissionRow(icon: "arrow.down.circle", askTitle: "Download \(name)", grantedTitle: "",
-                          subtitle: "\(size). Runs Copilot on this Mac.") {
+                          subtitle: "\(size). Runs the Assistant on this Mac.") {
                 ollama.pull(name)
             }
         } else if let other = ollama.pullingModel {

@@ -14,7 +14,7 @@ struct MeetCopilotStep: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            StepHeader(title: "Meet Copilot",
+            StepHeader(title: "Meet the Assistant",
                        subtitle: "Your helper during calls. It listens and shows you what to say, as it happens.")
             HStack(alignment: .top, spacing: 18) {
                 demo
@@ -51,7 +51,7 @@ struct MeetCopilotStep: View {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .foregroundStyle(Theme.Colors.accent)
-                Text("Copilot")
+                Text("Assistant")
                     .font(Theme.Typography.cardTitle)
                 Spacer(minLength: 0)
                 Text("Listening")
@@ -80,7 +80,7 @@ struct MeetCopilotStep: View {
         .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius))
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Example: they ask where data is stored, Copilot suggests an answer from your security document, then pins a budget blocker.")
+        .accessibilityLabel("Example: they ask where data is stored, the Assistant suggests an answer from your security document, then pins a budget blocker.")
     }
 
     private func benefit(_ icon: String, _ title: String, _ detail: String) -> some View {

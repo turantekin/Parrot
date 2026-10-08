@@ -20,7 +20,7 @@ struct SentimentStripView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Theme.Colors.chip, in: Capsule())
-                        .help("The copilot's one-word read of the room")
+                        .help("The Assistant's one-word read of the room")
                 }
 
                 ForEach(gauges) { gauge in

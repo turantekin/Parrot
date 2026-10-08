@@ -39,11 +39,15 @@ struct MeetingDetailView: View {
     @State private var playbackSpeed: Float = 1.0
     @State private var playbackTimer: Timer?
     @State private var activeSegmentID: UUID?
+    @State private var sortedLines = SortedLines()
     @State private var tab: ReportTab = .report
     @State private var themNameText = ""
     @State private var showCostBreakdown = false
     @State private var cardNamingLabel: String?
     @State private var clipStopTask: Task<Void, Never>?
+    @State private var playingClip = false
+    /// The mic track's volume right now: 1, `PlaybackMix.ducked`, or 0 in a voice clip.
+    @State private var micLevel: Float = 1
     /// The line a pending "delete everything after this" is anchored to.
     @State private var truncateAnchor: TranscriptSegment?
     /// Share-menu actions: one at a time, with an outcome message.
@@ -52,6 +56,8 @@ struct MeetingDetailView: View {
     /// A Share action's success ("Saved to your folder."): a short note that
     /// fades, not a box to dismiss. Errors still use `actionMessage`.
     @State private var actionNote: String?
+    /// Write report (#107) is running for this meeting.
+    @State private var writingReport = false
     @State private var showPrivacyLedger = false
     /// The transcript as a receipts index — cached, not rebuilt on every
     /// playback tick (the timer re-renders this view ten times a second).
@@ -261,8 +267,9 @@ struct MeetingDetailView: View {
             HStack(spacing: 12) {
                 Label(meeting.date.formatted(date: .long, time: .shortened), systemImage: "calendar")
                 Label(meeting.formattedDuration, systemImage: "clock")
-                if meeting.speakerCount > 0 {
-                    Label("\(meeting.speakerCount) speakers", systemImage: "person.2")
+                let speakers = meeting.speakerCount
+                if speakers > 0 {
+                    Label("\(speakers) speakers", systemImage: "person.2")
                 }
                 statusBadge
             }
@@ -540,13 +547,25 @@ struct MeetingDetailView: View {
             Group {
                 if meeting.summary == nil && meeting.coaching == nil {
                     VStack(alignment: .leading, spacing: 16) {
-                        if meeting.status == .processing {
+                        if meeting.status == .processing || writingReport {
                             reportGeneratingRow("Writing your report…")
-                        } else if meeting.status == .failed, let reason = meeting.errorMessage {
-                            // Say why, not just that it failed.
-                            emptyTabState(reason)
                         } else {
-                            emptyTabState("No report was generated for this meeting.")
+                            // Say why, not just that it failed.
+                            let reason = meeting.status == .failed ? meeting.errorMessage : nil
+                            emptyTabState(reason ?? "No report yet. Write one now, or turn on the Assistant to get one after every call.")
+                            if !meeting.segments.isEmpty {
+                                Button("Write report") {
+                                    runAction {
+                                        writingReport = true
+                                        defer { writingReport = false }
+                                        try await recordingManager.writeReport(meeting)
+                                        return nil
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(actionRunning)
+                                .frame(maxWidth: .infinity)
+                            }
                         }
                         // Timing and marks don't need a report either.
                         toneCard
@@ -611,12 +630,12 @@ struct MeetingDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
     }
 
-    /// Me's share of the words, for the talk-balance bar.
+    /// Me's share of the speaking time, for the talk-balance bar.
     private var talkPercentMe: Int? { meeting.talkPercentMe }
 
     /// The tone timeline, nil for imported audio (no "Me" track).
     private var toneModel: ToneTimeline.Model? {
-        ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(meeting.sortedSegments),
+        ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(sortedLines.of(meeting)),
                            nudges: meeting.nudges, timeline: meeting.moodTimeline, marks: meeting.bookmarks)
     }
 
@@ -657,7 +676,7 @@ struct MeetingDetailView: View {
         if let time = jump.time {
             // Links and Ask chips carry whole seconds, but the line shown as
             // "09:42" may start at 582.4: land on that line, not the one before.
-            let line = meeting.sortedSegments.first { $0.startTime >= time && $0.startTime < time + 1 }
+            let line = sortedLines.of(meeting).first { $0.startTime >= time && $0.startTime < time + 1 }
             showInTranscript(line?.startTime ?? time)
         } else {
             tab = .report
@@ -674,7 +693,7 @@ struct MeetingDetailView: View {
         seekTo(time)
         // Both tracks can cut a line at the same instant (a "Me" echo of the
         // other side): the receipt's own words pick the line it quoted.
-        if let text, let line = meeting.sortedSegments.first(where: { $0.startTime == time && $0.text == text }) {
+        if let text, let line = sortedLines.of(meeting).first(where: { $0.startTime == time && $0.text == text }) {
             activeSegmentID = line.id
         }
         tab = .transcript
@@ -790,7 +809,7 @@ struct MeetingDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if meeting.insights.isEmpty {
-                    emptyTabState("No copilot insights were captured on this call.")
+                    emptyTabState("No Assistant insights were captured on this call.")
                 } else {
                     ForEach(meeting.sortedInsights) { insight in
                         StoredInsightRow(
@@ -864,7 +883,7 @@ struct MeetingDetailView: View {
     // MARK: - Transcript List
 
     private var transcriptList: some View {
-        let ordered = meeting.sortedSegments
+        let ordered = sortedLines.of(meeting)
         let items = TranscriptItem.merge(segments: ordered, bookmarks: meeting.bookmarks)
         return ScrollViewReader { proxy in
             ScrollView {
@@ -1052,21 +1071,37 @@ struct MeetingDetailView: View {
         // Every voice named here is the other side, and they live on the
         // system track alone. The mic under the clip is only the user (often
         // the louder track), which made a clip sound like two people at once.
-        micPlayer?.volume = 0
+        playingClip = true
         seekTo(start)
         if !isPlaying { togglePlayback() }
         clipStopTask = Task {
             try? await Task.sleep(for: .seconds(max(1, end - start)))
             guard !Task.isCancelled else { return }
             if isPlaying { togglePlayback() }
-            micPlayer?.volume = 1
+            playingClip = false
+            updateMicLevel()
         }
     }
 
     /// Back to the whole conversation: any other play ends a voice clip.
     private func endClip() {
         clipStopTask?.cancel()
-        micPlayer?.volume = 1
+        playingClip = false
+        updateMicLevel()
+    }
+
+    /// Mutes the mic in a voice clip, ducks it while only the other side
+    /// talks (see `PlaybackMix`), full volume otherwise.
+    private func updateMicLevel() {
+        // No system track: the mic's copy of their voice is the only one left.
+        let level: Float = playingClip ? 0
+            : audioPlayer == nil ? 1
+            : PlaybackMix.micVolume(segments: meeting.segments, at: playbackTime)
+        guard level != micLevel else { return }
+        // A clip mutes at once; otherwise down gently (no click), back up
+        // fast so your first word isn't faded in.
+        micPlayer?.setVolume(level, fadeDuration: playingClip ? 0 : level < micLevel ? 0.25 : 0.08)
+        micLevel = level
     }
 
     // MARK: - Audio Playback
@@ -1086,6 +1121,7 @@ struct MeetingDetailView: View {
             micPlayer = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: micPath))
             micPlayer?.enableRate = true
             micPlayer?.prepareToPlay()
+            micLevel = 1
         }
     }
 
@@ -1116,11 +1152,11 @@ struct MeetingDetailView: View {
                 if audioPlayer?.isPlaying != true && micPlayer?.isPlaying != true {
                     stopPlayback()
                     playbackTime = 0
-                    updateActiveSegment()
+                    followPlayhead()
                     return
                 }
                 playbackTime = audioPlayer?.currentTime ?? micPlayer?.currentTime ?? 0
-                updateActiveSegment()
+                followPlayhead()
             }
         }
         isPlaying.toggle()
@@ -1143,12 +1179,14 @@ struct MeetingDetailView: View {
         // draw a >100% progress bar.
         let duration = max(audioPlayer?.duration ?? 0, micPlayer?.duration ?? 0)
         playbackTime = duration > 0 ? min(time, duration) : time
-        updateActiveSegment()
+        followPlayhead()
         if wasPlaying { startSynced() }
     }
 
-    private func updateActiveSegment() {
-        activeSegmentID = meeting.sortedSegments.last { $0.startTime <= playbackTime }?.id
+    /// Highlights the line under the playhead and sets the mic level for it.
+    private func followPlayhead() {
+        activeSegmentID = SortedLines.playing(at: playbackTime, in: sortedLines.of(meeting))?.id
+        updateMicLevel()
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -1157,6 +1195,71 @@ struct MeetingDetailView: View {
         return String(format: "%02d:%02d", m, s)
     }
 
+}
+
+/// The meeting's lines in time order, sorted again only when lines are added,
+/// removed or replaced (#54). Sorting a two-hour transcript takes ~37 ms, and
+/// every click and playback tick used to do it twice. A reference type, so
+/// refilling it while the body runs doesn't count as a state change.
+final class SortedLines {
+    private var key = 0
+    private var lines: [TranscriptSegment] = []
+
+    func of(_ meeting: Meeting) -> [TranscriptSegment] {
+        let segments = meeting.segments
+        // Which lines, in any order: an edit keeps it, polish's swap doesn't.
+        var key = segments.count
+        for s in segments { key ^= s.id.hashValue }
+        if key != self.key || lines.count != segments.count {
+            lines = segments.sorted { $0.startTime < $1.startTime }
+            self.key = key
+        }
+        return lines
+    }
+
+    /// The line playing at `time`: the last one starting at or before it.
+    /// Binary search, since it runs on every playback tick.
+    static func playing(at time: TimeInterval, in lines: [TranscriptSegment]) -> TranscriptSegment? {
+        var low = 0, high = lines.count
+        while low < high {
+            let mid = (low + high) / 2
+            if lines[mid].startTime <= time { low = mid + 1 } else { high = mid }
+        }
+        return low == 0 ? nil : lines[low - 1]
+    }
+}
+
+/// Playback mix for a call recorded on speakers. The mic track ("Me") also
+/// heard the other side through the speakers; the echo canceller shrinks that
+/// copy but can't erase it, so at full volume it lands a beat after the clean
+/// system track and the call sounds like two streams. While only the other
+/// side talks, the mic goes down to `ducked`.
+enum PlaybackMix {
+    /// -20 dB: the leftover copy sinks under the clean voice, while a laugh or
+    /// "mm-hm" the transcript never caught is still faintly there.
+    static let ducked: Float = 0.1
+    /// Their line keeps the mic down this long after it ends: covers the
+    /// echo's tail and the short pauses between their sentences, so the mic
+    /// doesn't pump up and down between lines.
+    static let hold: TimeInterval = 0.8
+    /// Your line brings the mic back this early: line starts run a little
+    /// late, and your first word must not be ducked.
+    static let lead: TimeInterval = 0.3
+
+    /// Any label but "Me" is the other side: "Them", or "Speaker N" and named
+    /// voices after diarization.
+    // ponytail: linear scan per 0.1 s tick, fine for thousands of lines; binary-search sorted lines if a call ever gets far longer.
+    static func micVolume(segments: [TranscriptSegment], at time: TimeInterval) -> Float {
+        var theirs = false
+        for s in segments {
+            if s.speakerLabel == AudioSource.me.label {
+                if s.startTime - lead <= time && time < s.endTime { return 1 }
+            } else if s.startTime <= time && time < s.endTime + hold {
+                theirs = true
+            }
+        }
+        return theirs ? ducked : 1
+    }
 }
 
 /// The confirm-first naming popover: play short clips of the voice, then type

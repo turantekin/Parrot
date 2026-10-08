@@ -34,12 +34,12 @@ struct CopilotHomeCard: View {
     private func card(_ status: CopilotStatus) -> some View {
         switch status {
         case .on:
-            CopilotHeroCard(title: "Copilot is on",
+            CopilotHeroCard(title: "The Assistant is on",
                             subtitle: "It opens beside your next call and shows answers as they ask.") {
                 closeButton { justTurnedOn = false }
             }
         case .waitingForModel(let progress):
-            CopilotHeroCard(title: "Copilot turns on when \(ollamaModel) finishes",
+            CopilotHeroCard(title: "The Assistant turns on when \(ollamaModel) finishes",
                             subtitle: progress.map { "\(Int($0 * 100))% downloaded" } ?? "Starting the download",
                             emphasized: false) {
                 ProgressView(value: progress)
@@ -53,7 +53,7 @@ struct CopilotHomeCard: View {
     private func nudge(_ status: CopilotStatus) -> some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius)
         return VStack(alignment: .leading, spacing: 12) {
-            CopilotHeroCard(title: status == .off ? "Turn on Copilot" : "Finish setting up Copilot",
+            CopilotHeroCard(title: status == .off ? "Turn on the Assistant" : "Finish setting up the Assistant",
                             subtitle: reason(status), bordered: false) {
                 closeButton { dismissed = true }
             }
@@ -61,7 +61,7 @@ struct CopilotHomeCard: View {
                 Image(systemName: "lightbulb")
                     .foregroundStyle(Theme.Colors.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("They ask about security. Copilot suggests:")
+                    Text("They ask about security. The Assistant suggests:")
                         .foregroundStyle(Theme.Colors.ink2)
                     Text("“All audio stays on your Mac. Only the text goes to the AI.”")
                 }
@@ -71,7 +71,7 @@ struct CopilotHomeCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
             HStack(spacing: 10) {
-                Button("Set up Copilot") { MeetingActions.showCopilotSetup() }
+                Button("Set up the Assistant") { MeetingActions.showCopilotSetup() }
                     .buttonStyle(.borderedProminent)
                 Text("Takes about 2 minutes")
                     .font(Theme.Typography.caption)

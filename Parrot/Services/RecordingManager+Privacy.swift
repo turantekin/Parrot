@@ -79,7 +79,7 @@ enum PrivacyLedger {
             default: break   // Ollama: local
             }
         }
-        textLine(usage.copilotProvider, usage.copilot, usage.reports == nil ? "the copilot and report" : "the copilot")
+        textLine(usage.copilotProvider, usage.copilot, usage.reports == nil ? "the Assistant and report" : "the Assistant")
         textLine(usage.reportsProvider, usage.reports, "the report")
         if let docs = usage.docAnswers, docs.calls > 0 {
             out.append("Questions + document snippets → TypeSafe AI, for instant answers")

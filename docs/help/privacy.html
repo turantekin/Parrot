@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="privacy, local, on device, cloud, what is sent, audio, transcript, api keys, keychain, security, set up copilot, ollama install, check key">
+<meta name="keywords" content="privacy, local, on device, cloud, what is sent, audio, transcript, api keys, keychain, security, set up assistant, set up copilot, ollama install, check key">
 <title>What leaves your Mac</title>
 <link rel="canonical" href="https://openparrot.app/help/privacy.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -48,21 +48,21 @@ and after that everything runs offline.</p>
 
 <h2>Sent out only if you set it up</h2>
 <ul>
-  <li><strong>Copilot on Claude or a custom server:</strong> transcript text
+  <li><strong>The Assistant on Claude or a custom server:</strong> transcript text
   from the current call (plus matched knowledge base snippets and your
   profile's instructions) goes to that provider during calls and for reports.
   Audio never goes.</li>
   <li><strong>Instant document answers (TypeSafe AI):</strong> only with a
-  TypeSafe key and only when the Copilot runs on Claude. When the other side
+  TypeSafe key and only when the Assistant runs on Claude. When the other side
   asks a question, that question, the last couple of lines of the call, and
   the matching snippets of your documents go to TypeSafe AI, hosted in the
   United States, so the matching excerpt can show within a second. Audio
   never goes. TypeSafe states it does not train on what you send and keeps
   it only as long as needed to run the service.</li>
-  <li><strong>Calendar invites for the Copilot:</strong> only if you turn on
-  "Brief the copilot from the invite" and the Copilot runs on Claude or a
+  <li><strong>Calendar invites for the Assistant:</strong> only if you turn on
+  "Brief the Assistant from the invite" and the Assistant runs on Claude or a
   custom server. The matched event's title, guest names and notes (minus
-  dial-in links and numbers) go with the Copilot's requests during that
+  dial-in links and numbers) go with the Assistant's requests during that
   call. Off by default.</li>
   <li><strong>Ask Parrot with a cloud AI:</strong> the few best-matching excerpts
   from your meetings (not whole meetings, never audio) go to the post-call
@@ -77,7 +77,7 @@ and after that everything runs offline.</p>
   to its own cloud (for Claude, Anthropic under your Claude account). It's off
   until you turn it on, it's read-only, and you choose what it sees on the
   <a href="claude.html">Claude &amp; AI Apps</a> page: transcripts, reports and
-  notes (on), Copilot cards (off), and call types to hide. It never sees
+  notes (on), Assistant cards (off), and call types to hide. It never sees
   on-device-only meetings, audio, keys or settings. Parrot only records counts
   and times of what the app read, never the content.</li>
   <li><strong>Cloud transcription (Groq or Deepgram):</strong> the call audio
@@ -94,7 +94,7 @@ and after that everything runs offline.</p>
 <p>Settings &rarr; Privacy has four switches:</p>
 <ul>
   <li><strong>On-device only.</strong> One switch for nothing leaving this Mac. Whisper
-  transcribes, Ollama runs the Copilot and reports, and there's no polish pass,
+  transcribes, Ollama runs the Assistant and reports, and there's no polish pass,
   no TypeSafe answers and no webhook. You can also turn it on for one profile
   (Settings &rarr; Profiles), so only your therapy or legal calls run this way.
   Meetings recorded like this stay out of Ask Parrot when a cloud AI would write
@@ -117,7 +117,7 @@ title, built from that meeting's own record: which service got audio or text,
 and for what.</p>
 
 <h2>And Ollama?</h2>
-<p>Ollama runs on your own machine, so a Copilot on Ollama keeps everything
+<p>Ollama runs on your own machine, so the Assistant on Ollama keeps everything
 local: Parrot only ever talks to it on localhost. Local model, local
 transcription, zero outbound bytes. That combination is the whole reason
 Parrot exists.</p>

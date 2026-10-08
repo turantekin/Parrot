@@ -134,6 +134,11 @@ enum Theme {
         /// Inline pill chips (receipts, citations): horizontal / vertical inset.
         static let chipInsetH: CGFloat = 6
         static let chipInsetV: CGFloat = 1
+        /// Tag-sized pills (Knowledge Use for): horizontal / vertical inset.
+        static let tagInsetH: CGFloat = 8
+        static let tagInsetV: CGFloat = 4
+        /// Dashed outline for "off" states (paused folder, unused document).
+        static let offDash: [CGFloat] = [3, 2]
         /// Banner vertical inset.
         static let bannerInsetV: CGFloat = 8
         /// Room under scrolled content for the corner bug-report button

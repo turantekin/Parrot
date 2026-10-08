@@ -225,7 +225,8 @@ final class Meeting {
     /// diarization splitting one voice into "Speaker 1"/"Speaker 2" collapses back
     /// to a single person — so a 1-on-1 reads as 2, not 3.
     var speakerCount: Int {
-        Set(segments.map { displayName(forSpeaker: $0.speakerLabel) }).count
+        let names = speakerNames  // decoded once, not once per line (#54)
+        return Set(segments.map { displayName(forSpeaker: $0.speakerLabel, names: names) }).count
     }
 
     /// Human-facing speaker name. Precedence: a per-speaker name from the
@@ -234,7 +235,11 @@ final class Meeting {
     /// naming has started, unnamed voices show their raw "Speaker N" label
     /// (mixing "Gürkan" with a collective name would misattribute lines).
     func displayName(forSpeaker label: String?) -> String {
-        let names = speakerNames
+        displayName(forSpeaker: label, names: speakerNames)
+    }
+
+    /// For loops over every line: `speakerNames` decodes JSON on each read.
+    func displayName(forSpeaker label: String?, names: [String: String]) -> String {
         guard let label, !label.isEmpty else {
             return names.isEmpty ? (themName ?? "Them") : "Them"
         }
@@ -362,9 +367,10 @@ final class Meeting {
 
     /// The transcript as a receipts index (for checking report stamps).
     var receiptIndex: ReceiptIndex {
-        ReceiptIndex(lines: segments.map {
+        let names = speakerNames
+        return ReceiptIndex(lines: segments.map {
             .init(start: $0.startTime, end: $0.endTime,
-                  speaker: displayName(forSpeaker: $0.speakerLabel), text: $0.text)
+                  speaker: displayName(forSpeaker: $0.speakerLabel, names: names), text: $0.text)
         })
     }
 

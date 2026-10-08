@@ -3,14 +3,16 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.24.2</title>
-            <pubDate>Wed, 30 Sep 2026 13:08:05 +0100</pubDate>
-            <sparkle:fullReleaseNotesLink>https://github.com/turantekin/Parrot/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202609301306</sparkle:version>
-            <sparkle:shortVersionString>0.24.2</sparkle:shortVersionString>
+            <title>0.27.3</title>
+            <pubDate>Thu, 08 Oct 2026 10:42:15 +0100</pubDate>
+            <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
+            <sparkle:version>202610081041</sparkle:version>
+            <sparkle:shortVersionString>0.27.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.24.2/Parrot-0.24.2.dmg" length="23772083" type="application/octet-stream" sparkle:edSignature="O7XLaz050RU8OSxrV9g6eUHEUI7nt4lIE+Qh0629cK6WfYVKBCVPAQctzzro6BHOYyAckR28u1s1POnjGregBQ=="/>
+            <description><![CDATA[<h3>Fresh feathers! Parrot 0.27.3</h3><ul><li>The Assistant's first tip now arrives once the call gets down to business.</li><li>No report on a meeting? Write report on its Report tab makes one, Assistant on or off.</li><li>On speakers, fewer echoes land under your name, even when you do most of the talking.</li><li>Clicking a line in a long transcript jumps there right away.</li></ul><p><a href="https://openparrot.app/changelog#v0.27.3">Read the full story</a></p>
+]]></description>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.27.3/Parrot-0.27.3.dmg" length="24355106" type="application/octet-stream" sparkle:edSignature="cH9lWtEuAs7p27nnSDU4RLbvFglRmYUPXeZ3AzoXYoRJlee4VSDOXb2SZDB3YXjloOP15VTWY+Obfw86+FovAw=="/>
         </item>
     </channel>
 </rss>

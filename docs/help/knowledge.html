@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="knowledge base, documents, faq, pricing, grounded answers, references, upload">
+<meta name="keywords" content="knowledge base, documents, faq, pricing, grounded answers, references, upload, folders, use for, call types, off, paused, not used on calls, about line, search documents, same as folder">
 <title>Knowledge base</title>
 <link rel="canonical" href="https://openparrot.app/help/knowledge.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -18,7 +18,7 @@
 <p>When the other side asks "what does the annual plan cost?", a generic AI
 can only improvise. The knowledge base is how you stop that: drop in your own
 documents (pricing sheets, FAQs, security one-pagers) in Settings → Knowledge,
-and the Copilot answers from them, citing which document it used on the
+and the Assistant answers from them, citing which document it used on the
 card.</p>
 
 <img src="img/settings-knowledge.png" alt="The Knowledge settings page">
@@ -41,10 +41,46 @@ macOS downloads a language model from Apple the first time you add such a
 document. The document works right away, but until the download finishes it
 only matches exact words. Your documents are never uploaded.</p>
 
-<h2>Scoping to profiles</h2>
-<p>Each document can be limited to specific call profiles. Your pricing sheet
-belongs in sales calls; it has no business showing up in a 1:1. By default new
-documents are available everywhere.</p>
+<h2>Folders</h2>
+<p>Group documents the way you think about them: your company basics in one
+folder, everything for one deal in another. Click <strong>New folder</strong>,
+then drag documents onto it, or use a document's <strong>…</strong> menu and
+<strong>Move to folder</strong>. A folder's <strong>…</strong> menu has
+<strong>Rename</strong>, <strong>Add documents here…</strong> and
+<strong>Delete folder…</strong>. Deleting a folder never deletes its documents:
+they move to <strong>No folder</strong> and keep working exactly as before.</p>
+
+<h2>Use for: which calls may use a document</h2>
+<p>Your pricing sheet belongs in sales calls; it has no business showing up in
+a 1:1. Each folder has a <strong>Use for</strong> setting, the pill on its row:
+<strong>All call types</strong>, one or more call types (your
+<a href="profiles.html">profiles</a>), or <strong>Off, not used on calls</strong>
+to pause a whole folder without deleting anything. New folders start at All
+call types, and so does No folder, so a document you just added is used right
+away.</p>
+<p>Documents follow their folder and show <strong>Same as folder</strong>. Give
+one document its own setting from its pill and it shows in blue: it replaces
+the folder's, so a deal folder can be for sales calls while its NDA is only for
+vendor calls.</p>
+<p>A document the Assistant can't use on any call says <strong>Not used on
+calls</strong>. If you see that after updating Parrot, the document had no call
+types picked before, and back then that meant it was never used. Nothing
+changed; it's just visible now. To switch it on, click <strong>Not used on
+calls</strong> and choose <strong>All call types</strong> or the call types you
+want. Moving it into a folder isn't enough on its own, because a document keeps
+its own setting when it moves: choose <strong>Same as folder</strong> to have
+it follow the folder.</p>
+
+<h2>About lines and search</h2>
+<p>Under each document's name is a short line about what's in it, such as
+"Signed NDA, Sept 2026". Click it to type, or choose <strong>Edit about
+line</strong>. You see it in the list, and the Assistant reads it next to every
+passage it quotes from that document. <strong>Search documents</strong> finds
+documents by name or about line, ignoring capitals and accents, so "gorusme"
+finds "Görüşme".</p>
+<p>Two files with the same name can't sit in different folders, because Parrot
+knows documents by file name. Rename one to keep both. Adding a file again into
+its own folder updates it and keeps its about line and Use for.</p>
 
 <div class="tip"><strong>Tip:</strong> you can also tell a profile whether the
 model may use its general knowledge on top of your documents, or answer

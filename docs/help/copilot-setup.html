@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="copilot, setup, claude, api key, ollama, local model, custom server, openai compatible, reports provider, enable">
-<title>Setting up the Copilot</title>
+<meta name="keywords" content="assistant, copilot, setup, claude, api key, ollama, local model, custom server, other ai service, openrouter, openai compatible, reports provider, enable">
+<title>Setting up the Assistant</title>
 <link rel="canonical" href="https://openparrot.app/help/copilot-setup.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
 <script>if (location.hostname === "turantekin.github.io") location.replace("https://openparrot.app/help/copilot-setup.html" + location.hash);</script>
@@ -13,18 +13,18 @@
 <body>
 <a class="crumb" href="index.html">← Parrot Help</a>
 
-<h1>Setting up the Copilot</h1>
+<h1>Setting up the Assistant</h1>
 
-<img src="img/settings-copilot.png" alt="The Copilot settings page: enable toggle, pace, window and model pickers">
+<img src="img/settings-copilot.png" alt="The Assistant settings page: enable toggle, pace, window and model pickers">
 
-<p>The Copilot is the AI layer: live suggestion cards during the call and the
+<p>The Assistant is the AI layer: live suggestion cards during the call and the
 report afterwards. It is <strong>off by default</strong> and Parrot works
 perfectly well as a recorder and transcriber without it. When you want it,
-flip it on in Settings → Copilot and pick who does the thinking.</p>
+flip it on in Settings → Assistant and pick who does the thinking.</p>
 
 <h2>Three ways to power it</h2>
-<p>The quickest way is the guided setup: Settings → Copilot → Set up
-Copilot, or the Copilot card on Home. It walks you through Private (Ollama on
+<p>The quickest way is the guided setup: Settings → Assistant → Set up
+the Assistant, or the Assistant card on Home. It walks you through Private (Ollama on
 your Mac, installed for you), Balanced (Claude, audio stays on your Mac) or
 Cloud (Claude plus Deepgram), and checks your keys before saving them.</p>
 <ul>
@@ -41,11 +41,28 @@ Cloud (Claude plus Deepgram), and checks your keys before saving them.</p>
   your Mac with live transcription. Great for reports; on live cards, expect
   a relaxed rhythm rather than instant. On Apple Silicon get the native
   build or it will be painfully slow.</li>
-  <li><strong>Custom server.</strong> Any OpenAI-compatible endpoint: your own
-  machine, a company gateway, OpenRouter and friends. Paste the base URL and
-  model name. If you're on a free tier with strict limits, the pace settings
-  in <a href="copilot-live.html">the next topic</a> are made for you.</li>
+  <li><strong>Other AI service.</strong> Any service that speaks the OpenAI
+  API: OpenRouter, OpenAI, Groq, your own machine or a company gateway. Paste
+  its address, a model name and your key. If you're on a free tier with
+  strict limits, the pace settings in <a href="copilot-live.html">the next
+  topic</a> are made for you.</li>
 </ul>
+
+<h3>Using OpenRouter</h3>
+<p><a href="https://openrouter.ai">OpenRouter</a> gives you one key for many
+models, including cheap fast ones that run well when your Mac is too slow for
+a local model.</p>
+<ol>
+  <li>Make a key at openrouter.ai.</li>
+  <li>In <strong>Settings → Assistant → Model</strong>, pick <strong>Other AI
+  service</strong>. Set <strong>Server URL</strong> to
+  <code>https://openrouter.ai/api/v1</code> and <strong>Model</strong> to a
+  model id from their list, like <code>google/gemini-2.5-flash</code>.</li>
+  <li>Paste the key in <strong>API key</strong>.</li>
+</ol>
+<p>Transcript text goes to OpenRouter and the model you picked, like it does
+for Claude. Parrot can't estimate the cost here, so check your usage on
+OpenRouter.</p>
 
 <h2>Instant answers from your documents</h2>
 <p>On Claude, there is one optional extra: a <strong>TypeSafe AI</strong> key
@@ -54,8 +71,8 @@ documents cover, Parrot shows the matching excerpt as a "From your docs" card,
 usually within a second, while Claude is still writing its answer. Claude's
 card then takes over. Without the key nothing changes. It sends the question,
 a couple of lines of context and the matching snippets of your documents to
-TypeSafe, never audio, and it only works when your documents are tagged into
-the call profile you are using.</p>
+TypeSafe, never audio, and it only looks at documents whose <strong>Use for</strong>
+includes the call profile you are using.</p>
 
 <h2>Different brains for different jobs</h2>
 <p>Live cards need to be quick and sharp. The post-call report has all the

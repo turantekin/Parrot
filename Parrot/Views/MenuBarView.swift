@@ -27,6 +27,11 @@ struct MenuBarView: View {
             }
             .disabled(recordingManager.isStopping)
 
+            Button(recordingManager.isMuted ? "Unmute Me" : "Mute Me") {
+                recordingManager.toggleMute()
+            }
+            .disabled(recordingManager.isStopping)
+
             Button(recordingManager.isStopping ? "Finalizing…" : "Stop Recording") {
                 Task { await recordingManager.stopRecording() }
             }

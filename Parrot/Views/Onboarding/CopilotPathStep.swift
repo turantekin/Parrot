@@ -7,11 +7,11 @@ struct CopilotPathStep: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            StepHeader(title: "How should Copilot work?",
+            StepHeader(title: "How should the Assistant work?",
                        subtitle: "Pick how private you want it. You can change this later.")
             VStack(spacing: 10) {
                 card(.private, icon: "lock", title: "Private",
-                     detail: "Copilot runs on this Mac. Nothing leaves it. Free. Uses the Ollama app.")
+                     detail: "The Assistant runs on this Mac. Nothing leaves it. Free. Uses the Ollama app.")
                 card(.balanced, icon: "slider.horizontal.3", title: "Balanced",
                      detail: "Audio stays on this Mac. Only text goes to Claude. Smartest answers. Needs a Claude key.",
                      badge: "Recommended")

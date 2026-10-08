@@ -130,12 +130,25 @@ echo "  Installed copies will offer it within a day."
 # 4. Tell the website. The release is out, so a failure here only warns.
 #    Help sync copies docs/help from this tag (it also runs daily).
 #    Site draft writes the copy from the site plan, and runs only with one.
+#    The deploy hook rebuilds openparrot.app, so it shows the new version now.
 SITE="turantekin/parrot-site"
 echo
 if gh workflow run help-sync.yml --repo "$SITE" >/dev/null 2>&1; then
   echo "==> started the help sync on parrot-site"
 else
   echo "!! couldn't start the help sync; its daily run will catch up" >&2
+fi
+# The site caches the release list for an hour. A fresh build (no build
+# cache) shows the new version and download now. The hook URL triggers
+# production builds, so it lives in the login Keychain, never in this repo.
+if HOOK="$(security find-generic-password -s parrot-site-deploy-hook -w 2>/dev/null)"; then
+  if curl -fsS -X POST "$HOOK?buildCache=false" >/dev/null 2>&1; then
+    echo "==> rebuilding openparrot.app so it shows $VERSION"
+  else
+    echo "!! couldn't start the site rebuild; it shows $VERSION within the hour anyway" >&2
+  fi
+else
+  echo "==> no parrot-site-deploy-hook in the Keychain, so openparrot.app shows $VERSION within the hour"
 fi
 DRAFT="gh workflow run site-draft.yml --repo $SITE -F plan=@$PLAN_FILE"
 if [ -z "$PLAN_FILE" ]; then

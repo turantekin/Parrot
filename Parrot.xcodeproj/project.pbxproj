@@ -28,6 +28,7 @@
 		1CB4D08E21240C09F0F9A888 /* BriefViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F86496BD10D3C652DB48C2C /* BriefViews.swift */; };
 		1D4BBB5AC90C7DF3C6401C2A /* SentimentStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8813E4A864B3AC242C6CD070 /* SentimentStripView.swift */; };
 		1EBDB0260D98AD0EDA5EBD8F /* OnboardingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4C4858FC12B6DF29F8C391 /* OnboardingModel.swift */; };
+		21EAF5E5EB44852D889DCA98 /* EchoGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780FD9063916B9F38869EA4B /* EchoGate.swift */; };
 		22A0E7C831954CE574638409 /* CopilotSetupState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9117B9FE2C0AA0369A2B0F46 /* CopilotSetupState.swift */; };
 		28B471FA2550C26972D86C1E /* KnowledgeBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD509ED2AEBB5B6CDC6B6B3E /* KnowledgeBase.swift */; };
 		29016B184396694800AEBA61 /* AutomationSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 795A742B9601FDF3700EEAF4 /* AutomationSettingsViews.swift */; };
@@ -35,7 +36,10 @@
 		2C50BBA7E2A65CE3D1EC4944 /* CopilotHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 400998D53C4E3491D0D3F3DD /* CopilotHarness.swift */; };
 		2D78F88F85C6B10D387F5B45 /* ParrotApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200FE5120F42A3BB47933EB7 /* ParrotApp.swift */; };
 		30018274E62D128CD5233AAD /* ToneTimelineCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A60565D06DBC8D3E7302B6E /* ToneTimelineCard.swift */; };
+		30B04505271738717D6DA723 /* WhatsNew.swift in Sources */ = {isa = PBXBuildFile; fileRef = B183BFF50A64553D38338843 /* WhatsNew.swift */; };
+		30D6A15542D82FADBE00F8E6 /* WhatsNewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 263CE93170FACBDB3C000E58 /* WhatsNewCard.swift */; };
 		31EBD53900CB031ED0BE2965 /* RecordingManager+Memory.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6989DE6ECCCBD00280F1138 /* RecordingManager+Memory.swift */; };
+		33388C762DC6F8146FEB8913 /* KnowledgeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503BC6AC7CF52171008D5415 /* KnowledgeSettingsView.swift */; };
 		380525791BF03BA5FAB10711 /* ReportContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72A118B3116F40C4BA68FCB /* ReportContentView.swift */; };
 		380971D794BD0263EEED1965 /* CopilotPathStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE3BA3F3D823259B99646C54 /* CopilotPathStep.swift */; };
 		3B00DEC1F27C68CAAF8C707D /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A561B594662DE66A6969D0D /* Bookmark.swift */; };
@@ -157,6 +161,7 @@
 		200FE5120F42A3BB47933EB7 /* ParrotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParrotApp.swift; sourceTree = "<group>"; };
 		215C8A7CD93D4294614F24FE /* MCPCommitments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPCommitments.swift; sourceTree = "<group>"; };
 		255C0CD2B2A2E0FBA9F94EEE /* SystemAudioTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioTap.swift; sourceTree = "<group>"; };
+		263CE93170FACBDB3C000E58 /* WhatsNewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewCard.swift; sourceTree = "<group>"; };
 		28857A0DAA1D83C066023B14 /* CloudTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudTranscription.swift; sourceTree = "<group>"; };
 		28DD99BAACABF3D605D8A39D /* OllamaInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaInstaller.swift; sourceTree = "<group>"; };
 		2AA62BB3552276743C5C57CB /* Parrot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Parrot.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -178,6 +183,7 @@
 		4DFEF53506253A5F3525BE76 /* ProfilePresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePresets.swift; sourceTree = "<group>"; };
 		4F56F8BB3EE467BFFAFD75A6 /* LanguageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageRouter.swift; sourceTree = "<group>"; };
 		502634CC39A7DD25D87D68A0 /* AudioImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioImport.swift; sourceTree = "<group>"; };
+		503BC6AC7CF52171008D5415 /* KnowledgeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeSettingsView.swift; sourceTree = "<group>"; };
 		51A6E3A243B9A2B9B6D0AE4E /* ProfileTest+Parakeet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProfileTest+Parakeet.swift"; sourceTree = "<group>"; };
 		531A69C106428442DDDF25EF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		53CCAD24CC45467637AE5CE2 /* ParrotLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParrotLink.swift; sourceTree = "<group>"; };
@@ -195,6 +201,7 @@
 		6A8125A30438BD9352715149 /* CopilotSetupStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotSetupStep.swift; sourceTree = "<group>"; };
 		6DF02BC76DBF759022484645 /* NudgePill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgePill.swift; sourceTree = "<group>"; };
 		7524D6FDABABD804664FBD2B /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
+		780FD9063916B9F38869EA4B /* EchoGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoGate.swift; sourceTree = "<group>"; };
 		786AEE931B2D103312603940 /* Insight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Insight.swift; sourceTree = "<group>"; };
 		795A742B9601FDF3700EEAF4 /* AutomationSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSettingsViews.swift; sourceTree = "<group>"; };
 		7A1CD62E905F42692993B433 /* NudgeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeDetector.swift; sourceTree = "<group>"; };
@@ -227,6 +234,7 @@
 		AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		ADAE039E9922CFEDDA6B2BBD /* ToneTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToneTimeline.swift; sourceTree = "<group>"; };
 		AE3BA3F3D823259B99646C54 /* CopilotPathStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotPathStep.swift; sourceTree = "<group>"; };
+		B183BFF50A64553D38338843 /* WhatsNew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNew.swift; sourceTree = "<group>"; };
 		B1988FAC07E8204688E45A40 /* AIUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage.swift; sourceTree = "<group>"; };
 		B49B4C572B11B0A891748F1A /* ProfileReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileReview.swift; sourceTree = "<group>"; };
 		B504F6AB0A566ABD11D64CD0 /* ProfileReportCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileReportCard.swift; sourceTree = "<group>"; };
@@ -303,6 +311,7 @@
 				CEFBCE6255C1D3E14646716C /* CopilotHomeCard.swift */,
 				09FD0006B2D617872DB79534 /* CopilotPanelView.swift */,
 				A2ECD50C879A39AA006003B8 /* DashboardView.swift */,
+				503BC6AC7CF52171008D5415 /* KnowledgeSettingsView.swift */,
 				1DC1D58E1A4501FB741B72EE /* LiveRecordingView.swift */,
 				D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */,
 				5D766E175C79182A19FDCE19 /* MenuBarView.swift */,
@@ -323,6 +332,7 @@
 				9BE4F80615AF9579E1AFB408 /* SidebarView.swift */,
 				AA31CC3FCD8BF29F0AC5E399 /* Theme.swift */,
 				4A60565D06DBC8D3E7302B6E /* ToneTimelineCard.swift */,
+				263CE93170FACBDB3C000E58 /* WhatsNewCard.swift */,
 				C3D6D3B9B7E97186B5994BE1 /* Onboarding */,
 			);
 			path = Views;
@@ -423,6 +433,7 @@
 				9117B9FE2C0AA0369A2B0F46 /* CopilotSetupState.swift */,
 				9F5C78AFBC3F48C895B6A0F9 /* DiarizationEngine.swift */,
 				59587E1F3FF92A07FD404042 /* EchoCanceller.swift */,
+				780FD9063916B9F38869EA4B /* EchoGate.swift */,
 				FF45FC06CCD2DF27612EA1CA /* EngineRecommendation.swift */,
 				7F0AD1CD85BAA4D58B50B569 /* ExportService.swift */,
 				480C71FBB84A286AEFFB9068 /* FollowUpEmail.swift */,
@@ -464,6 +475,7 @@
 				255C0CD2B2A2E0FBA9F94EEE /* SystemAudioTap.swift */,
 				ADAE039E9922CFEDDA6B2BBD /* ToneTimeline.swift */,
 				37F04EA6D7B41CE261416199 /* TranscriptionEngine.swift */,
+				B183BFF50A64553D38338843 /* WhatsNew.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -611,6 +623,7 @@
 				FE86BA35CE14B2DD8BEF3E6A /* DashboardView.swift in Sources */,
 				C0558FD92CC63B08D0434047 /* DiarizationEngine.swift in Sources */,
 				670465176804DAB6090CD626 /* EchoCanceller.swift in Sources */,
+				21EAF5E5EB44852D889DCA98 /* EchoGate.swift in Sources */,
 				824EEF5B8CC32F067F6772D5 /* EngineRecommendation.swift in Sources */,
 				85CA1373AFA3114E41376176 /* ExportService.swift in Sources */,
 				09CA6C39B3150648B4AEB4F4 /* FollowUpEmail.swift in Sources */,
@@ -622,6 +635,7 @@
 				526821B12602359B826C7347 /* KindStyle.swift in Sources */,
 				28B471FA2550C26972D86C1E /* KnowledgeBase.swift in Sources */,
 				F8CA7DA639E64F49A7FC3601 /* KnowledgeBaseService.swift in Sources */,
+				33388C762DC6F8146FEB8913 /* KnowledgeSettingsView.swift in Sources */,
 				9B9FE3793FF517277E038D41 /* LanguageRouter.swift in Sources */,
 				57E31BA8B084C9DE80DDB64E /* LiveNudgeSession.swift in Sources */,
 				C8804B03958954B9D8BEA6FA /* LiveRecordingView.swift in Sources */,
@@ -694,6 +708,8 @@
 				0E3D91715DEE87D51AA23C18 /* TranscriptSegment.swift in Sources */,
 				CC22CC7B3CBD14D2B4606E16 /* TranscriptionEngine.swift in Sources */,
 				F06D20623CE0F9F52146A450 /* WelcomeStep.swift in Sources */,
+				30B04505271738717D6DA723 /* WhatsNew.swift in Sources */,
+				30D6A15542D82FADBE00F8E6 /* WhatsNewCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

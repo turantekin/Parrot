@@ -81,6 +81,18 @@ title as its first line (`# Parrot X.Y.Z: <short tagline>`): publish.sh makes
 that line the release title, which the website's "New in" pill shows. By
 hand, `gh release create --title "..." --notes-file` does the same.
 
+## 4b. What's new: Parrot/Services/WhatsNew.swift
+
+Existing users see this once on Home after the update, and in Sparkle's
+update window. Rewrite `WhatsNew.current` for this release: `version`, a
+`headline` with at most one light bird pun ("Fresh feathers! Parrot X.Y.Z",
+"Parrot learned a few new tricks"), and two to four `highlights`, each one
+line of 90 characters or fewer, in the user's words, drawn from the release
+notes. A bug-fix-only release can stay quiet: `highlights: []`. No jokes about
+recordings, privacy, or fixes that touched someone's data; no em-dashes.
+`release.sh` refuses to run until this names the version and passes
+`make test`. Commit it with the help and README changes.
+
 ## 5. What the website should add: ask the user
 
 The home page is the user's pitch, so they choose. Read
@@ -131,4 +143,6 @@ scripts/publish.sh X.Y.Z dist/notes-X.Y.Z.md dist/site-plan-X.Y.Z.md
 
 Run it from master (or the same steps by hand from a worktree). It starts the
 site's help sync and, with the plan, the site draft; both end as PRs in
-parrot-site for the user to merge.
+parrot-site for the user to merge. It also fires the site's Vercel deploy hook
+(Keychain item `parrot-site-deploy-hook`), so openparrot.app shows the new
+version right away instead of after its hour-long cache.

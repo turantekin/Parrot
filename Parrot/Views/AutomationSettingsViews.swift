@@ -171,8 +171,8 @@ struct CalendarCard: View {
             }
             if calendar.isConnected {
                 SettingsToggleRow(
-                    title: "Brief the copilot from the invite",
-                    detail: "The live copilot reads the event's title, guests and notes. With a cloud copilot (Claude or a custom server) that text is sent to it, like the transcript is.",
+                    title: "Brief the Assistant from the invite",
+                    detail: "The live Assistant reads the event's title, guests and notes. When it runs on a cloud AI (Claude or a custom server), that text is sent there, like the transcript is.",
                     isOn: $useDetails
                 )
                 SettingsToggleRow(

@@ -60,7 +60,7 @@ enum BugReport {
         #endif
         return [
             "Parrot \(AppUpdater.currentVersion) · macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion) · \(cpu)",
-            "Model: \(defaults.string(forKey: "whisperModel") ?? "base") · Transcription: \(backend) · Copilot: \(copilot)",
+            "Model: \(defaults.string(forKey: "whisperModel") ?? "base") · Transcription: \(backend) · Assistant: \(copilot)",
         ]
     }
 

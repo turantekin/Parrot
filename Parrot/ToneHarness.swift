@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import SwiftData
 import SwiftUI
 
@@ -144,5 +145,56 @@ enum ToneSnapshot {
             exit(1)
         }
         return SnapshotIO.write(data, to: path)
+    }
+}
+
+/// `Parrot --pill-test [out.png]`: shows a real nudge pill (the app's own
+/// floating panel), then captures the top of the main display through
+/// ScreenCaptureKit, the way Zoom and Meet share a screen, and saves that
+/// strip. The pill has `sharingType = .none`, so it must not be in it. Run
+/// from the signed app (`open -n -W dist/Parrot.app --args --pill-test out.png`)
+/// so the capture uses Parrot's Screen Recording permission. The app is
+/// sandboxed: a relative path lands in ~/Library/Containers/com.uygar.parrot/Data.
+/// Proof is in the PNG: no pill here, a pill with PILL_TEST_SHARED=1.
+@MainActor
+enum PillTest {
+    static func run(out: String?) {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        NudgePillController.shared.show(Nudge(kind: .goneQuiet, time: 0,
+            text: "PILL TEST: They've gone quiet since you said \u{201C}the price goes up in January\u{201D}"))
+        // PILL_TEST_SHARED=1: the control run, pill made capturable on purpose.
+        if ProcessInfo.processInfo.environment["PILL_TEST_SHARED"] != nil {
+            for window in app.windows where window is NSPanel { window.sharingType = .readOnly }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if let out { await capture(to: out) }
+            try? await Task.sleep(for: .seconds(out == nil ? 13 : 1))
+            exit(0)
+        }
+        app.run()
+    }
+
+    private static func capture(to path: String) async {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
+                print("pill-test: no display"); return
+            }
+            let config = SCStreamConfiguration()
+            config.width = display.width * 2
+            config.height = display.height * 2
+            config.sourceRect = CGRect(x: 0, y: 0, width: display.width, height: 130)
+            config.width = display.width * 2
+            config.height = 260
+            let image = try await SCScreenshotManager.captureImage(
+                contentFilter: SCContentFilter(display: display, excludingWindows: []), configuration: config)
+            let rep = NSBitmapImageRep(cgImage: image)
+            try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            print("pill-test: captured \(path)")
+        } catch {
+            print("pill-test: capture failed: \(error.localizedDescription)")
+        }
     }
 }

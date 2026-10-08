@@ -78,11 +78,11 @@ struct AIUsage: Codable {
     func costBreakdown() -> [LineItem] {
         var items: [LineItem] = []
         // Live cards bucket (also carries reports unless split below). The
-        // plain "Copilot" prefix is kept when there's a single bucket so
-        // pre-split meetings read unchanged.
+        // plain "Assistant" prefix is kept when there's a single bucket so
+        // pre-split meetings read as one line.
         if copilot.calls > 0 {
             items.append(Self.modelLine(
-                prefix: reports == nil ? "Copilot" : "Live cards",
+                prefix: reports == nil ? "Assistant" : "Live cards",
                 model: copilotModel, provider: copilotProvider, totals: copilot))
         }
         if let reports, reports.calls > 0 {

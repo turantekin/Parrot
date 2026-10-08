@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="troubleshooting, mic muted, transcription stops, call starts, zoom, meet, safari, model loading, stuck, permission stuck, permission won't turn green, gibberish, nonsense transcript, wrong language, diagnostics, logs, set up copilot, ollama install, check key">
+<meta name="keywords" content="troubleshooting, mic muted, transcription stops, call starts, zoom, meet, safari, model loading, stuck, permission stuck, permission won't turn green, gibberish, nonsense transcript, wrong language, diagnostics, logs, echo, playback, two voices, doubled voice, speakers, their words as mine, my lines, english words, crackle, set up assistant, set up copilot, ollama install, check key">
 <title>Troubleshooting</title>
 <link rel="canonical" href="https://openparrot.app/help/troubleshooting.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -69,6 +69,26 @@ cover). Parrot now spots this within seconds and shows a banner across the
 top of the call screen with a <strong>Switch</strong> button. To skip the guess
 entirely, pick the <strong>Call language</strong> under Start recording. Your audio is always saved, so an
 affected call can still be transcribed again in the right language.</p>
+
+<h2>Playback sounds like two voices</h2>
+<p>On a call taken on speakers, your microphone also hears the other person.
+Echo cancellation takes most of that out, but a faint copy is left, and next
+to the clean recording it sounds like an echo a beat behind. When you play a
+call back, Parrot turns your side down while only they are talking, and back
+up when you speak. If a few of their lines still sound doubled, the
+transcript shows those lines as yours too, so Parrot can't tell them apart.
+Headphones avoid it entirely.</p>
+
+<h2>Their words show up as mine</h2>
+<p>That same faint copy can turn into lines under your name: their sentence
+again with a word or two misheard, or short filler like "Yeah" in another
+language, landing at the same second as their line. On speakers, Parrot now
+leaves out lines on your side that only follow the other person's voice a beat
+later, and lines that repeat theirs, even on calls where you do most of the
+talking. It needs about ten seconds of the call, with a couple of seconds of
+them talking, to notice your mic hears the speakers, so the very first one can
+slip through. When you talk over them, your words are kept. Headphones avoid
+all of it.</p>
 
 <h2>A recording got interrupted</h2>
 <p>Crash, force-quit, power loss: on the next launch Parrot finds the

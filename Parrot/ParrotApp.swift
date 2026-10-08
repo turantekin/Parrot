@@ -17,6 +17,9 @@ struct ParrotMain {
         if let i = args.firstIndex(of: "--mcpb"), i + 2 < args.count {
             exit(MCPBundle.writeRelease(to: args[i + 1], version: args[i + 2], iconPath: i + 3 < args.count ? args[i + 3] : nil))
         }
+        if let i = args.firstIndex(of: "--whats-new-html"), i + 1 < args.count {
+            exit(WhatsNew.printHTML(for: args[i + 1]))
+        }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             MainActor.assumeIsolated { ReportSnapshot.write(to: args[i + 1]) }
             return
@@ -53,6 +56,11 @@ struct ParrotMain {
             DiarizeTest.run(audioPath: args[i + 1])
             return
         }
+        if let i = args.firstIndex(of: "--echo-replay"), i + 2 < args.count {
+            EchoReplay.run(micPath: args[i + 1], systemPath: args[i + 2],
+                           linesPath: i + 3 < args.count ? args[i + 3] : nil)
+            return
+        }
         if let i = args.firstIndex(of: "--capture-test") {
             let seconds = (i + 1 < args.count) ? (Double(args[i + 1]) ?? 10) : 10
             CaptureTest.run(seconds: seconds)
@@ -74,6 +82,11 @@ struct ParrotMain {
         }
         if let i = args.firstIndex(of: "--nudge-replay") {
             MainActor.assumeIsolated { NudgeReplay.run(args: Array(args[(i + 1)...])) }
+            return
+        }
+        if let i = args.firstIndex(of: "--pill-test") {
+            let out = (i + 1 < args.count) ? args[i + 1] : nil
+            MainActor.assumeIsolated { PillTest.run(out: out) }
             return
         }
         if let i = args.firstIndex(of: "--tone-snapshot"), i + 1 < args.count {

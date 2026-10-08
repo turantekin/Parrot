@@ -12,6 +12,8 @@ import PDFKit
 @Observable
 final class KnowledgeBaseService {
     private(set) var documents: [KBDocument] = []
+    /// Folders in the order they were made. Documents point at them by id.
+    private(set) var folders: [KBFolder] = []
     private(set) var isIndexing = false
     private(set) var lastError: String?
 
@@ -20,6 +22,8 @@ final class KnowledgeBaseService {
     var isEmpty: Bool { documents.isEmpty }
 
     private let persistent: Bool
+    /// The loaded index predates folders: the first save keeps a copy.
+    private var upgradedFromLegacy = false
 
     init(persistent: Bool = true) {
         self.persistent = persistent
@@ -31,23 +35,27 @@ final class KnowledgeBaseService {
 
     // MARK: - Document Management
 
-    func addDocuments(at urls: [URL]) async {
+    func addDocuments(at urls: [URL], into folderID: UUID? = nil) async {
         isIndexing = true
         lastError = nil
         for url in urls {
-            await addDocument(at: url)
+            await addDocument(at: url, into: folderID)
         }
         isIndexing = false
         await refreshEmbeddings()
     }
 
-    private func addDocument(at url: URL) async {
+    private func addDocument(at url: URL, into folderID: UUID?) async {
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing { url.stopAccessingSecurityScopedResource() }
         }
 
         let name = url.lastPathComponent
+        if let conflict = Self.addConflict(name: name, into: folderID, documents: documents, folders: folders) {
+            lastError = conflict
+            return
+        }
         guard let text = Self.extractText(from: url), !text.isEmpty else {
             lastError = "Couldn't read \(name)"
             return
@@ -77,13 +85,37 @@ final class KnowledgeBaseService {
             return
         }
 
-        // Re-adding a document replaces its previous version, keeping its note.
-        let existingNote = documents.first { $0.name == name }?.note ?? ""
+        // Re-adding a document replaces its previous version (see `replacing`).
         chunks.removeAll { $0.documentName == name }
-        documents.removeAll { $0.name == name }
         chunks.append(contentsOf: embedded)
-        documents.append(KBDocument(name: name, note: existingNote, chunkCount: embedded.count, addedAt: .now))
+        documents = Self.replacing(documents, with: KBDocument(
+            name: name, chunkCount: embedded.count, addedAt: .now, folderID: folderID))
         save()
+    }
+
+    /// Why a file can't be added into `folderID`, or nil. Documents are keyed
+    /// by file name, so a same-named file aimed at a different folder is
+    /// most likely another deal's file: refuse rather than replace it. Into
+    /// its own folder, or from Add documents (nil), it's an update.
+    nonisolated static func addConflict(name: String, into folderID: UUID?,
+                                        documents: [KBDocument], folders: [KBFolder]) -> String? {
+        guard let folderID, let existing = documents.first(where: { $0.name == name }),
+              existing.folderID != folderID else { return nil }
+        let place = folders.first { $0.id == existing.folderID }.map { "“\($0.name)”" } ?? "No folder"
+        return "\(name) is already in \(place). Rename the file to keep both."
+    }
+
+    /// `documents` with `new` added. A file of the same name is an update:
+    /// it keeps its About line and Use for, and its folder unless `new` was
+    /// added into one.
+    nonisolated static func replacing(_ documents: [KBDocument], with new: KBDocument) -> [KBDocument] {
+        var doc = new
+        if let old = documents.first(where: { $0.name == new.name }) {
+            doc.note = old.note
+            doc.scope = old.scope
+            doc.folderID = new.folderID ?? old.folderID
+        }
+        return documents.filter { $0.name != new.name } + [doc]
     }
 
     func removeDocument(_ document: KBDocument) {
@@ -100,46 +132,113 @@ final class KnowledgeBaseService {
 
     // MARK: - Snapshot Harness Support
 
-    /// Fake documents for the offscreen renders. Never persisted.
-    func seedForSnapshot(documents docs: [KBDocument]) {
+    /// Fake documents and folders for the offscreen renders and tests.
+    func seedForSnapshot(documents docs: [KBDocument], folders: [KBFolder] = []) {
         documents = docs
+        self.folders = folders
     }
 
-    // MARK: - Profile Scoping
+    // MARK: - Folders and Use for
 
-    /// Tags every document in the KB into the given profile ID.
-    func tagAllDocuments(into id: UUID) {
-        for i in documents.indices { documents[i].profileIDs.insert(id) }
+    @discardableResult
+    func createFolder(name: String) -> KBFolder {
+        let folder = KBFolder(name: name)
+        folders.append(folder)
+        save()
+        return folder
+    }
+
+    /// A blank name keeps the old one.
+    func renameFolder(_ folder: KBFolder, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let i = folders.firstIndex(where: { $0.id == folder.id }) else { return }
+        folders[i].name = trimmed
         save()
     }
 
-    /// Replaces the full set of profile tags for a document.
-    func setProfiles(_ ids: Set<UUID>, for document: KBDocument) {
-        guard let i = documents.firstIndex(where: { $0.id == document.id }) else { return }
-        documents[i].profileIDs = ids
+    func setScope(_ scope: KBScope, for folder: KBFolder) {
+        guard let i = folders.firstIndex(where: { $0.id == folder.id }) else { return }
+        folders[i].scope = scope
         save()
     }
 
-    /// Tags every document that is tagged into `source` into `target` as well.
-    func copyProfileTags(from source: UUID, to target: UUID) {
-        var changed = false
-        for i in documents.indices where documents[i].profileIDs.contains(source) {
-            documents[i].profileIDs.insert(target)
-            changed = true
+    /// Never deletes documents: they move to No folder, and those that
+    /// followed the folder keep its Use for as their own, so nothing the
+    /// Assistant uses, or ignores, changes.
+    func deleteFolder(_ folder: KBFolder) {
+        guard let current = folders.first(where: { $0.id == folder.id }) else { return }
+        for i in documents.indices where documents[i].folderID == current.id {
+            if documents[i].scope == nil { documents[i].scope = current.scope }
+            documents[i].folderID = nil
         }
-        if changed { save() }
+        folders.removeAll { $0.id == current.id }
+        save()
     }
 
-    /// Returns the names of documents tagged into the given profile ID.
-    func documentNames(for profileID: UUID) -> [String] {
-        documents.filter { $0.profileIDs.contains(profileID) }.map(\.name)
+    /// nil = Same as folder.
+    func setScope(_ scope: KBScope?, for document: KBDocument) {
+        guard let i = documents.firstIndex(where: { $0.id == document.id }) else { return }
+        documents[i].scope = scope
+        save()
     }
 
-    /// The documents the copilot can quote on a call: those tagged into the
-    /// profile, or every document when there is no profile. Mirrors `search`.
+    /// nil = No folder. A document that follows its folder follows the new one.
+    func move(_ document: KBDocument, to folderID: UUID?) {
+        guard let i = documents.firstIndex(where: { $0.id == document.id }) else { return }
+        documents[i].folderID = folderID
+        save()
+    }
+
+    /// A folder's documents (nil = No folder), by name. No folder also holds
+    /// any document whose folder is gone (deleted while it was indexing), so
+    /// nothing in play is ever hidden.
+    func documents(in folderID: UUID?) -> [KBDocument] {
+        let known = Set(folders.map(\.id))
+        return documents
+            .filter { doc in
+                guard folderID == nil else { return doc.folderID == folderID }
+                return doc.folderID.map { !known.contains($0) } ?? true
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func effectiveScope(of document: KBDocument) -> KBScope {
+        document.effectiveScope(in: folders)
+    }
+
+    /// The one rule for whether the Assistant may use a document on a call
+    /// of this type (nil = no call type: every document that isn't off).
+    func isInPlay(_ document: KBDocument, callType: UUID?) -> Bool {
+        effectiveScope(of: document).allows(callType)
+    }
+
+    // MARK: - Call types
+
+    /// First-ever profile seeding (stores from before profiles): documents
+    /// with their own Use for get this call type too; off ones get only it.
+    func tagAllDocuments(into id: UUID) {
+        for i in documents.indices {
+            switch documents[i].scope {
+            case .only(let ids)?: documents[i].scope = .only(ids.union([id]))
+            case .off?: documents[i].scope = .only([id])
+            default: break
+            }
+        }
+        save()
+    }
+
+    /// A new call type starts with another's documents: every folder and
+    /// document set that has `source` gets `target` too.
+    func copyProfileTags(from source: UUID, to target: UUID) {
+        for i in folders.indices { folders[i].scope = folders[i].scope.adding(target, whereHas: source) }
+        for i in documents.indices { documents[i].scope = documents[i].scope?.adding(target, whereHas: source) }
+        save()
+    }
+
+    /// The documents the Assistant can quote on a call of this type
+    /// (nil = every document that isn't off). Mirrors `search`.
     func documentsInPlay(for profileID: UUID?) -> [String] {
-        guard let profileID else { return documents.map(\.name) }
-        return documentNames(for: profileID)
+        documents.filter { isInPlay($0, callType: profileID) }.map(\.name)
     }
 
     // MARK: - Retrieval
@@ -150,11 +249,9 @@ final class KnowledgeBaseService {
     func search(query: String, profileID: UUID? = nil, topK: Int = 4) async -> [KBReference] {
         guard !chunks.isEmpty, !query.isEmpty else { return [] }
 
-        // Restrict to documents tagged into this profile (nil = all, back-compat).
-        let allowedNames: Set<String>? = profileID.map { id in
-            Set(documents.filter { $0.profileIDs.contains(id) }.map(\.name))
-        }
-        let snapshot = allowedNames.map { names in chunks.filter { names.contains($0.documentName) } } ?? chunks
+        // Only documents this call type may use (nil = every document not off).
+        let allowedNames = Set(documents.filter { isInPlay($0, callType: profileID) }.map(\.name))
+        let snapshot = chunks.filter { allowedNames.contains($0.documentName) }
         guard !snapshot.isEmpty else { return [] }
         let notesByDocument = Dictionary(
             documents.map { ($0.name, $0.note) },
@@ -498,7 +595,10 @@ final class KnowledgeBaseService {
     // MARK: - Persistence
 
     private struct Store: Codable {
+        /// 2 = folders. Missing = a pre-folders index, upgraded on load.
+        var version: Int?
         var documents: [KBDocument]
+        var folders: [KBFolder]?
         var chunks: [KBChunk]
     }
 
@@ -520,8 +620,16 @@ final class KnowledgeBaseService {
         guard let data = try? Data(contentsOf: Self.storeURL) else { return }
         do {
             let store = try JSONDecoder().decode(Store.self, from: data)
-            documents = store.documents
             chunks = store.chunks
+            folders = store.folders ?? []
+            // Legacy is decided per store, never per document: a new No-folder,
+            // Same-as-folder document writes neither key either.
+            if store.version == nil {
+                documents = store.documents.map { $0.migrated() }
+                upgradedFromLegacy = true
+            } else {
+                documents = store.documents
+            }
         } catch {
             // The index exists but doesn't decode. Starting with an empty KB is
             // fine; silently OVERWRITING the broken index on the next save is
@@ -537,7 +645,17 @@ final class KnowledgeBaseService {
 
     private func save() {
         guard persistent else { return }
-        guard let data = try? JSONEncoder().encode(Store(documents: documents, chunks: chunks)) else { return }
+        guard let data = try? JSONEncoder().encode(
+            Store(version: 2, documents: documents, folders: folders, chunks: chunks)) else { return }
+        if upgradedFromLegacy {
+            // One copy of the pre-folders index, in case anyone goes back.
+            let backup = Self.storeURL.deletingLastPathComponent()
+                .appendingPathComponent("index-backup-before-folders.json")
+            if !FileManager.default.fileExists(atPath: backup.path) {
+                try? FileManager.default.copyItem(at: Self.storeURL, to: backup)
+            }
+            upgradedFromLegacy = false
+        }
         try? data.write(to: Self.storeURL, options: .atomic)
     }
 }

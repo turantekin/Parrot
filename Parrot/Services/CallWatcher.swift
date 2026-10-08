@@ -88,6 +88,10 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [
                 UNNotificationAction(identifier: Self.recordAction, title: "Record Now", options: []),
             ], intentIdentifiers: [], options: []),
+            // Registered here because this call replaces the whole set.
+            UNNotificationCategory(identifier: AppUpdater.readyCategory, actions: [
+                UNNotificationAction(identifier: AppUpdater.restartAction, title: "Restart now", options: []),
+            ], intentIdentifiers: [], options: []),
         ])
         guard timer == nil else { return }
         let t = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
@@ -285,6 +289,8 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
 
     private func route(action: String, category: String) {
         switch action {
+        case AppUpdater.restartAction:
+            AppUpdater.shared.restartNow()
         case Self.recordAction:
             if prompt?.kind == .start {
                 acceptPrompt()
