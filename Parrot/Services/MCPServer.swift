@@ -239,7 +239,7 @@ enum MCPServer {
         (search_meetings, by meaning), catch up on a period or a person (list_meetings with when / person, \
         get_meeting), never drop a promise (list_commitments: who owes what), write it for the user \
         (follow-ups, updates, notes from get_meeting), give a second opinion or coaching (get_transcript, \
-        meeting_stats, get_profile), prepare for a call (past meetings, open items), and tune the Copilot \
+        meeting_stats, get_profile), prepare for a call (past meetings, open items), and tune the Assistant \
         (suggest_profile: the user reviews and approves every change in Parrot). Ready-made prompts: \
         weekly_digest, follow_up_email, prep_for_call, prd_from_calls, create_profile, optimize_profile, \
         design_report. export_meeting saves a meeting to a \

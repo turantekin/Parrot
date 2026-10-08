@@ -70,7 +70,7 @@ struct ProfileReportCard: View {
             Text("A \(profile.name) report is available.")
                 .font(Theme.Typography.cardTitle)
                 .foregroundStyle(Theme.Colors.ink)
-            Text(offer.titles.joined(separator: ", ") + ". Your Copilot settings stay as they are.")
+            Text(offer.titles.joined(separator: ", ") + ". Your Assistant settings stay as they are.")
                 .font(Theme.Typography.secondary)
                 .foregroundStyle(Theme.Colors.ink2)
                 .fixedSize(horizontal: false, vertical: true)

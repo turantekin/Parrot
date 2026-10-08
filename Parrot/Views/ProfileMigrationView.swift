@@ -32,7 +32,7 @@ struct ProfileMigrationView: View {
             }
             .frame(maxHeight: 460)
 
-            Text("Your Copilot settings didn't change. A backup of every profile was saved. Past meetings keep their reports.")
+            Text("Your Assistant settings didn't change. A backup of every profile was saved. Past meetings keep their reports.")
                 .font(Theme.Typography.secondary)
                 .foregroundStyle(Theme.Colors.ink2)
                 .fixedSize(horizontal: false, vertical: true)

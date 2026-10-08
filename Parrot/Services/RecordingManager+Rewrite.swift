@@ -21,7 +21,7 @@ extension RecordingManager {
         }
         guard !isRecording else { throw rewriteFailure("Parrot is recording. Rewrite the report after the call.") }
         guard callAnalysisEngine.provider.isConfigured else {
-            throw rewriteFailure("Set up the Copilot's AI in Settings first.")
+            throw rewriteFailure("Set up the Assistant's AI in Settings first.")
         }
 
         // Privacy only ever tightens. A private profile makes the meeting

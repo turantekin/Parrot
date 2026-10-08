@@ -1,6 +1,6 @@
 ---
 name: create-profile
-description: Build a Parrot call profile (what the live Copilot flags, and what the report after the call covers) for a kind of call, and send it to Parrot for the user to review. Use when the user wants a new profile, a Copilot setup for a type of call, or says their calls need a different report.
+description: Build a Parrot call profile (what the live Assistant flags, and what the report after the call covers) for a kind of call, and send it to Parrot for the user to review. Use when the user wants a new profile, an Assistant (or Copilot) setup for a type of call, or says their calls need a different report.
 ---
 
 # Create a call profile

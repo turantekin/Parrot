@@ -78,7 +78,7 @@ enum MCPPrompts {
             }),
         Prompt(
             name: "create_profile", title: "Create a call profile",
-            description: "Build a Copilot profile for a kind of call, then send it to Parrot for me to review.",
+            description: "Build an Assistant profile for a kind of call, then send it to Parrot for me to review.",
             arguments: [Argument(name: "call_type", description: "The kind of call, e.g. \"investor pitch\" or \"hiring interview\".", required: true)],
             text: { args in
                 """
@@ -99,9 +99,9 @@ enum MCPPrompts {
                 let n = args["last_n"].flatMap { Int($0) }.map { max(1, min($0, 30)) } ?? 10
                 return """
                 Improve my Parrot profile "\(args["profile"] ?? "")". Read it with get_profile. Then read my last \(n) \
-                meetings that used it (list_meetings, get_meeting) and their Copilot cards; if get_meeting shows no \
-                cards, ask me to tick "Copilot cards" in Parrot's Claude & AI Apps page first. Look for cards I \
-                ignored, moments the Copilot missed, and report sections that came out empty or generic. Then send \
+                meetings that used it (list_meetings, get_meeting) and their Assistant cards; if get_meeting shows no \
+                cards, ask me to tick "Assistant cards" in Parrot's Claude & AI Apps page first. Look for cards I \
+                ignored, moments the Assistant missed, and report sections that came out empty or generic. Then send \
                 a better version with suggest_profile (updates = the profile's name), and in the reason list each \
                 change and the calls that show why. \(profileRule)
                 """
