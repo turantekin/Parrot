@@ -135,8 +135,9 @@ struct ContentView: View {
             ProfileMigrationView()
                 .environment(profileStore)
         }
-        // ⌘K, the menu and "Ask about this meeting" open the Ask page.
-        .onChange(of: appSession.askRequest) { _, request in
+        // ⌘K, the menus and "Ask about this meeting" open the Ask page.
+        // Initial: the menu bar may have reopened this window to ask.
+        .onChange(of: appSession.askRequest, initial: true) { _, request in
             if request != nil { page = .ask }
         }
         // A recording that starts while Ask is open shows the call screen.

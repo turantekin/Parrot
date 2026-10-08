@@ -29,6 +29,8 @@ struct CalendarEventInfo: Equatable {
     /// The event carries a video link (Zoom/Meet/Teams URL) — a call, not a
     /// focus block or a lunch.
     var hasCallLink: Bool = false
+    /// That link, for the menu bar's Join & Record.
+    var callLink: URL? = nil
     /// You organise it, it has no organiser (a plain event you made), or you
     /// answered yes or maybe. An invite you haven't answered, or someone
     /// else's event on a shared calendar, never names a recording.
@@ -163,6 +165,7 @@ final class CalendarService {
             attendees: people.map { Attendee(name: $0.name ?? "", email: Self.email(from: $0.url)) },
             declined: declined,
             hasCallLink: Self.containsCallLink(text),
+            callLink: Self.callLink(in: text),
             isMine: isMine
         )
     }
@@ -201,6 +204,27 @@ final class CalendarService {
         }
     }
 
+    /// The call the menu bar offers.
+    struct NextCall: Equatable {
+        var event: CalendarEventInfo
+        /// Within `matchLead` of starting (or running): the moment a
+        /// recording would pick this event, so Join & Record can name it.
+        var joinable: Bool
+    }
+
+    /// Today's call nearest to `now` that hasn't ended: a call that started
+    /// five minutes ago beats one in an hour, so a late join is one click.
+    /// Calls only, like reminders: a link or other people.
+    nonisolated static func pickNext(_ events: [CalendarEventInfo], now: Date) -> NextCall? {
+        let calls = events.filter {
+            !$0.isAllDay && !$0.declined && $0.isMine && now < $0.end
+                && ($0.hasCallLink || !$0.attendees.isEmpty)
+        }
+        guard let next = calls.min(by: { abs($0.start.timeIntervalSince(now)) < abs($1.start.timeIntervalSince(now)) })
+        else { return nil }
+        return NextCall(event: next, joinable: next.start.addingTimeInterval(-matchLead) <= now)
+    }
+
     nonisolated static func email(from url: URL?) -> String? {
         guard let url, url.scheme?.lowercased() == "mailto" else { return nil }
         let raw = url.absoluteString.dropFirst("mailto:".count)
@@ -213,6 +237,15 @@ final class CalendarService {
         return ["zoom.us/", "meet.google.com/", "teams.microsoft.com/", "teams.live.com/",
                 "webex.com/", "whereby.com/", "around.co/", "facetime.apple.com/", "chime.aws/"]
             .contains { t.contains($0) }
+    }
+
+    /// The first video-call link in an event's text (location, notes, URL).
+    nonisolated static func callLink(in text: String) -> URL? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        else { return nil }
+        return detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            .compactMap(\.url)
+            .first { containsCallLink($0.absoluteString) }
     }
 
     /// Event notes minus the dial-in boilerplate video tools paste in:

@@ -63,8 +63,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/Receipts.swift` | 180 | Report receipts: parse `[mm:ss]` stamps, verify against the transcript, commitment/placeholder rules (the meeting's template flags its own commitment sections) |
 | `Services/GlobalHotKey.swift` | 100 | Carbon system-wide shortcut (⌃⌥M mark), registered only while recording |
 | `Services/CallDetector.swift` | 281 | Mic-in-use reading (Core Audio process list) + pure call start/end state machine, app names; ignores Siri, Parrot's own capture, dictation apps |
-| `Services/CallWatcher.swift` | 362 | Polls the detector; Ask/Auto modes; notification actions + delegate (also routes the update's Restart now); calendar reminders; `NotificationAccess` |
-| `Services/CalendarService.swift` | 250 | EventKit read-only: current event match, notes cleaning, invite context, title → profile |
+| `Services/CallWatcher.swift` | 378 | Polls the detector; Ask/Auto modes; notification actions + delegate (also routes the update's Restart now); calendar reminders and the menu bar's next call; `NotificationAccess` |
+| `Services/CalendarService.swift` | 347 | EventKit read-only: current event match, next call + its video link (menu bar), notes cleaning, invite context, title → profile |
 | `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
 | `Services/NudgeDetector.swift` | 293 | Pure rules for the nine live nudges (timing + Copilot passes) and the rate limiter; `Tuning` holds every threshold |
 | `Services/LiveNudgeSession.swift` | 60 | One call's nudges: detector, mood snapshots, the nudge on screen; fed by RecordingManager |
@@ -137,7 +137,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/OllamaModelStatusView.swift` | 65 | Settings → Copilot model status, a thin view over OllamaService |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 319 | `AppSession`, menu commands, context menus, notifications |
-| `Views/MenuBarView.swift` | 78 | Menu bar extra |
+| `Views/MenuBarView.swift` | 223 | Menu bar extra: words-heard line, next call (Join & Record), profile picker, last call (open/copy report), Ask, X follow/say hi; `MenuBarLabel` draws the parrot + call time + muted mic as one template image |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/NudgePill.swift` | 156 | The floating nudge pill (non-activating panel, hidden from screen capture) and the Copilot panel's nudge banner |
 | `Views/ToneTimelineCard.swift` | 193 | Report card "How the call went": talk bars, mood line, numbered moments with Play |
