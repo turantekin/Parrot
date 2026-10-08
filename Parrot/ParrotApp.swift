@@ -146,7 +146,7 @@ final class ParrotAppDelegate: NSObject, NSApplicationDelegate {
         pendingLink = nil
         // Parrot still runs with its window closed; a link brings it back
         // (the new window picks the jump up as it appears).
-        if !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
+        if ParrotApp.mainWindow == nil {
             openMainWindow?(id: ParrotApp.mainWindowID)
         }
         NSApp.activate()
@@ -171,6 +171,13 @@ final class ParrotAppDelegate: NSObject, NSApplicationDelegate {
 
 struct ParrotApp: App {
     static let mainWindowID = "main"
+    /// The main window, shown or minimised; nil once closed (Settings
+    /// doesn't count). SwiftUI names a WindowGroup's windows "<id>-AppWindow-<n>".
+    @MainActor static var mainWindow: NSWindow? {
+        NSApp.windows.first {
+            $0.identifier?.rawValue.hasPrefix("\(mainWindowID)-") == true && ($0.isVisible || $0.isMiniaturized)
+        }
+    }
     @NSApplicationDelegateAdaptor(ParrotAppDelegate.self) private var appDelegate
     @State private var recordingManager = RecordingManager()
     @State private var appSession = AppSession()
@@ -236,9 +243,10 @@ struct ParrotApp: App {
             MenuBarView()
                 .environment(recordingManager)
                 .environment(recordingManager.profileStore)
+                .environment(appSession)
                 .modelContainer(sharedModelContainer)
         } label: {
-            Image(systemName: recordingManager.isRecording ? "waveform.circle.fill" : "waveform")
+            MenuBarLabel(recordingManager: recordingManager)
         }
         .menuBarExtraStyle(.menu)
 

@@ -2949,6 +2949,23 @@ enum ProfileTest {
               C.dueReminders([tuesday], now: tomorrow, alreadyReminded: [monday.reminderKey]).count == 1)
         check("no reminder once started",
               C.dueReminders([event("y", "Y", start: -5, minutes: 30, people: 2)], now: now, alreadyReminded: []).isEmpty)
+
+        // Menu bar: the next call, and when Join & Record appears.
+        let inAnHour = event("hour", "Board", start: 3600, minutes: 30, people: 3)
+        check("next call: a call in an hour shows, not joinable yet",
+              C.pickNext([inAnHour], now: now) == .init(event: inAnHour, joinable: false))
+        check("next call: joinable inside the match lead",
+              C.pickNext([call], now: now)?.joinable == true)
+        let late = event("late", "Standup", start: -300, minutes: 30, people: 4)
+        check("next call: a call that started 5 min ago beats one in an hour",
+              C.pickNext([inAnHour, late], now: now)?.event.id == "late" && C.pickNext([late], now: now)?.joinable == true)
+        check("next call: a long block that started hours ago yields to the next call",
+              C.pickNext([event("work", "Workshop", start: -10_800, minutes: 300, people: 9), inAnHour], now: now)?.event.id == "hour")
+        check("next call: focus blocks, ended, all-day, declined and unanswered calls skipped",
+              C.pickNext([focus, event("past", "Past", start: -3600, minutes: 30, people: 2),
+                          event("ooo", "Offsite", start: -3600, minutes: 1440, people: 2, allDay: true),
+                          event("no", "Declined", start: 600, minutes: 30, people: 2, declined: true),
+                          event("b3", "Booking", start: 600, minutes: 15, people: 2, link: true, mine: false)], now: now) == nil)
     }
 
     @MainActor
@@ -2960,6 +2977,12 @@ enum ProfileTest {
         check("zoom link detected", C.containsCallLink("Join: https://acme.zoom.us/j/123"))
         check("meet link detected", C.containsCallLink("meet.google.com/abc-defg-hij"))
         check("no link", !C.containsCallLink("Lunch at the usual place"))
+        check("call link: the Zoom URL, not the agenda link before it",
+              C.callLink(in: "Agenda: https://docs.google.com/d/1\nJoin: https://acme.zoom.us/j/123?pwd=x")?.absoluteString
+                == "https://acme.zoom.us/j/123?pwd=x")
+        check("call link: a bare Meet address still opens",
+              C.callLink(in: "meet.google.com/abc-defg-hij")?.host == "meet.google.com")
+        check("call link: none in plain notes", C.callLink(in: "Lunch at the usual place, www.example.com") == nil)
         let zoomNotes = """
         Agenda: renewal terms, legal questions on data residency.
 
