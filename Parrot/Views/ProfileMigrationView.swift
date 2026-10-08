@@ -30,7 +30,8 @@ struct ProfileMigrationView: View {
                     }
                 }
             }
-            .frame(maxHeight: 460)
+            // Fits Done inside the app's default 900×600 window; the list scrolls.
+            .frame(maxHeight: 320)
 
             Text("Your Assistant settings didn't change. A backup of every profile was saved. Past meetings keep their reports.")
                 .font(Theme.Typography.secondary)

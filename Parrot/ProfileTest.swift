@@ -5062,6 +5062,8 @@ enum ProfileTest {
         let fresh = ProfileChanges.between(nil, currentlyPrivate: false, and: file)
         check("review: a new profile lists everything as added",
               fresh.kindsAdded.count == sales.kinds.count && fresh.persona?.after == "Help keep Northwind." && fresh.turnsOnDeviceOnly)
+        check("review: a new profile's custom rules are shown before adding",
+              fresh.other.contains { $0.label == "Custom rules" && $0.after == "Be brief." })
         let added = store.add(file, source: "file", in: ctx)
         check("import: added as a user profile, not a built-in", !added.isBuiltIn && added.sharedSource == "file"
               && added.sharedID == theirs.sharedID && added.sharedVersion == 3)

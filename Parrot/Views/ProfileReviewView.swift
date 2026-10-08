@@ -100,10 +100,14 @@ struct ProfileReviewView: View {
                         tags(added: changes.gaugesAdded, removed: changes.gaugesRemoved, changed: changes.gaugesChanged)
                     }
                 }
-                if !changes.other.isEmpty && target != nil {
+                // New profiles too: custom rules are standing orders for the
+                // Assistant, so a file must never add them unseen.
+                let others = changes.other.filter { target != nil || $0.label != "Name" }
+                if !others.isEmpty {
                     group("Other") {
-                        ForEach(changes.other, id: \.label) { line in
-                            Text("\(line.label): \(line.before.isEmpty ? "(empty)" : line.before) → \(line.after.isEmpty ? "(empty)" : line.after)")
+                        ForEach(others, id: \.label) { line in
+                            Text(target == nil ? "\(line.label): \(line.after)"
+                                 : "\(line.label): \(line.before.isEmpty ? "(empty)" : line.before) → \(line.after.isEmpty ? "(empty)" : line.after)")
                                 .font(Theme.Typography.secondary).foregroundStyle(Theme.Colors.ink2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

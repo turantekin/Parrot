@@ -61,16 +61,21 @@ struct ProfileExportSheet: View {
                 .padding(Theme.Metrics.popoverPad)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.Colors.panel, in: RoundedRectangle(cornerRadius: Theme.Metrics.radius))
-            DisclosureGroup("Show the file's text", isExpanded: $showText) {
-                ScrollView {
-                    Text(String(decoding: export.data, as: UTF8.self))
-                        .font(Theme.Typography.mono(11))
-                        .foregroundStyle(Theme.Colors.ink)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            // A popover, not a disclosure: a sheet doesn't grow, so opening the
+            // text inline pushed Cancel and Save out of it.
+            Button("Show the file's text") { showText.toggle() }
+                .buttonStyle(.link)
+                .popover(isPresented: $showText, arrowEdge: .bottom) {
+                    ScrollView {
+                        Text(String(decoding: export.data, as: UTF8.self))
+                            .font(Theme.Typography.mono(11))
+                            .foregroundStyle(Theme.Colors.ink)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Theme.Metrics.popoverPad)
+                    }
+                    .frame(width: 440, height: 320)
                 }
-                .frame(height: 220)
-            }
             if let saveError {
                 Text(saveError).font(Theme.Typography.secondary).foregroundStyle(Theme.Colors.warn)
             }

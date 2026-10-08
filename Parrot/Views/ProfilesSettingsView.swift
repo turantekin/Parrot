@@ -59,6 +59,7 @@ struct ProfilesSettingsView: View {
                     .buttonStyle(.plain)
                     .disabled(selectedProfile == nil)
                     .help("Duplicate selected profile")
+                    .accessibilityLabel("Duplicate profile")
 
                     // Delete selected (disabled for built-ins)
                     Button {
@@ -73,6 +74,7 @@ struct ProfilesSettingsView: View {
                     .buttonStyle(.plain)
                     .disabled(selectedProfile == nil || selectedProfile?.isBuiltIn == true)
                     .help("Delete selected profile")
+                    .accessibilityLabel("Delete profile")
 
                     Button { importing = true } label: {
                         Image(systemName: "square.and.arrow.down")
@@ -80,6 +82,7 @@ struct ProfilesSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Import a profile (.parrotprofile)")
+                    .accessibilityLabel("Import a profile")
 
                     Spacer()
                 }
