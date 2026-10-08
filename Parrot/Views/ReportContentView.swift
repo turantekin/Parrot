@@ -302,6 +302,10 @@ struct ReportProse: View {
                                 row(block, check: Self.checked(block, section: title, template: template,
                                                                receipts: receipts, flagging: flagging))
                             }
+                            // An AI scoring people (candidates, investors): it assists, the user decides.
+                            Text("Scores help you take notes. You make the call.")
+                                .font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.ink3)
                         }
                     }
                 } else if let title = section.title {

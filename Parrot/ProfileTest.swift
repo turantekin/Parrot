@@ -4681,7 +4681,15 @@ enum ProfileTest {
         let byName = Dictionary(uniqueKeysWithValues: all.map { ($0.name, $0) })
         check("preset: Default and Generic keep the standard report",
               byName["Default"]?.reportTemplate.isStandard == true && byName["Generic"]?.reportTemplate.isStandard == true)
-        check("preset: 1:1 coaching turns coaching off", byName["1:1 coaching"]?.reportTemplate.coachingEnabled == false)
+        check("preset: 1:1 coaching has a listening coach", byName["1:1 coaching"]?.reportTemplate.coachingEnabled == true
+              && byName["1:1 coaching"]?.reportTemplate.coachRole == "listening coach")
+        // Persona, summary and card text show in Settings: written for people.
+        let shown = all.flatMap { p in [p.persona, p.summary] + p.kinds.flatMap { [$0.label, $0.triggerDescription] } }
+        check("preset: no em-dashes or shouting capitals in what users read", shown.allSatisfy {
+            !$0.contains("—") && $0.range(of: #"\b[A-Z]{3,}\b"#, options: .regularExpression) == nil
+        })
+        check("preset: Interview's live red flag keeps to the job",
+              byName["Interview"]?.kinds.first { $0.key == "red_flag" }?.triggerDescription.contains("never age, looks, accent") == true)
         check("preset: sales asks about budget, decision-maker, timeline",
               byName["Sales discovery"].map { Set($0.reportTemplate.titles).isSuperset(of: ["Budget", "Decision-maker", "Timeline", "Objections"]) } == true)
         let investor = byName["Investor pitch"]
@@ -5020,7 +5028,12 @@ enum ProfileTest {
             let coachingsBefore = ai.coachings
             try? await rm.rewriteReport(imported, with: named("Sales discovery"))
             check("rewrite: imports get no coaching (no 'Me' channel)", imported.coaching == nil && ai.coachings == coachingsBefore)
-            try? await rm.rewriteReport(secret, with: named("1:1 coaching"))
+            let noCoach = CallProfile(name: "No coaching", iconSystemName: "heart", summary: "", isBuiltIn: false, sortOrder: 31,
+                                      persona: "", tone: "", allowGeneralKnowledge: true, kinds: [], gauges: [])
+            noCoach.setCustomReport(ReportTemplate(sections: named("1:1 coaching").reportTemplate.sections,
+                                                   coaching: .init(enabled: false, role: nil, focus: nil)))
+            context.insert(noCoach)
+            try? await rm.rewriteReport(secret, with: noCoach)
             check("rewrite: coaching off in the template means no coaching call", secret.coaching == nil && ai.coachings == coachingsBefore)
 
             ai.fail = true
