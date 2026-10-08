@@ -3,16 +3,16 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.27.3</title>
-            <pubDate>Thu, 08 Oct 2026 10:42:15 +0100</pubDate>
+            <title>0.28.0</title>
+            <pubDate>Thu, 08 Oct 2026 16:28:59 +0100</pubDate>
             <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202610081041</sparkle:version>
-            <sparkle:shortVersionString>0.27.3</sparkle:shortVersionString>
+            <sparkle:version>202610081626</sparkle:version>
+            <sparkle:shortVersionString>0.28.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<h3>Fresh feathers! Parrot 0.27.3</h3><ul><li>The Assistant's first tip now arrives once the call gets down to business.</li><li>No report on a meeting? Write report on its Report tab makes one, Assistant on or off.</li><li>On speakers, fewer echoes land under your name, even when you do most of the talking.</li><li>Clicking a line in a long transcript jumps there right away.</li></ul><p><a href="https://openparrot.app/changelog#v0.27.3">Read the full story</a></p>
+            <description><![CDATA[<h3>Parrot 0.28.0 learned a few new tricks</h3><ul><li>Each kind of call gets its own report, with a scorecard for interviews.</li><li>Rewrite an old report with any profile, and undo it in one click.</li><li>Share profiles with a colleague, or let Claude suggest a better one for you to review.</li><li>A parrot in your menu bar shows the call time, and Join &amp; Record starts your next call.</li></ul><p><a href="https://openparrot.app/changelog#v0.28.0">Read the full story</a></p>
 ]]></description>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.27.3/Parrot-0.27.3.dmg" length="24355106" type="application/octet-stream" sparkle:edSignature="cH9lWtEuAs7p27nnSDU4RLbvFglRmYUPXeZ3AzoXYoRJlee4VSDOXb2SZDB3YXjloOP15VTWY+Obfw86+FovAw=="/>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.28.0/Parrot-0.28.0.dmg" length="26085316" type="application/octet-stream" sparkle:edSignature="6yF6DEe+gpHhVcmhmRVQXf/39H9IzHF9Ua9GACtyToF9Lxyfq7QSuJIOxTtpZNdnu4EWjk2LYnW9n0xSbfn2Cg=="/>
         </item>
     </channel>
 </rss>
