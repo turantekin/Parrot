@@ -155,7 +155,7 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 - **Import recordings.** Drop an audio file (m4a, mp3, wav, aac, aiff, caf) on the window and it's transcribed, split by speaker and summarised like a live call.
 - **Export** a meeting as Markdown, TXT (notes, report, Assistant cards and transcript in one file) or SRT subtitles.
 - **Searchable history.** Search titles and transcripts, meetings grouped by day, with a talk-ratio strip on each.
-- **Menu bar item** to start and stop from anywhere, and a dashboard with your meetings, hours and words.
+- **A parrot in your menu bar.** Start and stop from anywhere, see the call time (and whether you're muted) at a glance, switch profile, copy your last report, and with your calendar connected, join your next call and record it in one click. Home keeps a dashboard of your meetings, hours and words.
 - **Keeps itself up to date** with signed Sparkle updates that install when you quit, never during a recording. A notification says when one is ready (*Restart now* if you can't wait), and Home shows what's new once you're on it.
 - **A real user guide** inside the app (Help > Parrot Help, searchable and offline), also [on the web](https://openparrot.app/help).
 - **Bug reports in two clicks.** The ladybug in the corner writes the boring parts (version, model, settings) and hands you a pre-filled GitHub issue to check and post yourself.
