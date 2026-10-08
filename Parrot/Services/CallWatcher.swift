@@ -46,6 +46,9 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private(set) var prompt: Prompt?
+    /// Today's next calendar call, for the menu bar. Refreshed with the
+    /// reminders, so it's at most 30 s stale.
+    private(set) var nextCall: CalendarService.NextCall?
 
     @ObservationIgnored weak var recordingManager: RecordingManager?
     @ObservationIgnored private var detector = CallDetector()
@@ -135,6 +138,7 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         if Date.now.timeIntervalSince(lastReminderCheck) >= 30 {
             lastReminderCheck = .now
             checkCalendarReminders()
+            refreshNextCall()
         }
         // Automatic clean-up (Settings → Privacy), at start and hourly.
         if Date.now.timeIntervalSince(lastRetentionCheck) >= 3600, !isRecording {
@@ -243,6 +247,18 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
                     : "Parrot will offer to record when the call starts.",
                  category: Self.meetingCategory)
         }
+    }
+
+    private func refreshNextCall() {
+        var next: CalendarService.NextCall?
+        if let calendar = recordingManager?.calendar, calendar.isConnected {
+            let now = Date.now
+            let day = Calendar.current
+            let midnight = day.date(byAdding: .day, value: 1, to: day.startOfDay(for: now)) ?? now
+            next = CalendarService.pickNext(calendar.events(from: now, to: midnight), now: now)
+        }
+        // Only on change: every write would rebuild the menu.
+        if next != nextCall { nextCall = next }
     }
 
     // MARK: Notifications

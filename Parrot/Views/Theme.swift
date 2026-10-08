@@ -110,6 +110,8 @@ enum Theme {
         static let cardTitle = sans(13, .semibold)
         /// Compact history row title.
         static let rowTitle = sans(13)
+        /// The call time in the menu bar; even digits so it doesn't jitter.
+        static let menuBarTime = sans(13, .medium).monospacedDigit()
     }
 
     // MARK: - Metrics
@@ -160,6 +162,9 @@ enum Theme {
         /// The floating live-nudge pill: width and its rounded ends.
         static let pillWidth: CGFloat = 460
         static let pillRadius: CGFloat = 22
+        /// The menu-bar label: recording dot, and the gap between its parts.
+        static let menuBarDot: CGFloat = 6
+        static let menuBarGap: CGFloat = 4
     }
 }
 

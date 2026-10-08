@@ -49,6 +49,11 @@ enum MeetingActions {
     nonisolated static let repoURL = "https://github.com/turantekin/Parrot"
     /// The landing page: a scrolling demo, the honest privacy list, and the download.
     nonisolated static let websiteURL = "https://openparrot.app"
+    nonisolated static let xURL = "https://x.com/OpenParrotHQ"
+    /// X's follow intent: the profile opens with a one-click Follow prompt.
+    nonisolated static let xFollowURL = "https://x.com/intent/follow?screen_name=OpenParrotHQ"
+    /// A new post with "@OpenParrotHQ " typed in; the rest is theirs to write.
+    nonisolated static let xSayHiURL = "https://x.com/intent/tweet?text=%40OpenParrotHQ%20"
 
     static func exportTXT(_ meeting: Meeting) {
         write(ExportService.exportToTXT(meeting: meeting), for: meeting, ext: "txt")
@@ -237,6 +242,9 @@ struct ParrotCommands: Commands {
             Divider()
             Button("Parrot on GitHub") {
                 MeetingActions.open(MeetingActions.repoURL)
+            }
+            Button("Parrot on X") {
+                MeetingActions.open(MeetingActions.xURL)
             }
             Button("Report a Bug…") {
                 NotificationCenter.default.post(name: .parrotReportBug, object: nil)
