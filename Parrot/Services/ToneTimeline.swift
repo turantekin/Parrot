@@ -99,10 +99,17 @@ enum ToneTimeline {
         spans.filter { $0.end > after && $0.end <= upTo }.max { $0.words < $1.words }
     }
 
+    /// The first Copilot pass can come back all zeros (no evidence yet). That
+    /// is no reading, not the lowest one: dropped when read, so saved calls are fixed too.
+    static func readings(_ snapshots: [MoodSnapshot]) -> [MoodSnapshot] {
+        Array(snapshots.drop { $0.values.values.allSatisfy { $0 == 0 } })
+    }
+
     static func turningPoints(_ snapshots: [MoodSnapshot], gauge: SentimentGauge, spans: [Span]) -> [TurningPoint] {
         let points = snapshots.compactMap { s in s.values[gauge.key].map { MoodPoint(time: s.time, value: $0) } }
         return zip(points, points.dropFirst()).compactMap { a, b in
-            guard abs(b.value - a.value) >= turnThreshold else { return nil }
+            // Early passes are guesses on a few lines; live mood shifts wait out the warm-up too.
+            guard b.time >= NudgeDetector.Tuning.warmUp, abs(b.value - a.value) >= turnThreshold else { return nil }
             let line = cause(spans, after: a.time, upTo: b.time)
             return TurningPoint(time: line?.start ?? b.time, from: a.value, to: b.value,
                                 text: shiftText(gauge, rising: b.value > a.value, quote: line?.text),
@@ -135,10 +142,11 @@ enum ToneTimeline {
         guard spans.contains(where: \.isMe), spans.contains(where: { !$0.isMe }) else { return nil }
         let length = max(duration, spans.map(\.end).max() ?? 0)
         let gauge = timeline.flatMap { mainGauge($0.gauges) }
+        let snapshots = readings(timeline?.snapshots ?? [])
         let mood = gauge.map { g in
-            (timeline?.snapshots ?? []).compactMap { s in s.values[g.key].map { MoodPoint(time: s.time, value: $0) } }
+            snapshots.compactMap { s in s.values[g.key].map { MoodPoint(time: s.time, value: $0) } }
         } ?? []
-        let turns = gauge.map { turningPoints(timeline?.snapshots ?? [], gauge: $0, spans: spans) } ?? []
+        let turns = gauge.map { turningPoints(snapshots, gauge: $0, spans: spans) } ?? []
         return Model(duration: length, minutes: talkByMinute(spans, duration: length),
                      talkPercentMe: talkPercentMe(spans), gauge: mood.isEmpty ? nil : gauge, mood: mood,
                      endLevel: gauge.flatMap { g in mood.last.map { level($0.value, g) } },

@@ -825,7 +825,7 @@ final class CallAnalysisEngine {
         "prospect", "prospects", "asked", "asking", "asks", "whether", "said", "user",
     ]
 
-    private nonisolated static func significantTokens(_ s: String) -> Set<String> {
+    nonisolated static func significantTokens(_ s: String) -> Set<String> {
         Set(s.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 2 && !stopWords.contains($0) })

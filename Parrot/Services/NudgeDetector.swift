@@ -44,19 +44,33 @@ struct NudgeDetector {
         static let monologue: TimeInterval = 90
         static let talkOverWindow: TimeInterval = 300
         static let talkOverCount = 3
+        /// "Yeah." / "Mhmm." / "That's good." over their line is listening, not talking over.
+        static let talkOverWords = 4
+        /// They kept talking this long after you started; less is a normal turn change.
+        static let talkOverOverlap: TimeInterval = 1.5
         static let shortReply: TimeInterval = 1.5
         static let shortFactor = 3.0
         static let speedFactor = 1.4
         static let speedRearm = 1.2
         static let speedWarmUp: TimeInterval = 300
         static let repeatWindow: TimeInterval = 600
+        /// Content words each line needs, and the share of the longer line's
+        /// that must match: "So we know from" is one word ("know") and matched every "you know".
+        static let repeatTokens = 3
+        static let repeatOverlap = 0.5
         static let questionAge: TimeInterval = 180
     }
 
     let gauges: [SentimentGauge]
     /// "Did they make the same point again?" Lexical for now: mean-pooled
     /// sentence embeddings have too high a baseline for a fixed threshold.
-    var samePoint: (String, String) -> Bool = { CallAnalysisEngine.isNearDuplicate($0, $1) }
+    /// Stricter than `isNearDuplicate`, which divides by the smaller set: a
+    /// short line's one or two words are in most long ones.
+    var samePoint: (String, String) -> Bool = { a, b in
+        let ta = CallAnalysisEngine.significantTokens(a), tb = CallAnalysisEngine.significantTokens(b)
+        return min(ta.count, tb.count) >= Tuning.repeatTokens
+            && Double(ta.intersection(tb).count) / Double(max(ta.count, tb.count)) >= Tuning.repeatOverlap
+    }
 
     /// Finished lines, sorted by start.
     private(set) var lines: [Line] = []
@@ -177,9 +191,9 @@ struct NudgeDetector {
         let theirs = lines.filter { $0.source == .them }
         let events = lines.filter { me in
             me.source == .me && me.start > talkOverAfter && me.start > now - Tuning.talkOverWindow
-                && me.duration >= 1
+                && me.duration >= 1 && me.words >= Tuning.talkOverWords
                 && theirs.contains { t in
-                    t.start < me.start && me.start < t.end - 0.3
+                    t.start < me.start && me.start < t.end - Tuning.talkOverOverlap
                         // The mic picking up their voice repeats their words: not you.
                         && !CallAnalysisEngine.isNearDuplicate(me.text, t.text)
                 }

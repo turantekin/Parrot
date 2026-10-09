@@ -38,6 +38,8 @@ struct MeetingDetailView: View {
     @State private var isScrubbing = false              // slider drag in progress
     @State private var playbackSpeed: Float = 1.0
     @State private var playbackTimer: Timer?
+    /// The key moment whose Play started the audio; nil once it stops or moves.
+    @State private var playingMoment: Int?
     @State private var activeSegmentID: UUID?
     @State private var sortedLines = SortedLines()
     @State private var tab: ReportTab = .report
@@ -646,7 +648,8 @@ struct MeetingDetailView: View {
     @ViewBuilder
     private var toneCard: some View {
         if let model = toneModel {
-            ToneTimelineCard(model: model, play: (audioPlayer != nil || micPlayer != nil) ? playFrom : nil)
+            ToneTimelineCard(model: model, play: (audioPlayer != nil || micPlayer != nil) ? playMoment : nil,
+                             playing: playingMoment, stop: { if isPlaying { togglePlayback() } })
                 .equatable()
         }
     }
@@ -691,6 +694,11 @@ struct MeetingDetailView: View {
         endClip()
         seekTo(time)
         if !isPlaying { togglePlayback() }
+    }
+
+    private func playMoment(_ moment: ToneTimeline.Moment) {
+        playFrom(moment.time)
+        playingMoment = moment.number
     }
 
     private func showInTranscript(_ time: TimeInterval, text: String? = nil) {
@@ -1144,6 +1152,7 @@ struct MeetingDetailView: View {
             audioPlayer?.pause()
             micPlayer?.pause()
             playbackTimer?.invalidate()
+            playingMoment = nil
         } else {
             startSynced()
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
@@ -1171,9 +1180,11 @@ struct MeetingDetailView: View {
         micPlayer?.stop()
         playbackTimer?.invalidate()
         isPlaying = false
+        playingMoment = nil
     }
 
     private func seekTo(_ time: TimeInterval) {
+        playingMoment = nil
         let wasPlaying = isPlaying
         audioPlayer?.pause()
         micPlayer?.pause()

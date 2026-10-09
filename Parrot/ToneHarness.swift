@@ -90,7 +90,8 @@ enum NudgeReplay {
 }
 
 /// `Parrot --tone-snapshot /tmp/tone.png`: renders the report card (with and
-/// without a mood line), the pill and the banner, light and dark ("-dark").
+/// without a mood line; the first collapsed, moment 2 playing), the pill and
+/// the banner, light and dark ("-dark").
 @MainActor
 enum ToneSnapshot {
     static func write(to path: String) {
@@ -111,7 +112,11 @@ enum ToneSnapshot {
             Nudge(kind: .longMonologue, time: 250, text: "You've been talking for 2 minutes. Check in?"),
             Nudge(kind: .goneQuiet, time: 755,
                   text: "They've gone quiet since you said \u{201C}the price goes up in January\u{201D}"),
+            Nudge(kind: .talkingOver, time: 1100, text: "You've talked over them 3 times. Let them finish", shown: false),
+            Nudge(kind: .repeatedPoint, time: 1400, text: "They've said \u{201C}we need it live by March\u{201D} 3 times. Acknowledge it",
+                  shown: false),
             Nudge(kind: .talkingOver, time: 1590, text: "You've talked over them 3 times. Let them finish", shown: false),
+            Nudge(kind: .speedingUp, time: 1700, text: "You're talking faster than usual. Slow down", shown: false),
         ]
         guard let withMood = ToneTimeline.model(duration: 1920, spans: spans, nudges: nudges,
                                                 timeline: MoodTimeline(gauges: [gauge], snapshots: mood), marks: []),
@@ -123,7 +128,7 @@ enum ToneSnapshot {
         let view = VStack(alignment: .leading, spacing: 16) {
             NudgePillView(nudge: nudges[1])
             NudgeBanner(nudge: nudges[1], onDismiss: {}).frame(width: 420)
-            ToneTimelineCard(model: withMood, play: { _ in })
+            ToneTimelineCard(model: withMood, play: { _ in }, playing: 2)
             ToneTimelineCard(model: plain, play: nil)
         }
         .padding(20)
