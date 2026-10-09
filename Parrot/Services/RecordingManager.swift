@@ -1181,6 +1181,7 @@ final class RecordingManager {
                 }
             }
             meeting.speakerEmbeddingsData = try? JSONEncoder().encode(embeddings)
+            meeting.pruneSpeakerNames()
             try? modelContext?.save()
         } catch {
             // Diarization is a refinement pass; the audio and transcript are

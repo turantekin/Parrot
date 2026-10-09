@@ -1502,6 +1502,12 @@ struct TranscriptSegmentRow: View {
                             Button(meeting.displayName(forSpeaker: label)) { onReassign(label) }
                         }
                     }
+                    // Detection can merge voices (#117): let the user add one.
+                    Divider()
+                    Button("New speaker…") {
+                        onReassign(meeting.nextSpeakerLabel)
+                        if playClip != nil { naming = true }
+                    }
                 }
             }
 

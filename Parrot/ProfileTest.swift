@@ -1240,6 +1240,11 @@ enum ProfileTest {
         check("other labels ordered", m.otherSpeakerLabels == ["Speaker 1", "Speaker 2"])
         check("longest segments sorted", m.longestSegments(for: "Speaker 1").map(\.startTime) == [20.0, 0.0])
         check("participants summary", m.participantsSummary == "Gürkan")
+        check("next speaker after the highest", m.nextSpeakerLabel == "Speaker 3")
+        m.speakerNames = ["Speaker 1": "Gürkan", "Speaker 5": "Old"]
+        check("next speaker skips a named label", m.nextSpeakerLabel == "Speaker 6")
+        m.pruneSpeakerNames()
+        check("prune drops names with no lines", m.speakerNames == ["Speaker 1": "Gürkan"])
     }
 
     @MainActor
