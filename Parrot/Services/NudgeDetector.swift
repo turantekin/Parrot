@@ -11,9 +11,20 @@ struct NudgeDetector {
         var source: AudioSource
         var start: TimeInterval
         var end: TimeInterval
-        var text: String
+        let text: String
+        /// Counted once: the rules ask every second, and a replay does a whole call.
+        let words: Int
+        let tokens: Set<String>
         var duration: TimeInterval { max(0, end - start) }
-        var words: Int { text.split(whereSeparator: \.isWhitespace).count }
+
+        init(source: AudioSource, start: TimeInterval, end: TimeInterval, text: String) {
+            self.source = source
+            self.start = start
+            self.end = end
+            self.text = text
+            words = text.split(whereSeparator: \.isWhitespace).count
+            tokens = CallAnalysisEngine.significantTokens(text)
+        }
     }
 
     struct OpenQuestion: Equatable {
@@ -44,19 +55,33 @@ struct NudgeDetector {
         static let monologue: TimeInterval = 90
         static let talkOverWindow: TimeInterval = 300
         static let talkOverCount = 3
+        /// "Yeah." / "Mhmm." / "That's good." over their line is listening, not talking over.
+        static let talkOverWords = 4
+        /// They kept talking this long after you started; less is a normal turn change.
+        /// At 1.5 s, call 167 still counted both of you starting at once.
+        static let talkOverOverlap: TimeInterval = 2.0
         static let shortReply: TimeInterval = 1.5
         static let shortFactor = 3.0
         static let speedFactor = 1.4
         static let speedRearm = 1.2
         static let speedWarmUp: TimeInterval = 300
         static let repeatWindow: TimeInterval = 600
+        /// Content words each line needs, and the share of the longer line's
+        /// that must match: "So we know from" is one word ("know") and matched every "you know".
+        static let repeatTokens = 3
+        static let repeatOverlap = 0.5
         static let questionAge: TimeInterval = 180
     }
 
     let gauges: [SentimentGauge]
     /// "Did they make the same point again?" Lexical for now: mean-pooled
     /// sentence embeddings have too high a baseline for a fixed threshold.
-    var samePoint: (String, String) -> Bool = { CallAnalysisEngine.isNearDuplicate($0, $1) }
+    /// Stricter than `isNearDuplicate`, which divides by the smaller set: a
+    /// short line's one or two words are in most long ones.
+    var samePoint: (Line, Line) -> Bool = { a, b in
+        min(a.tokens.count, b.tokens.count) >= Tuning.repeatTokens
+            && Double(a.tokens.intersection(b.tokens).count) / Double(max(a.tokens.count, b.tokens.count)) >= Tuning.repeatOverlap
+    }
 
     /// Finished lines, sorted by start.
     private(set) var lines: [Line] = []
@@ -177,11 +202,11 @@ struct NudgeDetector {
         let theirs = lines.filter { $0.source == .them }
         let events = lines.filter { me in
             me.source == .me && me.start > talkOverAfter && me.start > now - Tuning.talkOverWindow
-                && me.duration >= 1
+                && me.duration >= 1 && me.words >= Tuning.talkOverWords
                 && theirs.contains { t in
-                    t.start < me.start && me.start < t.end - 0.3
+                    t.start < me.start && me.start < t.end - Tuning.talkOverOverlap
                         // The mic picking up their voice repeats their words: not you.
-                        && !CallAnalysisEngine.isNearDuplicate(me.text, t.text)
+                        && !CallAnalysisEngine.isNearDuplicate(me.tokens, t.tokens)
                 }
         }
         guard events.count >= Tuning.talkOverCount, let latest = events.last else { return nil }
@@ -224,7 +249,7 @@ struct NudgeDetector {
         guard latest.duration >= 1.5, latest.words >= 4, !repeatUsed.contains(latest.start) else { return nil }
         let earlier = lines.filter {
             $0.source == .them && $0.start < latest.start && $0.start > latest.start - Tuning.repeatWindow
-                && $0.duration >= 1.5 && !repeatUsed.contains($0.start) && samePoint(latest.text, $0.text)
+                && $0.duration >= 1.5 && !repeatUsed.contains($0.start) && samePoint(latest, $0)
         }
         guard earlier.count >= 2 else { return nil }
         repeatUsed.formUnion(earlier.map(\.start) + [latest.start])
@@ -268,6 +293,37 @@ struct NudgeDetector {
         wrapUpDone = true
         let list = items.prefix(3).map { Self.short($0, max: 40) }.joined(separator: "; ")
         return Nudge(kind: .wrapUp, time: pass.time, text: "Before you hang up: \(list)")
+    }
+
+    // MARK: - Replay
+
+    /// A saved call through the rules second by second, as live: lines arrive
+    /// 1 s after they end (decode time), a track counts as heard while one of
+    /// its lines is in progress. No `timeline`: timing rules only. Runs every
+    /// rule once per call second, so cache the result.
+    static func replay(lines: [Line], timeline: MoodTimeline?, duration: TimeInterval) -> [Nudge] {
+        var detector = NudgeDetector(gauges: timeline?.gauges ?? [])
+        var waiting = lines.sorted { $0.end < $1.end }
+        var passes = timeline?.snapshots ?? []
+        var heard: [AudioSource: TimeInterval] = [:]
+        let end = max(duration, lines.map(\.end).max() ?? 0) + 30
+        var t: TimeInterval = 0
+        while t <= end {
+            while let line = waiting.first, line.end + 1 <= t {
+                detector.add(line)
+                waiting.removeFirst()
+            }
+            while let pass = passes.first, pass.time <= t {
+                detector.add(Pass(time: pass.time, values: pass.values))
+                passes.removeFirst()
+            }
+            for line in lines where line.start <= t && line.end >= t - 1 {
+                heard[line.source] = max(heard[line.source] ?? 0, min(t, line.end))
+            }
+            _ = detector.tick(now: t, lastHeard: heard)
+            t += 1
+        }
+        return detector.all
     }
 
     // MARK: - Helpers

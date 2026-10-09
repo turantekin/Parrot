@@ -91,6 +91,18 @@ extension ProfileTest {
             echo.add(said(.me, a + 5, a + 7, theirLines[i]))
         }
         check("talk over: mic echo of their words isn't you", echo.tick(now: 180, lastHeard: [:]) == nil)
+        var nods = NudgeDetector()
+        for (i, a) in [130.0, 150, 170].enumerated() {
+            nods.add(said(.them, a, a + 10, theirLines[i]))
+            nods.add(said(.me, a + 5, a + 7, "Yeah. That's good."))
+        }
+        check("talk over: a backchannel isn't talking over", nods.tick(now: 180, lastHeard: [:]) == nil)
+        var turnEnds = NudgeDetector()
+        for (i, a) in [130.0, 150, 170].enumerated() {
+            turnEnds.add(said(.them, a, a + 10, theirLines[i]))
+            turnEnds.add(said(.me, a + 9.2, a + 12, "sorry, quick question on pricing"))
+        }
+        check("talk over: starting on their last word is a turn change", turnEnds.tick(now: 183, lastHeard: [:]) == nil)
 
         // Short answers: 4 short replies after long ones.
         var short = NudgeDetector()
@@ -112,11 +124,18 @@ extension ProfileTest {
         check("speeding up: fires at 1.6x", fast.tick(now: 423, lastHeard: [:])?.kind == .speedingUp)
         check("speeding up: not again while still fast", fast.tick(now: 424, lastHeard: [:]) == nil)
 
-        // Repeated point: the same complaint 3 times in 10 minutes.
+        // Repeated point: the same complaint 3 times in 10 minutes, a bit reworded.
         var again = NudgeDetector()
-        for a in [200.0, 300, 400] { again.add(said(.them, a, a + 3, "the export still does not work for us")) }
+        for (a, text) in [(200.0, "the export still fails on big files"), (300, "the export fails again on big files"),
+                          (400, "again the export fails for big files")] { again.add(said(.them, a, a + 3, text)) }
         let repeated = again.tick(now: 404, lastHeard: [:])
         check("repeated: fires on the third", repeated?.kind == .repeatedPoint && repeated?.text.contains("3 times") == true)
+        // Call 167: "So we know from" shared its one content word with every "you know".
+        var know = NudgeDetector()
+        for (a, text) in [(200.0, "you know the plan works"), (300, "and you know it is fine"), (400, "So we know from")] {
+            know.add(said(.them, a, a + 3, text))
+        }
+        check("repeated: one shared word isn't the same point", know.tick(now: 404, lastHeard: [:]) == nil)
         var okays = NudgeDetector()
         for a in [200.0, 300, 400] { okays.add(said(.them, a, a + 2, "okay yes")) }
         check("repeated: short fillers don't count", okays.tick(now: 404, lastHeard: [:]) == nil)
@@ -148,22 +167,34 @@ extension ProfileTest {
                                   highLabel: "Dominating", colorHex: "5F6470")
         check("timeline: main gauge skips talk balance", TT.mainGauge([talk, upset])?.key == "f")
         check("timeline: level words", TT.level(10, upset) == "Calm" && TT.level(90, upset) == "Upset" && TT.level(50, upset) == "In between")
-        let snaps = [MoodSnapshot(time: 40, values: ["f": 20]), MoodSnapshot(time: 60, values: ["f": 30]),
-                     MoodSnapshot(time: 80, values: ["f": 70]), MoodSnapshot(time: 95, values: ["f": 30])]
-        let turns = TT.turningPoints(snaps, gauge: upset, spans: spans)
+        // Past the 2-minute warm-up, like live mood shifts.
+        let late = spans.map { TT.Span(isMe: $0.isMe, start: $0.start + 100, end: $0.end + 100, text: $0.text) }
+        let snaps = [MoodSnapshot(time: 140, values: ["f": 20]), MoodSnapshot(time: 160, values: ["f": 30]),
+                     MoodSnapshot(time: 180, values: ["f": 70]), MoodSnapshot(time: 195, values: ["f": 30])]
+        let turns = TT.turningPoints(snaps, gauge: upset, spans: late)
         check("timeline: two turning points", turns.count == 2)
         check("timeline: quotes the wordiest line between passes",
               turns.first?.text == "Frustration moved toward Upset after \u{201C}we can't do that date\u{201D}")
-        check("timeline: no line between → pass time, no quote", turns.last?.time == 95 && turns.last?.quote == nil)
+        check("timeline: no line between → pass time, no quote", turns.last?.time == 195 && turns.last?.quote == nil)
         let shift = Nudge(kind: .moodShift, time: turns[0].time, text: "shift")
         let quiet = Nudge(kind: .goneQuiet, time: 10, text: "quiet")
         let moments = TT.moments(nudges: [shift, quiet], turns: turns, marks: [Bookmark(time: 90, label: "price")])
-        check("timeline: moments numbered by time", moments.map(\.number) == [1, 2, 3, 4] && moments.map(\.time) == [10, 50, 90, 95])
+        check("timeline: moments numbered by time", moments.map(\.number) == [1, 2, 3, 4] && moments.map(\.time) == [10, 90, 150, 195])
         check("timeline: a mood-shift nudge hides its duplicate turn", moments.filter { $0.kind == .turn }.count == 1)
         check("timeline: no card without both sides", TT.model(duration: 60, spans: [spans[1]], nudges: [], timeline: nil, marks: []) == nil)
         let model = TT.model(duration: 150, spans: spans, nudges: [],
                              timeline: MoodTimeline(gauges: [upset], snapshots: snaps), marks: [])
         check("timeline: model carries the mood line", model?.mood.count == 4 && model?.gauge?.key == "f" && model?.endLevel == "Calm")
+        // Call 167: the first pass read every gauge 0 (no evidence yet), then 35, then 65.
+        let early = [MoodSnapshot(time: 11, values: ["f": 0, "d": 0]), MoodSnapshot(time: 26, values: ["f": 35, "d": 25]),
+                     MoodSnapshot(time: 39, values: ["f": 65, "d": 21]), MoodSnapshot(time: 200, values: ["f": 30, "d": 20])]
+        let start = TT.model(duration: 250, spans: late, nudges: [], timeline: MoodTimeline(gauges: [upset], snapshots: early), marks: [])
+        check("timeline: a leading all-zero pass is no reading", start?.mood.map(\.value) == [35, 65, 30])
+        check("timeline: no turning points in the warm-up", start?.moments.map(\.time) == [150])
+        let saved = [Nudge(kind: .repeatedPoint, time: 60, text: "old repeat"), Nudge(kind: .wrapUp, time: 140, text: "wrap"),
+                     Nudge(kind: .talkingOver, time: 90, text: "old talk over"), Nudge(kind: .moodShift, time: 100, text: "shift")]
+        check("timeline: saved timing nudges give way to the replay, Copilot ones stay",
+              TT.reportNudges(saved: saved, timing: [quiet]).map(\.text) == ["quiet", "wrap", "shift"])
         let noMood = TT.model(duration: 150, spans: spans, nudges: [], timeline: nil, marks: [])
         check("timeline: no Copilot → bars only", noMood?.gauge == nil && noMood?.mood.isEmpty == true && noMood?.minutes.count == 4)
     }
@@ -291,8 +322,10 @@ extension ProfileTest {
     @MainActor
     static func testNudgeReplay() {
         let lines = backAndForth() + [said(.me, 125, 130, "the price goes up in January")]
-        let nudges = NudgeReplay.replay(lines: lines, timeline: nil, duration: 200)
+        let nudges = NudgeDetector.replay(lines: lines, timeline: nil, duration: 200)
         check("replay: finds the silence after your line", nudges.contains { $0.kind == .goneQuiet && $0.time == 125 })
         check("replay: nothing else in a normal call", nudges.count == 1)
+        let spans = lines.map { ToneTimeline.Span(isMe: $0.source == .me, start: $0.start, end: $0.end, text: $0.text) }
+        check("replay: the report replays the same", ToneTimeline.timingNudges(spans, duration: 200).map(\.time) == [125])
     }
 }
