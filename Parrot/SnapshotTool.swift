@@ -499,6 +499,9 @@ enum HelpShots {
              LiveRecordingView()
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
+        shot("copilot.png", size: .init(width: 420, height: 700),
+             CopilotPanelView(transcriptJumpTarget: .constant(nil))
+                .environment(rm).environment(rm.profileStore).modelContainer(container))
 
         shot("dashboard.png", size: .init(width: 1000, height: 620),
              DashboardView(selectedMeeting: .constant(nil), page: .constant(.dashboard))
