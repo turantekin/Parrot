@@ -301,7 +301,7 @@ The easiest way to report anything: click the little ladybug in the bottom right
 - **Models need internet once.** Whisper, Parakeet, voice-detection and speaker-detection models download on first use, and macOS fetches a language model the first time you add an Arabic, Indic or (on some Macs) Cyrillic document. After that, everything runs offline.
 - **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign.
 - **Ask Parrot on a small local model.** With a small Ollama model (like gemma3:4b), answers that span many meetings can skip sources or mix up details. Answers about one meeting are fine, and Claude handles the broad ones well.
-- **Mic bleed on speakers.** Without headphones, Parrot leaves out lines that only echo the other side, but the first echo of a call, and echo mixed into your own words, can still get through. Headphones fix it.
+- **Mic bleed on speakers.** Without headphones, Parrot leaves out lines that only echo the other side, but the first echo of a call, and echo mixed into your own words, can still get through. The call screen says when headphones would help, and they fix it.
 
 ## Similar projects
 
