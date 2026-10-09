@@ -809,7 +809,11 @@ final class CallAnalysisEngine {
     /// slips past this token check is handled model-side via the required
     /// "supersedes" field, which the engine filter above enforces.
     nonisolated static func isNearDuplicate(_ a: String, _ b: String, threshold: Double = 0.6) -> Bool {
-        let ta = significantTokens(a), tb = significantTokens(b)
+        isNearDuplicate(significantTokens(a), significantTokens(b), threshold: threshold)
+    }
+
+    /// The same check on `significantTokens` already worked out.
+    nonisolated static func isNearDuplicate(_ ta: Set<String>, _ tb: Set<String>, threshold: Double = 0.6) -> Bool {
         guard !ta.isEmpty, !tb.isEmpty else { return false }
         let overlap = Double(ta.intersection(tb).count)
         return overlap / Double(min(ta.count, tb.count)) >= threshold

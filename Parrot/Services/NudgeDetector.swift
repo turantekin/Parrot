@@ -11,9 +11,20 @@ struct NudgeDetector {
         var source: AudioSource
         var start: TimeInterval
         var end: TimeInterval
-        var text: String
+        let text: String
+        /// Counted once: the rules ask every second, and a replay does a whole call.
+        let words: Int
+        let tokens: Set<String>
         var duration: TimeInterval { max(0, end - start) }
-        var words: Int { text.split(whereSeparator: \.isWhitespace).count }
+
+        init(source: AudioSource, start: TimeInterval, end: TimeInterval, text: String) {
+            self.source = source
+            self.start = start
+            self.end = end
+            self.text = text
+            words = text.split(whereSeparator: \.isWhitespace).count
+            tokens = CallAnalysisEngine.significantTokens(text)
+        }
     }
 
     struct OpenQuestion: Equatable {
@@ -47,7 +58,8 @@ struct NudgeDetector {
         /// "Yeah." / "Mhmm." / "That's good." over their line is listening, not talking over.
         static let talkOverWords = 4
         /// They kept talking this long after you started; less is a normal turn change.
-        static let talkOverOverlap: TimeInterval = 1.5
+        /// At 1.5 s, call 167 still counted both of you starting at once.
+        static let talkOverOverlap: TimeInterval = 2.0
         static let shortReply: TimeInterval = 1.5
         static let shortFactor = 3.0
         static let speedFactor = 1.4
@@ -66,10 +78,9 @@ struct NudgeDetector {
     /// sentence embeddings have too high a baseline for a fixed threshold.
     /// Stricter than `isNearDuplicate`, which divides by the smaller set: a
     /// short line's one or two words are in most long ones.
-    var samePoint: (String, String) -> Bool = { a, b in
-        let ta = CallAnalysisEngine.significantTokens(a), tb = CallAnalysisEngine.significantTokens(b)
-        return min(ta.count, tb.count) >= Tuning.repeatTokens
-            && Double(ta.intersection(tb).count) / Double(max(ta.count, tb.count)) >= Tuning.repeatOverlap
+    var samePoint: (Line, Line) -> Bool = { a, b in
+        min(a.tokens.count, b.tokens.count) >= Tuning.repeatTokens
+            && Double(a.tokens.intersection(b.tokens).count) / Double(max(a.tokens.count, b.tokens.count)) >= Tuning.repeatOverlap
     }
 
     /// Finished lines, sorted by start.
@@ -195,7 +206,7 @@ struct NudgeDetector {
                 && theirs.contains { t in
                     t.start < me.start && me.start < t.end - Tuning.talkOverOverlap
                         // The mic picking up their voice repeats their words: not you.
-                        && !CallAnalysisEngine.isNearDuplicate(me.text, t.text)
+                        && !CallAnalysisEngine.isNearDuplicate(me.tokens, t.tokens)
                 }
         }
         guard events.count >= Tuning.talkOverCount, let latest = events.last else { return nil }
@@ -238,7 +249,7 @@ struct NudgeDetector {
         guard latest.duration >= 1.5, latest.words >= 4, !repeatUsed.contains(latest.start) else { return nil }
         let earlier = lines.filter {
             $0.source == .them && $0.start < latest.start && $0.start > latest.start - Tuning.repeatWindow
-                && $0.duration >= 1.5 && !repeatUsed.contains($0.start) && samePoint(latest.text, $0.text)
+                && $0.duration >= 1.5 && !repeatUsed.contains($0.start) && samePoint(latest, $0)
         }
         guard earlier.count >= 2 else { return nil }
         repeatUsed.formUnion(earlier.map(\.start) + [latest.start])
