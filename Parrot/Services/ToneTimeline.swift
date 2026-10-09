@@ -147,6 +147,11 @@ enum ToneTimeline {
             snapshots.compactMap { s in s.values[g.key].map { MoodPoint(time: s.time, value: $0) } }
         } ?? []
         let turns = gauge.map { turningPoints(snapshots, gauge: $0, spans: spans) } ?? []
+        // Saved before the stricter repeat rule: a quote of one or two content words wasn't a repeat.
+        let nudges = nudges.filter {
+            $0.kind != .repeatedPoint
+                || CallAnalysisEngine.significantTokens($0.quote ?? "").count >= NudgeDetector.Tuning.repeatTokens
+        }
         return Model(duration: length, minutes: talkByMinute(spans, duration: length),
                      talkPercentMe: talkPercentMe(spans), gauge: mood.isEmpty ? nil : gauge, mood: mood,
                      endLevel: gauge.flatMap { g in mood.last.map { level($0.value, g) } },

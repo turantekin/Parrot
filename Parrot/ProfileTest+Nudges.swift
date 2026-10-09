@@ -191,6 +191,10 @@ extension ProfileTest {
         let start = TT.model(duration: 250, spans: late, nudges: [], timeline: MoodTimeline(gauges: [upset], snapshots: early), marks: [])
         check("timeline: a leading all-zero pass is no reading", start?.mood.map(\.value) == [35, 65, 30])
         check("timeline: no turning points in the warm-up", start?.moments.map(\.time) == [150])
+        let repeats = [Nudge(kind: .repeatedPoint, time: 60, text: "old", quote: "So we know from"),
+                       Nudge(kind: .repeatedPoint, time: 90, text: "real", quote: "the export still fails on big files")]
+        check("timeline: a saved one-word repeat is dropped",
+              TT.model(duration: 150, spans: spans, nudges: repeats, timeline: nil, marks: [])?.moments.map(\.detail) == ["real"])
         let noMood = TT.model(duration: 150, spans: spans, nudges: [], timeline: nil, marks: [])
         check("timeline: no Copilot → bars only", noMood?.gauge == nil && noMood?.mood.isEmpty == true && noMood?.minutes.count == 4)
     }
