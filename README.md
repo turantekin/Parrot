@@ -1,4 +1,4 @@
-<a href="https://openparrot.app"><img src=".github/readme/banner.png" alt="Parrot: Help during the call. Not after it. A meeting recorder for your Mac with a live copilot." width="100%"></a>
+<a href="https://openparrot.app"><img src=".github/readme/banner.png" alt="Parrot: Help during the call. Not after it. A meeting recorder for your Mac with a live AI assistant." width="100%"></a>
 
 <p align="center">
   <a href="https://github.com/turantekin/Parrot/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/turantekin/Parrot?include_prereleases&label=release&color=1a8db5"></a>
