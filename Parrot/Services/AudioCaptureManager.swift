@@ -53,6 +53,7 @@ final class AudioCaptureManager: NSObject {
     @ObservationIgnored private var captureOrigin: TimeInterval = 0
     @ObservationIgnored private var systemFramesOut = 0
     @ObservationIgnored private var micFramesOut = 0
+    @ObservationIgnored private var lastAlignmentLogAt = Date.distantPast
 
     /// Throttle timestamps for pushing audio levels to the UI — the waveform needs
     /// only ~10 updates/sec, not one per ~20 ms audio buffer per stream.
@@ -265,6 +266,7 @@ final class AudioCaptureManager: NSObject {
 
         // Reset the mic watchdog before any tap can fire.
         micWatchdog = MicSignalWatchdog()
+        lastAlignmentLogAt = .distantPast
         micSignalLost = false
         micRecoveryScheduled = false
         tapEverHadSignal = false
@@ -585,6 +587,13 @@ final class AudioCaptureManager: NSObject {
                 if verdict != .ok { self.handleMicWatchdog(verdict) }
                 let cleaned = Self.micOut(self.echoCanceller?.process(mic: micFloats) ?? micFloats,
                                           muted: self.micMuted)
+                // #98: the canceller only removes echo that lands within its
+                // 128 ms tail (2048 samples). A backlog past that, or frames
+                // fed silence, means it's blind and speaker echo reaches Me.
+                if let aec = self.echoCanceller, Date().timeIntervalSince(self.lastAlignmentLogAt) >= 60 {
+                    self.lastAlignmentLogAt = Date()
+                    Self.oslog.log("echo canceller alignment: backlog \(aec.referenceBacklog, privacy: .public) samples, starved \(aec.starvedFrames, privacy: .public) frames")
+                }
                 if Self.audioDebugEnabled {
                     self.dbgMic.add(
                         raw: Self.meanAbs(micFloats),

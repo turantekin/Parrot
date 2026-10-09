@@ -312,6 +312,13 @@ struct LiveRecordingView: View {
                     .help("System audio isn't in the expected format, so speaker bleed may transcribe as \"Me\". Headphones avoid this entirely.")
             }
 
+            if recordingManager.transcriptionEngine.micHearsSpeakers {
+                Label("headphones recommended", systemImage: "headphones")
+                    .font(.appCaption2)
+                    .foregroundStyle(Theme.Colors.warn)
+                    .help("Your mic is hearing the other side through the speakers. Parrot filters most of it out, but headphones give a cleaner transcript.")
+            }
+
             if let notice = recordingManager.transcriptionEngine.cloudNotice {
                 Label(notice, systemImage: "icloud.slash")
                     .font(.appCaption2)

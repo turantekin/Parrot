@@ -125,6 +125,9 @@ final class TranscriptionEngine {
     /// errors) and the session is running on-device instead. Shown in the
     /// live device bar.
     private(set) var cloudNotice: String?
+    /// The echo gate skipped a Me clip this call: the mic hears the speakers.
+    /// The live view suggests headphones (#98).
+    private(set) var micHearsSpeakers = false
 
     /// Called when a finalized transcript segment is ready
     var onSegment: ((TranscriptionResult) -> Void)?
@@ -754,6 +757,7 @@ final class TranscriptionEngine {
         var backend = forceLocal ? .local : TranscriptionBackend.selected
         var groqKey: String?
         cloudNotice = nil
+        micHearsSpeakers = false
         self.meetingStartTime = meetingStartTime
         bufferLock.withLock {
             deepgramFailedSources = []
@@ -1046,6 +1050,9 @@ final class TranscriptionEngine {
                             let verdict = EchoGate.check(clip: chunk, mic: tracks.mic, them: tracks.them,
                                                          at: startSample / EchoGate.hop)
                             if verdict.isEcho {
+                                if !self.micHearsSpeakers {
+                                    await MainActor.run { self.micHearsSpeakers = true }
+                                }
                                 AudioCaptureManager.oslog.log("echo gate skipped a Me clip at \(startTime, format: .fixed(precision: 1), privacy: .public) s (follows \(verdict.clip.follows, format: .fixed(precision: 2), privacy: .public), bleed \(verdict.bleed.follows, format: .fixed(precision: 2), privacy: .public))")
                                 if Self.loopTrace {
                                     print(String(format: "TRACE Me [%.2f-%.2f] echo gate SKIP follows=%.2f bleed=%.2f lag=%d",
