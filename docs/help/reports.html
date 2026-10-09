@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="report, write report, no report, summary, coaching, talk balance, cost, price, tokens, export, markdown, polish, speakers, who said what, name speaker, new speaker, add speaker, missing speaker, remember voices, live speaker labels, scorecard, rewrite, rewrite report, undo rewrite, keep working, stop rewrite, report template, profile">
+<meta name="keywords" content="report, write report, no report, summary, coaching, talk balance, cost, price, tokens, export, markdown, polish, speakers, who said what, name speaker, new speaker, add speaker, missing speaker, remember voices, live speaker labels, scorecard, rewrite, rewrite report, undo rewrite, keep working, stop rewrite, report template, profile, pdf, export pdf, share report, team, key moments, show all, stop playing, same name, merge speakers, duplicate speaker, about this call, title">
 <title>Reports and costs</title>
 <link rel="canonical" href="https://openparrot.app/help/reports.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -25,7 +25,11 @@ pain points, key points and next steps; budget, decision-maker and timeline
 for a sales call; a scorecard for an interview. Most also get a coaching section that looks at how <em>you</em> did: talk
 balance, what went well, what to try next time, and which objections came up
 and whether they got handled. The insights the Assistant raised live also land
-in the meeting, so nothing from the call evaporates.</p>
+in the meeting, so nothing from the call evaporates. Parrot also names the
+call and writes a line or two about it at the top of the meeting, so you know
+what a call was at a glance. Older meetings with a report get theirs the first time you open
+them.</p>
+<img src="img/meeting-header.png" alt="The top of a meeting: its title, a line about the call, and your note">
 
 <p>Reports run happily on a local model since nobody is waiting on them. A
 few minutes on a slow model is fine; it appears when it's ready.</p>
@@ -92,6 +96,10 @@ names. If one line landed on the wrong person, right-click it and choose
 call, choose <strong>New speaker…</strong> there: the line moves to a new
 speaker and you can name them right away. <strong>Detect speakers</strong>
 runs the detection again, which puts every line back where it detects it.</p>
+<p>Sometimes one person gets split into two or three speakers. Give them the
+same name and Parrot treats them as one person: their lines join up, so they
+appear once in every list and in the talk share. Older meetings are tidied the
+same way when you open them.</p>
 <p>Turn on <strong>Remember voices</strong> (Settings &rarr; Transcription
 &rarr; Speaker Detection) and a voice you named once is suggested next time:
 "sounds like Jeremy?". It's only ever a suggestion until you click it, and when
@@ -112,9 +120,22 @@ Low Power Mode or when the Mac is hot.</p>
 how much you talked against them, a line for the profile's main gauge (for
 example Buying temp) when the Assistant was on, and numbered moments below.
 Moments are the live tips from the call, turning points where the gauge moved
-sharply (with the line said just before it), and the moments you marked. Play
-jumps to each one. "You talked" counts seconds of speech, not words, so a
+sharply (with the line said just before it), and the moments you marked. The
+first five show; <strong>Show all</strong> opens the rest. <strong>Play</strong>
+jumps to a moment and turns into <strong>Stop</strong> while it plays. Tips are
+counted again from the transcript each time you open the report, so older calls
+get better as Parrot does; a quick "yeah" or "mhmm" while they talk doesn't
+count as talking over them. "You talked" counts seconds of speech, not words, so a
 call in Turkish is measured as fairly as one in English.</p>
+
+<h2 id="pdf">Share the report as a PDF</h2>
+<p><strong>Export Report as PDF</strong> in the <strong>Share</strong> menu
+makes a clean PDF to send your team. It's also under File &rarr;
+<strong>Export Report (PDF)</strong>, and in the sidebar when you right-click a
+meeting. It starts with the title, what the call was about, the date, length,
+call type and who attended, then How the call went with its chart and key
+moments, then the report and coaching. The transcript, your notes and the cost
+stay out. It lands in your Downloads folder.</p>
 
 <h2>Moments you marked</h2>
 <p>Moments you bookmarked during the call get their own card in the report,
@@ -139,7 +160,8 @@ know what a meeting's help was worth.</p>
 in the sidebar. <strong>Export Transcript (TXT)</strong> (&#8984;E) writes one
 plain-text file with your notes, the summary, the coaching, the Assistant's
 cards and the full transcript. <strong>Export Subtitles (SRT)</strong> gives
-you a subtitle file with timestamps. Both land in your Downloads folder.</p>
+you a subtitle file with timestamps. Both land in your Downloads folder. To
+share the report with people, use <a href="#pdf">the PDF</a>.</p>
 
 </body>
 </html>

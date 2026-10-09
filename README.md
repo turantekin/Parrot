@@ -57,7 +57,7 @@ An always-on assistant that watches the conversation and puts the right thing on
 - **A live call score** from 0 to 100, a one-line coach, a mood read, and gauges like *Buying temp* or *You're talking*. Your talk share turns orange past 70%.
 - **Nudges when the call drifts.** A short tip over whatever app the call is in, for about ten seconds: *"They've gone quiet since you said 'the price goes up in January'."* It catches long silences, monologues, talking over them, short answers, speeding up and repeating yourself; with the Assistant on, also a mood shift, a question you didn't answer, and a call wrapping up with no next step. At most one every two minutes, and it's kept out of screen sharing. It reads timing and words, never emotion from anyone's voice. **Settings > Assistant > Live Nudges**.
 - **Brief it before the call.** A line or two on the dashboard ("Renewal call, legal wants to know where the data is stored") and it knows who you're talking to from the first second. Edit the brief mid-call from the *Briefed* card.
-- **You control what it spends.** Pace (Fast, Balanced, Relaxed for free tiers), how much conversation each request carries (2, 5 or 10 minutes), and a pause button on the call screen: while paused, nothing is sent and nothing is spent.
+- **You control what it spends.** Pace (Fast, Balanced, Relaxed for free tiers), how much conversation each request carries (2, 5 or 10 minutes), and an **Assistant** switch on the call screen and in the menu bar: off means nothing is sent and nothing is spent, while the recording and transcript keep going.
 - **Answers from your docs in about half a second** (optional, Claude mode): add a TypeSafe AI key and the matching excerpt shows as a *From your docs* card while Claude is still writing.
 
 ### 📚 Knowledge base: brief it like a new teammate
@@ -99,22 +99,24 @@ Tell Parrot what kind of call it is, and the profile decides what the Assistant 
 - **Remember voices** (opt-in): next call, Parrot asks "sounds like Jeremy?" One click to confirm. With a calendar invite, only people on it are suggested. Voiceprints stay on the Mac; forget one anytime.
 - **Live speaker labels** (experimental, off by default): names the other side *during* the call. "Them" becomes Speaker 1, Speaker 2 within seconds, you can name a voice mid-call, and the end-of-call pass keeps the same labels. It re-checks only the last minute of audio, so a long call costs no more than a short one.
 - Got one line wrong? Right-click it and reassign just that line.
+- **One person split in two?** Give both voices the same name and they become one person everywhere, older meetings included.
 
 ### 📝 The report writes itself, then it coaches you
 
 <p align="center"><img src=".github/readme/after.png" alt="A post-call report: summary, pain points, talk balance, objections handled and missed, what went well, what to improve, and commitments" width="480"></p>
 
-- **How the call went:** a timeline at the top of the report with your talk share against theirs minute by minute, the profile's main gauge over the call, and numbered moments (tips, turning points, your marks) with Play.
+- **How the call went:** a timeline at the top of the report with your talk share against theirs minute by minute, the profile's main gauge over the call, and numbered moments (tips, turning points, your marks). The first five show, *Show all* opens the rest, and Play turns into Stop while a moment plays.
 - **Summary:** shaped by the call's profile; by default overview, pain points, key points, next steps.
 - **Rewrite Report:** recorded under the wrong profile, or changed one since? Rewrite any past report with any profile, and undo it in one click.
 - **Receipts on every point.** Each bullet carries a time chip (`12:34`): click it for the exact quote, *Play from Here* or *Show in Transcript*. Chips are checked against the transcript on your Mac, and a promise nobody actually made is marked *unverified* instead of stated as fact.
 - **Moments you marked** during the call (the *Mark* button, or ⌃⌥M from any app) get their own card, and the report is written knowing they mattered.
-- **Share it:** a follow-up email with only the promises actually made (opens in Mail, addressed to the invitees), next steps into Apple Reminders, Markdown notes into your Obsidian vault or any folder (automatically, if you like), or a webhook to Zapier/Make/n8n for Slack, Notion and CRMs.
+- **Share it:** a PDF of the report for your team (no transcript, notes or cost), a follow-up email with only the promises actually made (opens in Mail, addressed to the invitees), next steps into Apple Reminders, Markdown notes into your Obsidian vault or any folder (automatically, if you like), or a webhook to Zapier/Make/n8n for Slack, Notion and CRMs.
 - **Coaching:** talk balance, what went well, what to improve, objections and questions marked *Handled* or *Missed*, and commitments from both sides.
 - **No report?** Calls recorded with the Assistant off get one on demand: *Write report* on the meeting's Report tab.
 - **Per-call AI cost** down to the cent: model, tokens, calls and transcription minutes, with a line-by-line breakdown. Local features show $0.00, proudly.
 - **Playback synced with the transcript** (0.5x to 2x): click a line, hear that moment.
-- **Notes** you type during or after the call are kept with the meeting.
+- **It names itself.** After the call, Parrot titles the meeting and writes a line or two about who it was with and what it was about, right at the top. A *Call saved* box lets you set the title and a note while it's fresh.
+- **Notes** you type during or after the call are kept with the meeting, and the first lines show at the top.
 
 ### 🧠 You pick the brain
 
@@ -153,7 +155,7 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 - **Never loses a meeting.** If Parrot crashes or gets force-quit mid-call, the recording is recovered with its transcript and report on next launch. ⌘Q mid-call finishes the recording first.
 - **Forgot to hit stop?** After 15 minutes with nobody talking, Parrot asks *Still recording?* An idle room isn't turned into words, and if you want the tail gone anyway, right-click a line and choose *Delete Everything After This Line*. The audio is kept in full.
 - **Import recordings.** Drop an audio file (m4a, mp3, wav, aac, aiff, caf) on the window and it's transcribed, split by speaker and summarised like a live call.
-- **Export** a meeting as Markdown, TXT (notes, report, Assistant cards and transcript in one file) or SRT subtitles.
+- **Export** a meeting as Markdown, TXT (notes, report, Assistant cards and transcript in one file) or SRT subtitles, and the report as a PDF to share.
 - **Searchable history.** Search titles and transcripts, meetings grouped by day, with a talk-ratio strip on each.
 - **A parrot in your menu bar.** Start and stop from anywhere, see the call time (and whether you're muted) at a glance, switch profile, copy your last report, and with your calendar connected, join your next call and record it in one click. Home keeps a dashboard of your meetings, hours and words.
 - **Keeps itself up to date** with signed Sparkle updates that install when you quit, never during a recording. A notification says when one is ready (*Restart now* if you can't wait), and Home shows what's new once you're on it.
@@ -299,7 +301,7 @@ The easiest way to report anything: click the little ladybug in the bottom right
 
 - **Audio permissions reset on ad-hoc source builds.** Identity-less builds look like a new app every time. `make signing-help` shows two fixes. Downloaded release builds keep the grant across updates.
 - **Models need internet once.** Whisper, Parakeet, voice-detection and speaker-detection models download on first use, and macOS fetches a language model the first time you add an Arabic, Indic or (on some Macs) Cyrillic document. After that, everything runs offline.
-- **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign.
+- **Speaker detection isn't perfect.** Me vs Them is exact (separate tracks). Similar voices or heavy crosstalk on the other side can still get a line wrong; right-click it to reassign. If one person comes out as two or three speakers, give them the same name and they merge.
 - **Ask Parrot on a small local model.** With a small Ollama model (like gemma3:4b), answers that span many meetings can skip sources or mix up details. Answers about one meeting are fine, and Claude handles the broad ones well.
 - **Mic bleed on speakers.** Without headphones, Parrot leaves out lines that only echo the other side, but the first echo of a call, and echo mixed into your own words, can still get through. The call screen says when headphones would help, and they fix it.
 
