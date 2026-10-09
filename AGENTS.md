@@ -52,6 +52,6 @@ bundle time by the Makefile, not by Xcode.
   `--sidebar-snapshot`, `--transcribe-test`, `--language-test`, `--analyze-test`, `--capture-test`,
   `--kb-add`, `--doc-answer-eval`, `--echo-replay`, `--copilot-replay`, `--ask-chat-test`,
   `--store-upgrade-test <copy of an old .store>`, `--nudge-replay`,
-  `--tone-snapshot`, `--pill-test`). There is no
+  `--tone-snapshot`, `--pill-test`, `--report-pdf`). There is no
   XCTest target. `--capture-test` does live audio capture — run it from the
   signed `dist/Parrot.app` bundle (TCC keys grants to the bundle identity).
