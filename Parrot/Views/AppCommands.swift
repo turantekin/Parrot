@@ -61,20 +61,27 @@ enum MeetingActions {
     nonisolated static let xSayHiURL = "https://x.com/intent/tweet?text=%40OpenParrotHQ%20"
 
     static func exportTXT(_ meeting: Meeting) {
-        write(ExportService.exportToTXT(meeting: meeting), for: meeting, ext: "txt")
+        write(Data(ExportService.exportToTXT(meeting: meeting).utf8), for: meeting, ext: "txt")
     }
 
     static func exportSRT(_ meeting: Meeting) {
-        write(ExportService.exportToSRT(meeting: meeting), for: meeting, ext: "srt")
+        write(Data(ExportService.exportToSRT(meeting: meeting).utf8), for: meeting, ext: "srt")
     }
 
     static func exportMarkdown(_ meeting: Meeting) {
-        write(ExportService.exportToMarkdown(meeting: meeting), for: meeting, ext: "md")
+        write(Data(ExportService.exportToMarkdown(meeting: meeting).utf8), for: meeting, ext: "md")
     }
 
-    private static func write(_ content: String, for meeting: Meeting, ext: String) {
+    /// The report (not the transcript) as a PDF to share; says so if it can't be made.
+    static func exportPDF(_ meeting: Meeting) {
+        Task {
+            do { write(try await ReportPDF.data(for: meeting), for: meeting, ext: "pdf") } catch { NSAlert(error: error).runModal() }
+        }
+    }
+
+    private static func write(_ content: Data, for meeting: Meeting, ext: String) {
         let filename = meeting.title.replacingOccurrences(of: " ", with: "_")
-        if let url = try? ExportService.save(content: content, filename: filename, extension: ext) {
+        if let url = try? ExportService.save(content, filename: filename, extension: ext) {
             NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
         }
     }
@@ -161,6 +168,11 @@ struct ParrotCommands: Commands {
                 session.selectedMeeting.map { MeetingActions.exportMarkdown($0) }
             }
             .disabled(session.selectedMeeting == nil)
+
+            Button("Export Report (PDF)") {
+                session.selectedMeeting.map { MeetingActions.exportPDF($0) }
+            }
+            .disabled(session.selectedMeeting.map(ReportPDF.hasReport) != true)
 
             Button("Export Subtitles (SRT)") {
                 session.selectedMeeting.map { MeetingActions.exportSRT($0) }
@@ -291,6 +303,8 @@ struct MeetingContextMenu: ViewModifier {
                 Menu("Export") {
                     Button("Transcript (TXT)") { MeetingActions.exportTXT(meeting) }
                     Button("Markdown (MD)") { MeetingActions.exportMarkdown(meeting) }
+                    Button("Report (PDF)") { MeetingActions.exportPDF(meeting) }
+                        .disabled(!ReportPDF.hasReport(meeting))
                     Button("Subtitles (SRT)") { MeetingActions.exportSRT(meeting) }
                 }
                 .disabled(meeting.segments.isEmpty)

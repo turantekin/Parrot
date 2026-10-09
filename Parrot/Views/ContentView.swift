@@ -144,6 +144,17 @@ struct ContentView: View {
         .onChange(of: recordingManager.isRecording) { _, recording in
             if recording, page == .ask { page = .dashboard }
         }
+        // A call just stopped (any path): open it and ask for a title and a
+        // note. Initial: the window may have been closed when it stopped.
+        .onChange(of: recordingManager.justFinished, initial: true) { _, meeting in
+            guard let meeting else { return }
+            selectedMeeting = meeting
+            page = .meeting
+        }
+        .sheet(item: Binding(get: { recordingManager.justFinished },
+                             set: { recordingManager.justFinished = $0 })) { meeting in
+            CallFinishedSheet(meeting: meeting) { recordingManager.justFinished = nil }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .parrotMeetingWillDelete)) { note in
             guard let id = note.object as? UUID else { return }
             if selectedMeeting?.id == id {
@@ -243,6 +254,79 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.Colors.canvas)
+    }
+}
+
+/// Right after a call stops: a title and a note while it's fresh. The report
+/// keeps writing behind it. A blank title lets Parrot name the call from the
+/// report; the note shows at the top of the meeting.
+struct CallFinishedSheet: View {
+    let meeting: Meeting
+    let close: () -> Void
+    @Environment(\.modelContext) private var modelContext
+    @State private var title = ""
+    @State private var note = ""
+    /// What the title field started with, so clearing it can be told apart.
+    @State private var prefilled = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Metrics.popoverPad) {
+            Text("Call saved")
+                .font(Theme.Typography.title(15))
+                .foregroundStyle(Theme.Colors.ink)
+            Text("Give it a name and a note while it's fresh. The report is on its way.")
+                .font(Theme.Typography.secondary)
+                .foregroundStyle(Theme.Colors.ink2)
+
+            Text("Title").font(Theme.Typography.sectionLabel).foregroundStyle(Theme.Colors.label)
+            TextField("Leave blank and Parrot names it", text: $title)
+                .textFieldStyle(.roundedBorder)
+
+            Text("Note").font(Theme.Typography.sectionLabel).foregroundStyle(Theme.Colors.label)
+            TextEditor(text: $note)
+                .font(Theme.Typography.body)
+                .frame(height: 110)
+                .overlay(RoundedRectangle(cornerRadius: Theme.Metrics.radius).strokeBorder(Theme.Colors.line))
+                .overlay(alignment: .topLeading) {
+                    if note.isEmpty {
+                        Text("What to remember, what to do next")
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.ink3)
+                            // TextEditor's own text inset, so it sits where typing starts.
+                            .padding(.leading, 6)
+                            .padding(.top, 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+            HStack {
+                Spacer()
+                Button("Skip", action: close)
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Theme.Metrics.pad)
+        .frame(width: 440)
+        .onAppear {
+            prefilled = meeting.hasDefaultTitle ? "" : meeting.title
+            title = prefilled
+            note = meeting.notes
+        }
+    }
+
+    private func save() {
+        let typed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty, typed != prefilled {
+            meeting.title = String(typed.prefix(200))
+        } else if typed.isEmpty, !prefilled.isEmpty {
+            // Cleared the calendar's title: Parrot names it instead.
+            meeting.title = Meeting.defaultTitle(for: meeting.date)
+        }
+        meeting.notes = note
+        try? modelContext.save()
+        close()
     }
 }
 

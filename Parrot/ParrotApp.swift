@@ -93,6 +93,14 @@ struct ParrotMain {
             MainActor.assumeIsolated { ToneSnapshot.write(to: args[i + 1]) }
             return
         }
+        if let i = args.firstIndex(of: "--report-pdf") {
+            MainActor.assumeIsolated { ReportPDFHarness.run(args: Array(args[(i + 1)...])) }
+            return
+        }
+        if let i = args.firstIndex(of: "--about-test") {
+            MainActor.assumeIsolated { AboutTest.run(args: Array(args[(i + 1)...])) }
+            return
+        }
         if let i = args.firstIndex(of: "--store-upgrade-test"), i + 1 < args.count {
             MainActor.assumeIsolated { StoreUpgradeTest.run(path: args[i + 1]) }
             return
