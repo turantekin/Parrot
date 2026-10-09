@@ -380,6 +380,25 @@ final class Meeting {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// Label for a voice the user adds by hand (#117): one past the highest
+    /// "Speaker N" in the lines or the names, so it never picks up a name
+    /// left behind by an earlier label.
+    var nextSpeakerLabel: String {
+        let used = Set(segments.compactMap(\.speakerLabel)).union(speakerNames.keys)
+        let top = used.compactMap { Int($0.dropFirst("Speaker ".count)) }.max() ?? 0
+        return "Speaker \(top + 1)"
+    }
+
+    /// Drops names whose label no longer appears on any line. Re-detecting
+    /// speakers relabels every line, so a stale name would otherwise land
+    /// on whichever voice later gets that label.
+    func pruneSpeakerNames() {
+        let live = Set(segments.compactMap(\.speakerLabel))
+        let names = speakerNames
+        let kept = names.filter { live.contains($0.key) }
+        if kept.count != names.count { speakerNames = kept }
+    }
+
     /// This voice's longest utterances — the clips the naming UI plays.
     func longestSegments(for label: String, count: Int = 3) -> [TranscriptSegment] {
         segments.filter { $0.speakerLabel == label }
