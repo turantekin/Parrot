@@ -516,6 +516,28 @@ enum HelpShots {
                 .environment(rm).environment(rm.profileStore).environment(AppSession())
                 .modelContainer(container))
 
+        // A finished call: the AI's title and About, the user's note, and one
+        // voice split in two that the page merges because both are "Sam".
+        let finished = Meeting(title: "Acme renewal with Sam")
+        finished.status = .done
+        finished.duration = 1840
+        finished.about = "Sam from Acme wants the annual plan for ten seats before the end of the month. You agreed to send pricing and the security FAQ by Friday."
+        finished.notes = "Send pricing by Friday\nAsk Dana about EU hosting\nThey compare us with Northwind\nFollow up after their board meeting"
+        context.insert(finished)
+        for (start, label, text) in [(12.0, "Speaker 1", "Thanks for making time, we're reviewing the renewal."),
+                                     (20.0, "Me", "Happy to. What matters most this year?"),
+                                     (27.0, "Speaker 2", "Mainly price for ten seats.")] {
+            let seg = TranscriptSegment(startTime: start, endTime: start + 6, text: text, speakerLabel: label, confidence: nil)
+            context.insert(seg)
+            seg.meeting = finished
+        }
+        finished.speakerNames = ["Speaker 1": "Sam", "Speaker 2": "Sam"]
+        shot("meeting-header.png", size: .init(width: 900, height: 420),
+             MeetingDetailView(meeting: finished)
+                .environment(rm).environment(AppSession()).modelContainer(container))
+        shot("call-saved.png", size: .init(width: 440, height: 340),
+             CallFinishedSheet(meeting: finished) {}.background(Theme.Colors.panel).modelContainer(container))
+
         // Onboarding, real sheet geometry (600x680): if a step ever outgrows
         // it, these shots show the clipping before a user does. Repeated
         // register(defaults:) calls replace the keys, picking step and path.
@@ -1310,6 +1332,8 @@ enum StoreUpgradeTest {
         let ctx = ModelContext(container)
         let before = (try? ctx.fetch(FetchDescriptor<CallProfile>())) ?? []
         let meetingsBefore = (try? ctx.fetch(FetchDescriptor<Meeting>())) ?? []
+        check("old meetings read with an empty About (\(meetingsBefore.count))",
+              !meetingsBefore.isEmpty && meetingsBefore.allSatisfy { $0.about.isEmpty })
         let copilot = Dictionary(uniqueKeysWithValues: before.map { ($0.id, [$0.persona, $0.tone, $0.counterpart]
             + [$0.kindsData.base64EncodedString(), $0.gaugesData.base64EncodedString(), "\($0.onDeviceOnly)"]) })
         let summaries = Dictionary(uniqueKeysWithValues: meetingsBefore.map { ($0.id, $0.summary ?? "") })
@@ -1352,6 +1376,55 @@ enum StoreUpgradeTest {
               && reopened.allSatisfy { choices[$0.id] == $0.reportChoiceRaw && $0.sharedID != nil })
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
+    }
+}
+
+/// `Parrot --about-test <file.store> <meeting-id-prefix> [ollama|claude] [model]`:
+/// on a scratch copy of the given store (never the file itself), merges the
+/// meeting's same-named speakers and prints lines per label before and
+/// after; with a provider, writes its title and About as the post-call
+/// chain would and prints them.
+enum AboutTest {
+    @MainActor
+    static func run(args: [String]) {
+        guard args.count >= 2 else { print("about-test: <file.store> <meeting-id-prefix> [provider] [model]"); exit(1) }
+        if args.count >= 3 { UserDefaults.standard.register(defaults: ["copilotProvider": args[2], "reportsProvider": args[2]]) }
+        if args.count >= 4 { UserDefaults.standard.register(defaults: ["copilotOllamaModel": args[3]]) }
+        let fm = FileManager.default
+        let scratch = fm.temporaryDirectory.appendingPathComponent("parrot-about-test-\(UUID().uuidString)")
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let copy = scratch.appendingPathComponent("copy.store")
+        for suffix in ["", "-wal", "-shm"] where fm.fileExists(atPath: args[0] + suffix) {
+            try? fm.copyItem(atPath: args[0] + suffix, toPath: copy.path + suffix)
+        }
+        let schema = Schema([Meeting.self, TranscriptSegment.self, CallInsight.self, CallProfile.self, SpeakerProfile.self])
+        guard let container = try? ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: copy)]),
+              let meeting = ((try? container.mainContext.fetch(FetchDescriptor<Meeting>())) ?? [])
+                .first(where: { $0.id.uuidString.lowercased().hasPrefix(args[1].lowercased()) }) else {
+            print("about-test: no such meeting"); try? fm.removeItem(at: scratch); exit(1)
+        }
+        func labels() -> String {
+            let names = meeting.speakerNames
+            return Dictionary(grouping: meeting.segments, by: { $0.speakerLabel ?? "?" })
+                .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+                .map { "\($0.key)\(names[$0.key].map { " (\($0))" } ?? ""): \($0.value.count) lines" }
+                .joined(separator: ", ")
+        }
+        print("\(meeting.title)\nbefore: \(labels())")
+        meeting.mergeSameNamedSpeakers()
+        print("after:  \(labels())")
+        guard args.count >= 3 else { try? fm.removeItem(at: scratch); exit(0) }
+        let rm = RecordingManager(memory: MeetingMemory(directory: nil), chats: AskChatStore(directory: nil))
+        rm.attachForHarness(modelContext: container.mainContext)
+        Task { @MainActor in
+            let started = Date()
+            let said = await CloudGate.$scopeLocal.withValue(meeting.onDeviceOnly) { await rm.writeAbout(meeting) }
+            print(String(format: "AI (%.1fs) suggested title: %@", Date().timeIntervalSince(started), said?.title ?? "(none)"))
+            print("title now: \(meeting.title)\nabout: \(meeting.about.isEmpty ? "(none)" : meeting.about)")
+            try? fm.removeItem(at: scratch)
+            exit(meeting.about.isEmpty ? 1 : 0)
+        }
+        RunLoop.main.run()
     }
 }
 

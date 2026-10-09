@@ -36,6 +36,10 @@ final class Meeting {
     /// The user's own typed notes for this call — live during recording (side
     /// panel) and editable afterwards (Notes tab). Defaulted → old rows migrate.
     var notes: String = ""
+    /// The AI's one or two sentences on what the call was about (who, which
+    /// company, what, how it ended), shown under the title. Empty until
+    /// written (see CallAbout). Defaulted → old rows migrate.
+    var about: String = ""
 
     /// True when this meeting was salvaged from an interrupted recording (crash or
     /// force-quit) on the next launch, rather than finished cleanly. Drives the
@@ -140,6 +144,13 @@ final class Meeting {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
         return "Meeting \(formatter.string(from: date))"
+    }
+
+    /// Still Parrot's own "Meeting <date>" (or blank): a calendar or AI title
+    /// may replace it. One the user typed never is.
+    var hasDefaultTitle: Bool {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty || t == Self.defaultTitle(for: date)
     }
 
     var sortedSegments: [TranscriptSegment] {
@@ -332,7 +343,7 @@ final class Meeting {
         calendarEventID = event.id
         attendees = event.attendees
         let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !title.isEmpty, self.title == Self.defaultTitle(for: date) {
+        if !title.isEmpty, hasDefaultTitle {
             self.title = String(title.prefix(200))
         }
     }
@@ -380,17 +391,36 @@ final class Meeting {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// Names for the "This line is" menu: a name two voices share (say
-    /// "Mac" and "mac") gets its label added, so the items can be told apart.
-    var speakerMenuNames: [String: String] {
+    /// Same name = same person. Diarization often splits one voice into
+    /// several labels (a 2-person call came back as Speaker 1, 2 and 3, all
+    /// named "Drago"), and the pieces' voiceprints are too far apart to
+    /// merge by sound. So labels the user gave one name (trimmed, any case)
+    /// fold into the one with the most speech: every line moves there, the
+    /// others' names and voiceprints go. "Me" never merges. Returns whether
+    /// anything changed.
+    @discardableResult
+    func mergeSameNamedSpeakers() -> Bool {
         let names = speakerNames
-        let labels = otherSpeakerLabels
-        let shown = labels.map { (label: $0, name: displayName(forSpeaker: $0, names: names)) }
-        let counts = Dictionary(grouping: shown, by: { $0.name.lowercased() }).mapValues(\.count)
-        return Dictionary(uniqueKeysWithValues: shown.map {
-            ($0.label, counts[$0.name.lowercased(), default: 0] > 1 && $0.name != $0.label
-                ? "\($0.name) (\($0.label))" : $0.name)
-        })
+        let labels = names.keys.filter { $0 != "Me" }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let groups = Dictionary(grouping: labels) {
+            names[$0, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.key.isEmpty && $0.value.count > 1 }
+        guard !groups.isEmpty else { return false }
+        var speech: [String: TimeInterval] = [:]
+        for s in segments { if let l = s.speakerLabel { speech[l, default: 0] += s.endTime - s.startTime } }
+        var kept = names
+        var embeddings = speakerEmbeddings
+        for group in groups.values {
+            // Ties go to the lowest label: max keeps the first of equals.
+            guard let keeper = group.max(by: { speech[$0, default: 0] < speech[$1, default: 0] }) else { continue }
+            let merged = Set(group).subtracting([keeper])
+            for s in segments where merged.contains(s.speakerLabel ?? "") { s.speakerLabel = keeper }
+            for label in merged { kept[label] = nil; embeddings[label] = nil }
+        }
+        speakerNames = kept
+        if speakerEmbeddingsData != nil { speakerEmbeddingsData = try? JSONEncoder().encode(embeddings) }
+        return true
     }
 
     /// Label for a voice the user adds by hand (#117): one past the highest
