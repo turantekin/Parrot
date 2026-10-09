@@ -1497,9 +1497,10 @@ struct TranscriptSegmentRow: View {
             if let meeting, let onReassign, !isMe {
                 Menu("This line is") {
                     Button("Me") { onReassign("Me") }
+                    let menuNames = meeting.speakerMenuNames
                     ForEach(meeting.otherSpeakerLabels, id: \.self) { label in
                         if label != segment.speakerLabel {
-                            Button(meeting.displayName(forSpeaker: label)) { onReassign(label) }
+                            Button(menuNames[label] ?? label) { onReassign(label) }
                         }
                     }
                     // Detection can merge voices (#117): let the user add one.

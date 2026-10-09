@@ -1245,6 +1245,10 @@ enum ProfileTest {
         check("next speaker skips a named label", m.nextSpeakerLabel == "Speaker 6")
         m.pruneSpeakerNames()
         check("prune drops names with no lines", m.speakerNames == ["Speaker 1": "Gürkan"])
+        check("menu: unique names stay plain", m.speakerMenuNames == ["Speaker 1": "Gürkan", "Speaker 2": "Speaker 2"])
+        m.speakerNames = ["Speaker 1": "Mac", "Speaker 2": "mac"]
+        check("menu: shared names get their label",
+              m.speakerMenuNames == ["Speaker 1": "Mac (Speaker 1)", "Speaker 2": "mac (Speaker 2)"])
     }
 
     @MainActor
