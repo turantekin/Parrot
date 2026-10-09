@@ -3,14 +3,14 @@
   "name": "io.github.turantekin/parrot",
   "title": "Parrot",
   "description": "Your recorded Mac meetings in Claude: search, promises with owners, follow-ups. Local, read-only.",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "websiteUrl": "https://openparrot.app",
   "repository": { "url": "https://github.com/turantekin/Parrot", "source": "github" },
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/turantekin/Parrot/releases/download/v0.28.0/Parrot.mcpb",
-      "fileSha256": "89740ed7dd1852aab9603bc8bddb5f5eafa36b345bb1ee46f2dfef4e5282825c",
+      "identifier": "https://github.com/turantekin/Parrot/releases/download/v0.28.1/Parrot.mcpb",
+      "fileSha256": "ce59066c9f69d2c4723b9dfd122a333a1e7bc1fcd4b27920d2d7a6a8bcb10763",
       "transport": { "type": "stdio" }
     }
   ]
