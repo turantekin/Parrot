@@ -14,6 +14,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Parrot/CopilotHarness.swift` | 360 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency; `--real` sends passes to real Claude Haiku and prints each card's call time) |
 | `Parrot/ToneHarness.swift` | 180 | `--nudge-replay [id] [--store path]` (a saved call through the live nudge rules, on a copy of the store, with the time it took), `--tone-snapshot <png>` (report card collapsed with one moment playing, pill, banner; light + dark), `--pill-test [png]` (a real pill on screen, captured with ScreenCaptureKit to prove it's left out; `PILL_TEST_SHARED=1` is the control) |
 | `Parrot/ProfileTest+Nudges.swift` | 331 | `--profile-test` checks for live nudges, the tone timeline and seconds-based talk share |
+| `Parrot/ReportPDFHarness.swift` | 190 | `--report-pdf <out.pdf> [meeting id or row] [--store path]`: a meeting's Export PDF plus a PNG per page, on a copy of the store; no meeting = the demo call (investor pitch with a scorecard); `REPORT_PDF_PAPER=a4\|letter` |
+| `Parrot/ProfileTest+ReportPDF.swift` | 50 | `--profile-test` checks for the Export PDF's HTML (sections, scorecards, escaping, nothing from the transcript or notes) |
 
 ## Models (SwiftData `@Model` + Codable values)
 
@@ -56,6 +58,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/ProfileStore.swift` | 300 | Persists and mutates `CallProfile`s; the one-time Profiles 2.0 migration (backup, sharing ids, restore point, report choice); import / apply / restore a `.parrotprofile` (privacy only tightens) |
 | `Services/ProfilePresets.swift` | 300 | Built-in starter profiles (eight, incl. the buyer-side "Vendor call" and "Investor pitch") and their report templates |
 | `Services/ExportService.swift` | 265 | Export: TXT, SRT, Markdown (front matter, next-step checklist instead of repeated sections); `Parts` limits what an AI app gets |
+| `Services/ReportPDF.swift` | 470 | Export PDF for a team: header (date, length, who attended, call type), how the call went (tiles + SVG chart from ToneTimeline), report cards; pure HTML, paginated offscreen by WebKit's print engine (cards never split), footer and page numbers stamped after |
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/AppUpdater.swift` | 148 | Sparkle updater: daily signed appcast check, installs on quit; started at launch; as Sparkle's delegate posts "update waiting" (held during a call) with Restart now; `UpdateNotice` copy + rule |
 | `Services/WhatsNew.swift` | 92 | What the release brings: the Home card after updating and Sparkle's update-window notes; copy rules; `--whats-new-html X.Y.Z` for release.sh |

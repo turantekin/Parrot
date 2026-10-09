@@ -76,6 +76,7 @@ enum ProfileTest {
         testAskParsing()
         testLastCallBrief()
         testMarkdownExport()
+        testReportPDF()
         testFollowUpEmail()
         testWebhook()
         testMCPServer()

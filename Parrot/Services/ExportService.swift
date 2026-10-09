@@ -234,7 +234,7 @@ enum ExportService {
 
     // MARK: - Save to File
 
-    static func save(content: String, filename: String, extension ext: String) throws -> URL {
+    static func save(_ data: Data, filename: String, extension ext: String) throws -> URL {
         let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
         // Filenames come from user-typed meeting titles — "/" and ":" break the
         // path, and identical titles must not silently overwrite prior exports.
@@ -247,7 +247,7 @@ enum ExportService {
             url = downloadsDir.appendingPathComponent("\(safe) (\(n)).\(ext)")
             n += 1
         }
-        try content.write(to: url, atomically: true, encoding: .utf8)
+        try data.write(to: url, options: .atomic)
         return url
     }
 
