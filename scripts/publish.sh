@@ -159,3 +159,19 @@ else
   echo "!! couldn't start the website draft. Retry with: $DRAFT" >&2
 fi
 echo "  PRs to review: https://github.com/$SITE/pulls"
+
+# 5. List this version in the official MCP registry, which MCP directories and
+#    apps read. Needs mcp-publisher (brew). Its registry login expires within
+#    minutes, so log in fresh with the gh CLI's token every time. Warn only.
+echo
+if ! grep -q "\"version\": \"$VERSION\"" server.json 2>/dev/null; then
+  echo "!! server.json doesn't name $VERSION, so the MCP registry keeps the old version" >&2
+elif ! command -v mcp-publisher >/dev/null; then
+  echo "!! mcp-publisher missing (brew install mcp-publisher), so the MCP registry keeps the old version" >&2
+elif MCP_OUT="$(mcp-publisher login github --token "$(gh auth token)" 2>&1 && mcp-publisher publish 2>&1)"; then
+  echo "==> listed $VERSION in the MCP registry"
+else
+  # A re-run for the same version lands here too: "cannot publish duplicate version".
+  echo "!! MCP registry publish failed: $(echo "$MCP_OUT" | tail -1)" >&2
+  echo "   Retry with: mcp-publisher login github && mcp-publisher publish" >&2
+fi

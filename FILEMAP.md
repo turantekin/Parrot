@@ -49,7 +49,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/DiarizationEngine.swift` | 156 | FluidAudio pyannote diarization (CoreML): labels + per-speaker embeddings; whole file or a live 60 s tail |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |
-| `Services/CallAnalysisEngine.swift` | 815 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt) |
+| `Services/CallAnalysisEngine.swift` | 815 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt); mid-call On/Off (`setPaused` drops in-flight work) |
 | `Services/JevDocMatcher.swift` | 175 | TypeSafe "Jev" client: one probability per KB chunk that it answers the question; same-issue verdicts for card dedup |
 | `Services/KnowledgeBaseService.swift` | 660 | Ingests/chunks KB docs (heading-aware), on-device multilingual embeddings (re-embeds stale vectors), hybrid BM25 + embedding retrieval; folders and Use for, `isInPlay` (the one rule for what the Assistant may quote), index v2 upgrade + backup |
 | `Services/ProfileStore.swift` | 300 | Persists and mutates `CallProfile`s; the one-time Profiles 2.0 migration (backup, sharing ids, restore point, report choice); import / apply / restore a `.parrotprofile` (privacy only tightens) |
@@ -104,7 +104,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 420 | Landing stats (word count cached per meeting) + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
 | `Views/WhatsNewCard.swift` | 39 | Home card once per version after an update: headline, highlights, Read the full story (changelog anchor), Got it |
-| `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs |
+| `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs; top-bar Assistant On/Off switch |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
 | `Views/SettingsCards.swift` | 191 | Settings building blocks: page, titled card, row (optional header tint), tag chip (the landing-page window look) |
@@ -137,7 +137,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/OllamaModelStatusView.swift` | 65 | Settings → Copilot model status, a thin view over OllamaService |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 319 | `AppSession`, menu commands, context menus, notifications |
-| `Views/MenuBarView.swift` | 223 | Menu bar extra: words-heard line, next call (Join & Record), profile picker, last call (open/copy report), Ask, X follow/say hi; `MenuBarLabel` draws the parrot + call time + muted mic as one template image |
+| `Views/MenuBarView.swift` | 223 | Menu bar extra: words-heard line, Turn Assistant On/Off mid-call, next call (Join & Record), profile picker, last call (open/copy report), Ask, X follow/say hi; `MenuBarLabel` draws the parrot + call time + muted mic as one template image |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/NudgePill.swift` | 156 | The floating nudge pill (non-activating panel, hidden from screen capture) and the Copilot panel's nudge banner |
 | `Views/ToneTimelineCard.swift` | 213 | Report card "How the call went": talk bars, mood line, numbered moments (first 5, then Show all) with Play that turns into Stop |

@@ -191,8 +191,8 @@ else
   echo "    (npx not found: skipped the manifest check)"
 fi
 
-# The MCP Registry entry for this version. Commit it with the appcast, then
-# publish with: mcp-publisher login github && mcp-publisher publish
+# The MCP Registry entry for this version. scripts/publish.sh commits it with
+# the appcast and lists it with mcp-publisher.
 SHA="$(shasum -a 256 "$MCPB" | cut -d' ' -f1)"
 cat > server.json <<JSON
 {
@@ -213,7 +213,7 @@ cat > server.json <<JSON
   ]
 }
 JSON
-echo "    server.json updated for the MCP Registry (commit it with the appcast)"
+echo "    server.json updated for the MCP Registry (publish.sh commits and lists it)"
 
 echo
 echo "Done: $DMG"
