@@ -126,6 +126,13 @@ struct MeetingDetailView: View {
             prepareAudioPlayer()
             consumeJump()
         }
+        // On open, and again when processing finishes or Write report lands:
+        // one label per person (names given before merging existed, or while
+        // the call processed), then the About older meetings lack.
+        .task(id: "\(meeting.status.rawValue) \(meeting.summary != nil)") {
+            if meeting.status == .done, meeting.mergeSameNamedSpeakers() { try? modelContext.save() }
+            await recordingManager.writeAboutIfMissing(meeting)
+        }
         .onChange(of: appSession.pendingJump) { consumeJump() }
         // Lines land while a meeting processes, and naming a voice changes
         // the speaker the receipts quote — rebuild on either.
@@ -260,8 +267,37 @@ struct MeetingDetailView: View {
                     .font(Theme.Typography.title(20))
                     .foregroundStyle(Theme.Colors.ink)
                     .onTapGesture(count: 2) {
+                        titleText = meeting.title  // the AI may have named it since
                         editingTitle = true
                     }
+            }
+
+            if !meeting.about.isEmpty {
+                Text(meeting.about)
+                    .font(Theme.Typography.about)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // The user's own note, first lines; the Notes tab has the rest.
+            if let note = meeting.notes.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                Button { tab = .notes } label: {
+                    Label {
+                        Text(note)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .font(Theme.Typography.secondary)
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open your notes")
             }
 
             HStack(spacing: 12) {
@@ -1298,6 +1334,10 @@ struct SpeakerNamePopover: View {
            let embedding = meeting.speakerEmbeddings[label] {
             SpeakerProfileStore.remember(name: finalName, embedding: embedding, in: modelContext)
         }
+        // A name another voice has = the same person split in two. Finished
+        // meetings only: before that, speaker detection relabels the lines
+        // and merges by name itself.
+        if meeting.status == .done, meeting.mergeSameNamedSpeakers() { try? modelContext.save() }
         dismiss()
     }
 
@@ -1497,10 +1537,10 @@ struct TranscriptSegmentRow: View {
             if let meeting, let onReassign, !isMe {
                 Menu("This line is") {
                     Button("Me") { onReassign("Me") }
-                    let menuNames = meeting.speakerMenuNames
+                    // One entry per person: same-named voices are merged.
                     ForEach(meeting.otherSpeakerLabels, id: \.self) { label in
                         if label != segment.speakerLabel {
-                            Button(menuNames[label] ?? label) { onReassign(label) }
+                            Button(meeting.displayName(forSpeaker: label)) { onReassign(label) }
                         }
                     }
                     // Detection can merge voices (#117): let the user add one.

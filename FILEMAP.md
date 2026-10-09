@@ -8,9 +8,9 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Parrot/ParrotApp.swift` | 290 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
-| `Parrot/ProfileTest.swift` | 5150 | `--profile-test`: headless logic harness, ~1760 checks |
+| `Parrot/ProfileTest.swift` | 5150 | `--profile-test`: headless logic harness, ~1820 checks |
 | `Parrot/ProfileTest+Parakeet.swift` | 190 | `--profile-test` checks for Parakeet: language router, per-side probe, recommendation, rewind, imports |
-| `Parrot/SnapshotTool.swift` | 1680 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--language-test <audio> [model] [seconds]` runs the live language check on a saved track; `--echo-replay` scores a recorded call's Me lines with the echo gate; `--liveloop-test` takes `LIVELOOP_MIC` to feed both tracks; `ANALYZE_REPORT=all --analyze-test ollama <model>` writes every built-in report on a model and checks the sections came back; `--store-upgrade-test <file>` upgrades an older store copy (read-only like MCP, then with the Profiles 2.0 migration); `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama |
+| `Parrot/SnapshotTool.swift` | 1680 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--language-test <audio> [model] [seconds]` runs the live language check on a saved track; `--echo-replay` scores a recorded call's Me lines with the echo gate; `--liveloop-test` takes `LIVELOOP_MIC` to feed both tracks; `ANALYZE_REPORT=all --analyze-test ollama <model>` writes every built-in report on a model and checks the sections came back; `--store-upgrade-test <file>` upgrades an older store copy (read-only like MCP, then with the Profiles 2.0 migration); `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama; `--about-test <store> <id> [provider] [model]` merges a meeting's same-named speakers and writes its title + About on a scratch copy |
 | `Parrot/CopilotHarness.swift` | 360 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency; `--real` sends passes to real Claude Haiku and prints each card's call time) |
 | `Parrot/ToneHarness.swift` | 200 | `--nudge-replay [id] [--store path]` (a saved call through the live nudge rules, on a copy of the store), `--tone-snapshot <png>` (report card, pill, banner; light + dark), `--pill-test [png]` (a real pill on screen, captured with ScreenCaptureKit to prove it's left out; `PILL_TEST_SHARED=1` is the control) |
 | `Parrot/ProfileTest+Nudges.swift` | 298 | `--profile-test` checks for live nudges, the tone timeline and seconds-based talk share |
@@ -19,7 +19,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Models/Meeting.swift` | 410 | `Meeting` record + `MeetingStatus` lifecycle + per-speaker names/embeddings; report template snapshot; the report a rewrite replaced (undo) |
+| `Models/Meeting.swift` | 440 | `Meeting` record + `MeetingStatus` lifecycle + per-speaker names/embeddings, same name = same person (`mergeSameNamedSpeakers`); AI `about`; default-title rule; report template snapshot; the report a rewrite replaced (undo) |
 | `Models/TranscriptSegment.swift` | 34 | One diarized, timestamped utterance |
 | `Models/Insight.swift` | 65 | `CallInsight` (stored) and `Insight` (live value) |
 | `Models/CallProfile.swift` | 180 | Per-call-type prompt config: kinds, sentiment gauges; report choice (classic / preset / custom), sharing ids, last 5 saved versions |
@@ -36,7 +36,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Services/RecordingManager.swift` | 1314 | Orchestrates a recording session end-to-end; the hub; `writeReport` (Write report on a saved meeting); "Still recording?" reminder; live speaker sweeps (stable/window mapping, power pacing) |
+| `Services/RecordingManager.swift` | 1370 | Orchestrates a recording session end-to-end; the hub; `justFinished` (the window's "Call saved" sheet); `writeReport` (Write report on a saved meeting); `writeAbout` (AI title + About after the report, backfilled on open); "Still recording?" reminder; live speaker sweeps (stable/window mapping, power pacing) |
+| `Services/CallAbout.swift` | 100 | Pure: the title + "About this call" prompt (misheard-name rule), report or transcript opening as input, JSON / "Title:" line parsing and clipping |
 | `Services/AudioCaptureManager.swift` | 1031 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
 | `Services/SystemAudioTap.swift` | 294 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
 | `Services/EchoCanceller.swift` | 152 | Swift wrapper over vendored SpeexDSP AEC; counts frames fed no reference for the alignment log |
@@ -99,7 +100,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Views/ContentView.swift` | 260 | Root split view (`MainPage`: dashboard/settings/ask/aiApps/meeting) + empty state + corner bug button; shows the Profiles 2.0 screen once; profile review sheet + suggestion banner |
+| `Views/ContentView.swift` | 350 | Root split view (`MainPage`: dashboard/settings/ask/aiApps/meeting) + empty state + corner bug button; shows the Profiles 2.0 screen once; profile review sheet + suggestion banner; opens a call that just stopped + `CallFinishedSheet` (title, note) |
 | `Views/SidebarView.swift` | 390 | Meeting list, rows, talk-ratio strip; search runs as one database query per pause in typing (never in `body`) |
 | `Views/DashboardView.swift` | 420 | Landing stats (word count cached per meeting) + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
@@ -109,7 +110,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
 | `Views/SettingsCards.swift` | 191 | Settings building blocks: page, titled card, row (optional header tint), tag chip (the landing-page window look) |
 | `Views/KnowledgeSettingsView.swift` | 442 | Settings → Knowledge: folders, Use for pills and menu, About line, search, drag to move; `KnowledgeList` pure helpers |
-| `Views/MeetingDetailView.swift` | 1634 | Post-call tabs: transcript, insights, report (Write report when there is none); receipts actions, bookmarks card/rows; speaker naming popover (+ invitee suggestions); `SortedLines` (cached time order + binary-search playing line) |
+| `Views/MeetingDetailView.swift` | 1670 | Post-call tabs: transcript, insights, report (Write report when there is none); header with About and the note's first lines; receipts actions, bookmarks card/rows; speaker naming popover (+ invitee suggestions; a name another voice has merges them, also on open); `SortedLines` (cached time order + binary-search playing line) |
 | `Views/BugReportSheet.swift` | 150 | Bug/idea report form + the corner ladybug button |
 | `Views/ReportContentView.swift` | 550 | Report section cards, scorecard rows, talk-ratio bar, prose parser (incl. one-line local reports; knows the meeting's template titles), receipt chips + popover |
 | `Views/SentimentStripView.swift` | 60 | Sentiment gauge strip |

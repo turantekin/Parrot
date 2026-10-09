@@ -118,6 +118,7 @@
 		D7B87E120F1187AE11BD8F89 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 531A69C106428442DDDF25EF /* Assets.xcassets */; };
 		D80161EBEE86C38E11105708 /* MeetingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7875A6957E23D516981F6F7 /* MeetingDetailView.swift */; };
 		D906950C56DA75D2F9170F6F /* BugReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFF2702129542003138CC290 /* BugReport.swift */; };
+		D90B1B29DC5A1E7E72CDD1F1 /* CallAbout.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEE6C05AFDE62EAEDB36B03D /* CallAbout.swift */; };
 		D95944D0B54A4843D83E5621 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5B377DD0F7438C0018055E1 /* CalendarService.swift */; };
 		D99860D66056753CC7AE5395 /* ProviderKeyCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66446F623D4A6068CACCA6B /* ProviderKeyCheck.swift */; };
 		DB9E5E911B015D1E0F75C6F2 /* MCPBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 101B6FC684BE64ED1CD0646E /* MCPBundle.swift */; };
@@ -271,6 +272,7 @@
 		E5CE483590C7F85DDBD4E38C /* SpeakerProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerProfile.swift; sourceTree = "<group>"; };
 		E961AC1EAF0EB75B5640D6EE /* KeyCheckField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCheckField.swift; sourceTree = "<group>"; };
 		E9C31F6241DC0212DCA504AE /* SpeakerProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerProfileStore.swift; sourceTree = "<group>"; };
+		EEE6C05AFDE62EAEDB36B03D /* CallAbout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallAbout.swift; sourceTree = "<group>"; };
 		F256E7CD5385DC7847C06FE8 /* ReportTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportTemplate.swift; sourceTree = "<group>"; };
 		F26AA01AE45DE4C398AD7E7C /* MeetCopilotStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetCopilotStep.swift; sourceTree = "<group>"; };
 		F72346DBC9103811D2497410 /* MeetingMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingMemory.swift; sourceTree = "<group>"; };
@@ -425,6 +427,7 @@
 				F778ACCC175C1E526BD4A8D8 /* AudioCaptureManager.swift */,
 				CFF2702129542003138CC290 /* BugReport.swift */,
 				B5B377DD0F7438C0018055E1 /* CalendarService.swift */,
+				EEE6C05AFDE62EAEDB36B03D /* CallAbout.swift */,
 				1882BEFAA60FA52BB4F31BF5 /* CallAnalysisEngine.swift */,
 				D6DF588F3CCAE25214950B40 /* CallDetector.swift */,
 				2CAB37B22D21DA397710500D /* CallWatcher.swift */,
@@ -605,6 +608,7 @@
 				D906950C56DA75D2F9170F6F /* BugReport.swift in Sources */,
 				E5911A292F169E9CEAAE626A /* BugReportSheet.swift in Sources */,
 				D95944D0B54A4843D83E5621 /* CalendarService.swift in Sources */,
+				D90B1B29DC5A1E7E72CDD1F1 /* CallAbout.swift in Sources */,
 				1716FE76548519959BF84773 /* CallAnalysisEngine.swift in Sources */,
 				03810414C6AE91E815AE1C20 /* CallDetector.swift in Sources */,
 				9889613E7875868152583C8F /* CallProfile.swift in Sources */,
