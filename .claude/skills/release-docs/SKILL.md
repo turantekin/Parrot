@@ -76,8 +76,11 @@ Match the last two releases (`gh release view v0.21.0 --json name,body`):
 - A line on new permissions or downloads, then: "Requires macOS 14 or later
   on Apple Silicon. Existing installs will offer the update within a day."
 
-Save it as `dist/notes-X.Y.Z.md` for `scripts/publish.sh`, with the
-title as its first line (`# Parrot X.Y.Z: <short tagline>`): publish.sh makes
+Draft it in the chat for now: `scripts/release.sh` starts with
+`rm -rf dist`, so anything saved there before it runs is lost (0.28.2 went
+out with no notes that way). After release.sh, save it as
+`dist/notes-X.Y.Z.md` for `scripts/publish.sh`, with the title as its first
+line (`# Parrot X.Y.Z: <short tagline>`): publish.sh makes
 that line the release title, which the website's "New in" pill shows. By
 hand, `gh release create --title "..." --notes-file` does the same.
 
@@ -112,8 +115,9 @@ give a one-line reason each. Leave out download buttons, version labels,
 /changelog and help: those update on their own.
 
 **Show the table and stop. Wait for the user to agree or change it.** Don't
-move on until they have. Then save it as `dist/site-plan-X.Y.Z.md` (`dist/`
-is ignored, so it never lands in this public repo):
+move on until they have. After `scripts/release.sh` has run (it wipes `dist/`),
+save it as `dist/site-plan-X.Y.Z.md` (`dist/` is ignored, so it never lands
+in this public repo):
 
 ```markdown
 # Site plan for Parrot X.Y.Z
@@ -135,7 +139,9 @@ parrot-site. No plan file, no draft: the site then waits for a chat in
 
 Commit the help and README changes and get them onto master before running
 `scripts/release.sh <version>`: the website copies help from the release tag.
-Then publish and refresh `/Applications/Parrot.app`:
+Once it finishes, write `dist/notes-X.Y.Z.md` and `dist/site-plan-X.Y.Z.md`
+(release.sh wiped `dist/`, so not before), then publish and refresh
+`/Applications/Parrot.app`:
 
 ```bash
 scripts/publish.sh X.Y.Z dist/notes-X.Y.Z.md dist/site-plan-X.Y.Z.md
