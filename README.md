@@ -95,7 +95,7 @@ Tell Parrot what kind of call it is, and the profile decides what the Assistant 
 
 - **Me vs Them is exact**, live: your mic and the call audio are separate tracks.
 - **After the call, on-device speaker detection** ([FluidAudio](https://github.com/FluidInference/FluidAudio), a 13 MB model) tells the voices on the other side apart.
-- **Name a voice once** from short clips and every line takes the name. Reports and coaching use real names.
+- **Name a voice once** from short clips and every line takes the name. Reports and coaching use real names. Heard fewer people than were there? Right-click a line, **This line is → New speaker…**.
 - **Remember voices** (opt-in): next call, Parrot asks "sounds like Jeremy?" One click to confirm. With a calendar invite, only people on it are suggested. Voiceprints stay on the Mac; forget one anytime.
 - **Live speaker labels** (experimental, off by default): names the other side *during* the call. "Them" becomes Speaker 1, Speaker 2 within seconds, you can name a voice mid-call, and the end-of-call pass keeps the same labels. It re-checks only the last minute of audio, so a long call costs no more than a short one.
 - Got one line wrong? Right-click it and reassign just that line.
