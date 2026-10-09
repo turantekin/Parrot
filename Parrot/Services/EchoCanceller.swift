@@ -34,6 +34,11 @@ final class EchoCanceller {
 
     var isActive: Bool { echoState != nil }
 
+    /// Mic frames paired with silence because no reference had arrived yet
+    /// (the mic is ahead of system audio). Diagnostic, read with
+    /// `referenceBacklog` for the once-a-minute alignment log (#98).
+    private(set) var starvedFrames = 0
+
     /// Unconsumed far-end reference samples waiting to be paired with mic frames.
     /// Diagnostic only: a backlog that keeps growing means the mic stopped
     /// consuming (dead tap) while system audio kept arriving.
@@ -103,6 +108,7 @@ final class EchoCanceller {
                 referenceHead += frameSize
             } else {
                 refFrame = [Int16](repeating: 0, count: frameSize)
+                starvedFrames += 1
             }
             pairs.append((micFrame, refFrame))
         }

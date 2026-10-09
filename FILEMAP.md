@@ -37,11 +37,11 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | File | L | Purpose |
 |---|---|---|
 | `Services/RecordingManager.swift` | 1314 | Orchestrates a recording session end-to-end; the hub; `writeReport` (Write report on a saved meeting); "Still recording?" reminder; live speaker sweeps (stable/window mapping, power pacing) |
-| `Services/AudioCaptureManager.swift` | 1022 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
+| `Services/AudioCaptureManager.swift` | 1031 | System audio (tap on 15+, SCK on 14.x/rescue) + mic tap, buffer conversion |
 | `Services/SystemAudioTap.swift` | 294 | Core Audio process tap: audio-only capture, no Screen Recording (macOS 15+) |
-| `Services/EchoCanceller.swift` | 138 | Swift wrapper over vendored SpeexDSP AEC |
+| `Services/EchoCanceller.swift` | 152 | Swift wrapper over vendored SpeexDSP AEC; counts frames fed no reference for the alignment log |
 | `Services/EchoGate.swift` | 151 | Pure: skips a Me clip whose loudness just follows the other side's (speaker echo), once the call shows the mic hears the speakers (over the last minute, or while they talk in the minute before the clip) |
-| `Services/TranscriptionEngine.swift` | 1757 | On-device WhisperKit or Parakeet; `AudioSource` routing; per-side language check (holds a Parakeet side until known, recheck + rewind); lazy fallback Whisper; live preview decode; Silero voice gate before every decode |
+| `Services/TranscriptionEngine.swift` | 1764 | On-device WhisperKit or Parakeet; `AudioSource` routing; per-side language check (holds a Parakeet side until known, recheck + rewind); lazy fallback Whisper; live preview decode; Silero voice gate before every decode |
 | `Services/LanguageRouter.swift` | 142 | Pure: which engine each side of a Parakeet call uses (held, Parakeet, Whisper), recheck schedule; `LanguageProbe` gathers each side's first 10 s of speech |
 | `Services/ParakeetTranscriber.swift` | 38 | Parakeet TDT 0.6B v3 via FluidAudio (25 European languages, ~0.5 GB): load, transcribe with a script hint |
 | `Services/EngineRecommendation.swift` | 25 | The model a new install starts on: Parakeet only when every Mac language and past call fits its 25 |
@@ -104,7 +104,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 420 | Landing stats (word count cached per meeting) + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
 | `Views/WhatsNewCard.swift` | 39 | Home card once per version after an update: headline, highlights, Read the full story (changelog anchor), Got it |
-| `Views/LiveRecordingView.swift` | 774 | In-call screen: chat bubbles, mic level, side tabs |
+| `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
 | `Views/SettingsCards.swift` | 191 | Settings building blocks: page, titled card, row (optional header tint), tag chip (the landing-page window look) |
