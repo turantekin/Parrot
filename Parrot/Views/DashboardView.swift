@@ -22,12 +22,19 @@ struct DashboardView: View {
     @AppStorage("whisperModel") private var speechModel = "base"
     @AppStorage(WhatsNew.seenKey) private var whatsNewSeen = ""
     @AppStorage("hasCompletedOnboarding") private var onboarded = false
+    @AppStorage(LaunchDay.closedKey) private var launchCardClosed = false
+    /// Moved on at the launch's start and end, so an open window shows and hides its card on time.
+    @State private var now = Date()
 
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Metrics.sectionGap) {
                 recordButton
                     .padding(.top, 44)
+
+                if LaunchDay.shouldShowCard(now: now, closed: launchCardClosed, onboarded: onboarded) {
+                    LaunchDayCard { launchCardClosed = true }
+                }
 
                 if WhatsNew.shouldShowCard(running: AppUpdater.currentVersion, news: .current,
                                            seen: whatsNewSeen, onboarded: onboarded) {
@@ -52,6 +59,13 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.canvas)
+        .task {
+            while !Task.isCancelled {
+                now = Date()
+                guard let next = LaunchDay.nextChange(after: now) else { return }
+                try? await Task.sleep(for: .seconds(next.timeIntervalSince(now)))
+            }
+        }
         // A real binding, not .constant: SwiftUI writes false into it on any
         // system-initiated dismissal, which a constant silently drops.
         .alert("Recording Error", isPresented: Binding(

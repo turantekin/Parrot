@@ -148,6 +148,7 @@ enum ProfileTest {
         testSidebarSearch()
         testTranscriptClick()
         testWhatsNew()
+        testLaunchDay()
         testUpdateNotice()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
@@ -230,6 +231,26 @@ enum ProfileTest {
         check("whats new: html refuses broken copy",
               WhatsNew.printHTML(for: "1", news: WhatsNew(version: "1", headline: "A", highlights: ["one"])) == 1)
         check("whats new: html for the right version", WhatsNew.printHTML(for: "0.28.0", news: quiet) == 0)
+    }
+
+    static func testLaunchDay() {
+        let start = LaunchDay.start, end = LaunchDay.end
+        check("launch day: starts 10 Oct 2026, 12:01am Pacific",
+              ISO8601DateFormatter().string(from: start) == "2026-10-10T07:01:00Z")
+        check("launch day: ends at midnight Pacific", ISO8601DateFormatter().string(from: end) == "2026-10-11T07:00:00Z")
+        check("launch day: not before it goes live",
+              !LaunchDay.shouldShowCard(now: start.addingTimeInterval(-60), closed: false, onboarded: true))
+        check("launch day: shows from the first minute",
+              LaunchDay.shouldShowCard(now: start, closed: false, onboarded: true)
+                && LaunchDay.shouldShowCard(now: end.addingTimeInterval(-60), closed: false, onboarded: true))
+        check("launch day: gone when the day ends", !LaunchDay.shouldShowCard(now: end, closed: false, onboarded: true))
+        check("launch day: closed stays closed", !LaunchDay.shouldShowCard(now: start, closed: true, onboarded: true))
+        check("launch day: never before onboarding ends", !LaunchDay.shouldShowCard(now: start, closed: false, onboarded: false))
+        check("launch day: wakes at the start, then the end, then never",
+              LaunchDay.nextChange(after: start.addingTimeInterval(-60)) == start
+                && LaunchDay.nextChange(after: start) == end && LaunchDay.nextChange(after: end) == nil)
+        check("launch day: copy has no em-dashes and never asks for upvotes",
+              ![LaunchDay.headline, LaunchDay.subtitle, LaunchDay.openTitle].contains { $0.contains("—") || $0.lowercased().contains("upvote") })
     }
 
     static func testKnowledgeModel() {

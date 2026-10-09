@@ -62,6 +62,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/AppUpdater.swift` | 148 | Sparkle updater: daily signed appcast check, installs on quit; started at launch; as Sparkle's delegate posts "update waiting" (held during a call) with Restart now; `UpdateNotice` copy + rule |
 | `Services/WhatsNew.swift` | 92 | What the release brings: the Home card after updating and Sparkle's update-window notes; copy rules; `--whats-new-html X.Y.Z` for release.sh |
+| `Services/LaunchDay.swift` | 35 | Product Hunt launch day (10 Oct 2026, Pacific): dates, copy, when the Home card shows; delete after the day |
 | `Services/BugReport.swift` | 120 | Pre-filled GitHub issue: diagnostics, own-window screenshot, URL builder |
 | `Services/SpeakerProfileStore.swift` | 85 | Voiceprint matching (cosine ≥ 0.65), narrowed to calendar invitees; remember/forget |
 | `Services/Receipts.swift` | 180 | Report receipts: parse `[mm:ss]` stamps, verify against the transcript, commitment/placeholder rules (the meeting's template flags its own commitment sections) |
@@ -108,6 +109,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 420 | Landing stats (word count cached per meeting) + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
 | `Views/WhatsNewCard.swift` | 39 | Home card once per version after an update: headline, highlights, Read the full story (changelog anchor), Got it |
+| `Views/LaunchDayCard.swift` | 25 | Home card on Product Hunt launch day only: Open Product Hunt, Not now (both close it for good) |
 | `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs; top-bar Assistant On/Off switch |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
