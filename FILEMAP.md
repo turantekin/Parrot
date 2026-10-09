@@ -12,8 +12,8 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Parrot/ProfileTest+Parakeet.swift` | 190 | `--profile-test` checks for Parakeet: language router, per-side probe, recommendation, rewind, imports |
 | `Parrot/SnapshotTool.swift` | 1680 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--language-test <audio> [model] [seconds]` runs the live language check on a saved track; `--echo-replay` scores a recorded call's Me lines with the echo gate; `--liveloop-test` takes `LIVELOOP_MIC` to feed both tracks; `ANALYZE_REPORT=all --analyze-test ollama <model>` writes every built-in report on a model and checks the sections came back; `--store-upgrade-test <file>` upgrades an older store copy (read-only like MCP, then with the Profiles 2.0 migration); `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama; `--about-test <store> <id> [provider] [model]` merges a meeting's same-named speakers and writes its title + About on a scratch copy |
 | `Parrot/CopilotHarness.swift` | 360 | `--kb-add`, `--doc-answer-eval` (Jev precision/recall), `--copilot-replay` (question-to-card latency; `--real` sends passes to real Claude Haiku and prints each card's call time) |
-| `Parrot/ToneHarness.swift` | 200 | `--nudge-replay [id] [--store path]` (a saved call through the live nudge rules, on a copy of the store), `--tone-snapshot <png>` (report card, pill, banner; light + dark), `--pill-test [png]` (a real pill on screen, captured with ScreenCaptureKit to prove it's left out; `PILL_TEST_SHARED=1` is the control) |
-| `Parrot/ProfileTest+Nudges.swift` | 298 | `--profile-test` checks for live nudges, the tone timeline and seconds-based talk share |
+| `Parrot/ToneHarness.swift` | 180 | `--nudge-replay [id] [--store path]` (a saved call through the live nudge rules, on a copy of the store, with the time it took), `--tone-snapshot <png>` (report card collapsed with one moment playing, pill, banner; light + dark), `--pill-test [png]` (a real pill on screen, captured with ScreenCaptureKit to prove it's left out; `PILL_TEST_SHARED=1` is the control) |
+| `Parrot/ProfileTest+Nudges.swift` | 331 | `--profile-test` checks for live nudges, the tone timeline and seconds-based talk share |
 
 ## Models (SwiftData `@Model` + Codable values)
 
@@ -50,7 +50,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/DiarizationEngine.swift` | 156 | FluidAudio pyannote diarization (CoreML): labels + per-speaker embeddings; whole file or a live 60 s tail |
 | `Services/AnalysisProvider.swift` | 605 | `AnalysisProvider` protocol, request/result types, prompt building, **Keychain helpers** (~L575) |
 | `Services/OpenAICompatibleProvider.swift` | 528 | OpenAI-shaped LLM client (incl. Ollama); provider switching |
-| `Services/CallAnalysisEngine.swift` | 815 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt) |
+| `Services/CallAnalysisEngine.swift` | 815 | Drives live Copilot passes; per-pace question floor; Jev fast path ("From your docs" excerpt); mid-call On/Off (`setPaused` drops in-flight work) |
 | `Services/JevDocMatcher.swift` | 175 | TypeSafe "Jev" client: one probability per KB chunk that it answers the question; same-issue verdicts for card dedup |
 | `Services/KnowledgeBaseService.swift` | 660 | Ingests/chunks KB docs (heading-aware), on-device multilingual embeddings (re-embeds stale vectors), hybrid BM25 + embedding retrieval; folders and Use for, `isInPlay` (the one rule for what the Assistant may quote), index v2 upgrade + backup |
 | `Services/ProfileStore.swift` | 300 | Persists and mutates `CallProfile`s; the one-time Profiles 2.0 migration (backup, sharing ids, restore point, report choice); import / apply / restore a `.parrotprofile` (privacy only tightens) |
@@ -67,9 +67,9 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/CallWatcher.swift` | 378 | Polls the detector; Ask/Auto modes; notification actions + delegate (also routes the update's Restart now); calendar reminders and the menu bar's next call; `NotificationAccess` |
 | `Services/CalendarService.swift` | 347 | EventKit read-only: current event match, next call + its video link (menu bar), notes cleaning, invite context, title → profile |
 | `Services/LoginItem.swift` | 60 | "Open Parrot at login" via SMAppService.mainApp |
-| `Services/NudgeDetector.swift` | 293 | Pure rules for the nine live nudges (timing + Copilot passes) and the rate limiter; `Tuning` holds every threshold |
+| `Services/NudgeDetector.swift` | 349 | Pure rules for the nine live nudges (timing + Copilot passes) and the rate limiter; `Tuning` holds every threshold; `replay` runs a saved call through them |
 | `Services/LiveNudgeSession.swift` | 60 | One call's nudges: detector, mood snapshots, the nudge on screen; fed by RecordingManager |
-| `Services/ToneTimeline.swift` | 147 | Report maths: talk seconds per minute, talk share, turning points, numbered moments |
+| `Services/ToneTimeline.swift` | 170 | Report maths: talk seconds per minute, talk share, turning points (none in the warm-up, no leading all-zero pass), timing nudges replayed with today's rules, numbered moments |
 | `Services/MeetingMemory.swift` | 300 | Local index of finished meetings (chunks + on-device vectors, one file per meeting), hybrid search (optionally one kind of passage) |
 | `Services/AskChatStore.swift` | 170 | Ask Parrot's saved chats: AskMessage/AskChat values, one JSON file, rename/delete/stale sweep, titles, day groups |
 | `Services/AskEngine.swift` | 260 | Ask Parrot prompt/context, `[M2 12:34]` citation parsing + checks; LastCallBrief (previous meeting, open items) |
@@ -105,7 +105,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/DashboardView.swift` | 420 | Landing stats (word count cached per meeting) + recent meetings |
 | `Views/CopilotHomeCard.swift` | 110 | Home card: turn on Copilot, finish setup, waiting for the model, just turned on |
 | `Views/WhatsNewCard.swift` | 39 | Home card once per version after an update: headline, highlights, Read the full story (changelog anchor), Got it |
-| `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs |
+| `Views/LiveRecordingView.swift` | 781 | In-call screen: chat bubbles, mic level, side tabs; top-bar Assistant On/Off switch |
 | `Views/CopilotPanelView.swift` | 770 | Live insight cards, pinned blockers, suggested replies |
 | `Views/BriefViews.swift` | 147 | Brief summary line, documents-in-play row, live "Briefed" card (dashboard + copilot panel) |
 | `Views/SettingsCards.swift` | 191 | Settings building blocks: page, titled card, row (optional header tint), tag chip (the landing-page window look) |
@@ -138,10 +138,10 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Views/OllamaModelStatusView.swift` | 65 | Settings → Copilot model status, a thin view over OllamaService |
 | `Views/AudioImport.swift` | 108 | Drag-drop / file import of existing audio |
 | `Views/AppCommands.swift` | 319 | `AppSession`, menu commands, context menus, notifications |
-| `Views/MenuBarView.swift` | 223 | Menu bar extra: words-heard line, next call (Join & Record), profile picker, last call (open/copy report), Ask, X follow/say hi; `MenuBarLabel` draws the parrot + call time + muted mic as one template image |
+| `Views/MenuBarView.swift` | 223 | Menu bar extra: words-heard line, Turn Assistant On/Off mid-call, next call (Join & Record), profile picker, last call (open/copy report), Ask, X follow/say hi; `MenuBarLabel` draws the parrot + call time + muted mic as one template image |
 | `Views/Theme.swift` | 160 | Single source of colors, fonts, metrics |
 | `Views/NudgePill.swift` | 156 | The floating nudge pill (non-activating panel, hidden from screen capture) and the Copilot panel's nudge banner |
-| `Views/ToneTimelineCard.swift` | 193 | Report card "How the call went": talk bars, mood line, numbered moments with Play |
+| `Views/ToneTimelineCard.swift` | 213 | Report card "How the call went": talk bars, mood line, numbered moments (first 5, then Show all) with Play that turns into Stop |
 | `Views/AutomationSettingsViews.swift` | 250 | Login item row, Call Detection + Calendar cards, detected-call banner |
 | `Views/AskPageView.swift` | ~330 | Ask Parrot page: saved-chat list, conversation, AI menu, Stop |
 | `Views/AskAnswerView.swift` | ~130 | ParrotAvatar + AskAnswerView (answer lines, citation chips, sources) |

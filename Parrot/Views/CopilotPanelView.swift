@@ -80,7 +80,7 @@ struct CopilotPanelView: View {
                     .help("Your share of the conversation so far")
             }
 
-            if engine.isActive {
+            if engine.isSetUp {
                 Button {
                     engine.setPaused(!engine.isPaused)
                 } label: {
@@ -90,8 +90,8 @@ struct CopilotPanelView: View {
                 }
                 .buttonStyle(.plain)
                 .help(engine.isPaused
-                    ? "Resume the Assistant"
-                    : "Pause the Assistant. Nothing is sent and nothing is spent while paused.")
+                    ? "Turn the Assistant on"
+                    : "Turn the Assistant off. Nothing is sent and nothing is spent while it's off.")
             }
 
             statusBadge
@@ -116,7 +116,7 @@ struct CopilotPanelView: View {
         case .paused:
             HStack(spacing: 5) {
                 Circle().fill(Theme.Colors.ink3).frame(width: 7, height: 7)
-                Text("Paused").font(.appCaption).foregroundStyle(Theme.Colors.ink2)
+                Text("Off").font(.appCaption).foregroundStyle(Theme.Colors.ink2)
             }
         case .error:
             Image(systemName: "exclamationmark.triangle.fill")
@@ -160,8 +160,15 @@ struct CopilotPanelView: View {
     private func feedArea(errorMessage: String?) -> some View {
         VStack(spacing: 0) {
             // The latest live nudge ("they've gone quiet since you said …"),
-            // the in-app twin of the floating pill.
-            if let nudge = recordingManager.nudges.current {
+            // the in-app twin of the floating pill. Quiet while the Assistant is off.
+            if engine.isPaused {
+                Label("Assistant is off. Recording and transcript keep going.", systemImage: "pause.circle")
+                    .font(.appCallout)
+                    .foregroundStyle(Theme.Colors.ink2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Metrics.pad)
+                    .padding(.top, 12)
+            } else if let nudge = recordingManager.nudges.current {
                 NudgeBanner(nudge: nudge) { recordingManager.nudges.dismiss() }
                     .padding(.horizontal, Theme.Metrics.pad)
                     .padding(.top, 12)
@@ -254,7 +261,7 @@ struct CopilotPanelView: View {
                 .font(.appTitle2)
                 .foregroundStyle(Theme.Colors.ink3)
             Text(engine.isPaused
-                ? "The Assistant is paused.\nNothing is sent while paused. Press play to get suggestions again."
+                ? "Turn the Assistant on to get suggestions again."
                 : "Listening to the call.\nSuggestions, blockers and action items will appear here as the conversation unfolds.")
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.ink3)

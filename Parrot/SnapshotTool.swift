@@ -503,6 +503,13 @@ enum HelpShots {
              CopilotPanelView(transcriptJumpTarget: .constant(nil))
                 .environment(rm).environment(rm.profileStore).modelContainer(container))
         shot("copilot-bubbles.png", size: .init(width: 380, height: 286), CopilotSnapshot.bubbleStrip())
+        // The Assistant switched off mid-call. Left off: no live screen after
+        // this, and switching back on here would read as "needs a key".
+        rm.callAnalysisEngine.setPaused(true)
+        shot("live-screen-assistant-off.png", size: .init(width: 1160, height: 720),
+             LiveRecordingView()
+                .environment(rm).environment(rm.profileStore).environment(AppSession())
+                .modelContainer(container))
 
         shot("dashboard.png", size: .init(width: 1000, height: 620),
              DashboardView(selectedMeeting: .constant(nil), page: .constant(.dashboard))

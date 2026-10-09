@@ -51,8 +51,10 @@ enum NudgeReplay {
                 NudgeDetector.Line(source: $0.speakerLabel == "Me" ? .me : .them,
                                    start: $0.startTime, end: $0.endTime, text: $0.text)
             }
-            let nudges = replay(lines: lines, timeline: meeting.moodTimeline, duration: meeting.duration)
-            print("\(meeting.title) (\(meeting.id.uuidString.prefix(8))) · \(Receipts.stamp(meeting.duration)) · \(lines.count) lines · \(nudges.count) nudges")
+            let clock = ContinuousClock.now
+            let nudges = NudgeDetector.replay(lines: lines, timeline: meeting.moodTimeline, duration: meeting.duration)
+            let ms = (ContinuousClock.now - clock) / .milliseconds(1)
+            print("\(meeting.title) (\(meeting.id.uuidString.prefix(8))) · \(Receipts.stamp(meeting.duration)) · \(lines.count) lines · \(nudges.count) nudges · \(Int(ms)) ms")
             for n in nudges {
                 print("  [\(Receipts.stamp(n.time))] \(n.shown ? "shown" : "held ") \(n.kind.rawValue): \(n.text)")
             }
@@ -60,37 +62,11 @@ enum NudgeReplay {
         try? fm.removeItem(at: scratch)
         exit(0)
     }
-
-    /// Lines arrive 1 s after they end (decode time); a track counts as heard
-    /// while one of its lines is in progress.
-    static func replay(lines: [NudgeDetector.Line], timeline: MoodTimeline?, duration: TimeInterval) -> [Nudge] {
-        var detector = NudgeDetector(gauges: timeline?.gauges ?? [])
-        var waiting = lines.sorted { $0.end < $1.end }
-        var passes = timeline?.snapshots ?? []
-        var heard: [AudioSource: TimeInterval] = [:]
-        let end = max(duration, lines.map(\.end).max() ?? 0) + 30
-        var t: TimeInterval = 0
-        while t <= end {
-            while let line = waiting.first, line.end + 1 <= t {
-                detector.add(line)
-                waiting.removeFirst()
-            }
-            while let pass = passes.first, pass.time <= t {
-                detector.add(NudgeDetector.Pass(time: pass.time, values: pass.values))
-                passes.removeFirst()
-            }
-            for line in lines where line.start <= t && line.end >= t - 1 {
-                heard[line.source] = max(heard[line.source] ?? 0, min(t, line.end))
-            }
-            _ = detector.tick(now: t, lastHeard: heard)
-            t += 1
-        }
-        return detector.all
-    }
 }
 
 /// `Parrot --tone-snapshot /tmp/tone.png`: renders the report card (with and
-/// without a mood line), the pill and the banner, light and dark ("-dark").
+/// without a mood line; the first collapsed, moment 2 playing), the pill and
+/// the banner, light and dark ("-dark").
 @MainActor
 enum ToneSnapshot {
     static func write(to path: String) {
@@ -111,7 +87,11 @@ enum ToneSnapshot {
             Nudge(kind: .longMonologue, time: 250, text: "You've been talking for 2 minutes. Check in?"),
             Nudge(kind: .goneQuiet, time: 755,
                   text: "They've gone quiet since you said \u{201C}the price goes up in January\u{201D}"),
+            Nudge(kind: .talkingOver, time: 1100, text: "You've talked over them 3 times. Let them finish", shown: false),
+            Nudge(kind: .repeatedPoint, time: 1400, text: "They've said \u{201C}we need it live by March\u{201D} 3 times. Acknowledge it",
+                  shown: false),
             Nudge(kind: .talkingOver, time: 1590, text: "You've talked over them 3 times. Let them finish", shown: false),
+            Nudge(kind: .speedingUp, time: 1700, text: "You're talking faster than usual. Slow down", shown: false),
         ]
         guard let withMood = ToneTimeline.model(duration: 1920, spans: spans, nudges: nudges,
                                                 timeline: MoodTimeline(gauges: [gauge], snapshots: mood), marks: []),
@@ -123,7 +103,7 @@ enum ToneSnapshot {
         let view = VStack(alignment: .leading, spacing: 16) {
             NudgePillView(nudge: nudges[1])
             NudgeBanner(nudge: nudges[1], onDismiss: {}).frame(width: 420)
-            ToneTimelineCard(model: withMood, play: { _ in })
+            ToneTimelineCard(model: withMood, play: { _ in }, playing: 2)
             ToneTimelineCard(model: plain, play: nil)
         }
         .padding(20)
