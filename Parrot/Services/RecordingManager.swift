@@ -52,6 +52,12 @@ final class RecordingManager {
     private(set) var recordingStartTime: Date?
     private(set) var elapsedTime: TimeInterval = 0
     private(set) var currentMeeting: Meeting?
+    /// The call that just stopped, by any path (Stop, menu bar, ⌘., auto
+    /// stop): the window opens it and asks for a title and a note. The
+    /// window clears it.
+    var justFinished: Meeting?
+    /// Meetings whose About was asked for this launch: one try each.
+    private var aboutTried: Set<UUID> = []
 
     /// Edits the brief of the call in progress: the copilot uses it from its
     /// next request and the meeting keeps the new text.
@@ -477,6 +483,9 @@ final class RecordingManager {
         currentMeeting = meeting
         recordingStartTime = .now
         isRecording = true
+        // The last call's "Call saved" sheet would cover this one; its
+        // title and note can still be set on the meeting page.
+        justFinished = nil
         lastVoiceAt = .now
         lastIdleReminderAt = nil
         lastMarked = nil
@@ -587,6 +596,7 @@ final class RecordingManager {
                     await self.runPostCallChain(meetingRef, anchors: anchors)
                 }
             }
+            justFinished = meeting
         }
 
         isRecording = false
@@ -604,8 +614,9 @@ final class RecordingManager {
         await postProcess(meeting: meetingRef, anchors: anchors)
         if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
             await generateSummary(meeting: meetingRef)
+            await writeAbout(meetingRef)
         }
-        // Last in the chain so the meter has seen the summary/coaching calls too.
+        // Last in the chain so the meter has seen the summary/coaching/about calls too.
         writeAIUsage(meeting: meetingRef, polishSeconds: polishSeconds)
         meetingRef.status = .done
         try? modelContext?.save()
@@ -718,6 +729,7 @@ final class RecordingManager {
         if callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured {
             callAnalysisEngine.provider.resetUsage()
             await generateSummary(meeting: meeting, includeCoaching: false)
+            await writeAbout(meeting)  // the file's name stays its title
         }
         writeAIUsage(meeting: meeting, polishSeconds: 0, backendOverride: .local)
         meeting.status = .done
@@ -973,6 +985,49 @@ final class RecordingManager {
         return firstError
     }
 
+    // MARK: - Title and About
+
+    /// One small request to the reports brain, on whatever privacy path the
+    /// caller set up: the call's title and "About this call". The title only
+    /// replaces Parrot's "Meeting <date>" one (or a blank one): a title the
+    /// user typed or the calendar gave stays. Best-effort; returns what the
+    /// AI said (the --about-test harness prints a title it didn't apply).
+    @discardableResult
+    func writeAbout(_ meeting: Meeting) async -> (title: String, about: String)? {
+        aboutTried.insert(meeting.id)
+        let names = meeting.otherSpeakerLabels.compactMap { meeting.speakerNames[$0] }
+            + meeting.attendees.map(\.displayName)
+        let user = CallAbout.userContent(report: meeting.summary, transcript: meeting.promptTranscript,
+                                         names: Array(Set(names)).sorted())
+        do {
+            let answer = try await callAnalysisEngine.provider.complete(
+                system: CallAbout.systemPrompt, user: user, maxTokens: 300)
+            guard let result = CallAbout.parse(answer), !meeting.isDeleted else { return nil }
+            if !result.about.isEmpty { meeting.about = result.about }
+            if !result.title.isEmpty, meeting.hasDefaultTitle { meeting.title = result.title }
+            try? modelContext?.save()
+            return result
+        } catch {
+            NSLog("Parrot: about skipped, \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// A finished meeting with a report but no About (recorded before it
+    /// existed, or its first try failed) gets one when opened: once per
+    /// launch, same rules as after a call (Assistant on and set up, private
+    /// meetings on this Mac), never during a recording.
+    // ponytail: these tokens aren't added to the meeting's cost row, same as
+    // Write report and Rewrite.
+    func writeAboutIfMissing(_ meeting: Meeting) async {
+        guard meeting.status == .done, meeting.about.isEmpty, meeting.summary != nil,
+              !isRecording, !aboutTried.contains(meeting.id),
+              callAnalysisEngine.isEnabled, callAnalysisEngine.provider.isConfigured else { return }
+        await CloudGate.$scopeLocal.withValue(!CloudGate.mayLeaveMac(meeting) || CloudGate.forcesLocal) {
+            await writeAbout(meeting)
+        }
+    }
+
     // MARK: - Post-call polish
 
     /// Re-transcribe the saved audio through Groq's large model and replace the
@@ -1182,6 +1237,8 @@ final class RecordingManager {
             }
             meeting.speakerEmbeddingsData = try? JSONEncoder().encode(embeddings)
             meeting.pruneSpeakerNames()
+            // Names given during the call: one name, one person.
+            meeting.mergeSameNamedSpeakers()
             try? modelContext?.save()
         } catch {
             // Diarization is a refinement pass; the audio and transcript are

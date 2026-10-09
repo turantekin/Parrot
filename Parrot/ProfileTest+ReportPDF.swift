@@ -26,12 +26,16 @@ extension ProfileTest {
         demo.title = "<script>alert(1)</script>"
         demo.summary = "Key points:\n- Price <b>up</b> & **firm** [01:35]"
         demo.speakerNames = ["Speaker 1": "Dana Ruiz", "Speaker 2": "dana ruiz"]
-        demo.nudges = (1...9).map { Nudge(kind: .speedingUp, time: TimeInterval($0 * 100), text: "Slow down") }
+        // Saved timing nudges give way to the replay, so the long list uses a kind that is kept.
+        demo.nudges = (1...9).map { Nudge(kind: .unansweredQuestion, time: TimeInterval($0 * 100), text: "Still open") }
+        demo.about = "Dana from <Acme> & co."
         let hostile = ReportPDF.html(for: demo, fonts: "")
         check("pdf: escapes < > & in the title and the report",
               !hostile.contains("<script>") && hostile.contains("&lt;script&gt;alert(1)&lt;/script&gt;")
                   && hostile.contains("Price &lt;b&gt;up&lt;/b&gt; &amp; ") && !hostile.contains("<b>up")
                   && hostile.contains("<strong>firm</strong>"))
+        check("pdf: About sits under the header, escaped",
+              hostile.contains("<p class=\"about\">Dana from &lt;Acme&gt; &amp; co.</p>"))
         check("pdf: a name two voices share is listed once", ReportPDF.people(demo) == ["You", "Dana Ruiz"])
         check("pdf: a long list of moments waits until after the report",
               (hostile.range(of: "Key moments</h2>")?.lowerBound).map { $0 > hostile.range(of: "<h2>Coaching</h2>")!.lowerBound } == true)

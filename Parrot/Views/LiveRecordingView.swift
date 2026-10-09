@@ -111,6 +111,8 @@ struct LiveRecordingView: View {
             markButton
                 .padding(.trailing, Theme.Metrics.controlGap)
 
+            assistantSwitch
+
             // Copilot panel toggle
             if copilotEnabled {
                 Button {
@@ -177,6 +179,27 @@ struct LiveRecordingView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(consent?.summary.capitalizedFirst ?? "Tell everyone the call is recorded, and keep a record of it")
+    }
+
+    // MARK: - Assistant on/off
+
+    /// Recorder only, no AI spend: off stops every Assistant call mid-call.
+    /// Shown even with the panel hidden; the report is still written at the end.
+    @ViewBuilder private var assistantSwitch: some View {
+        let engine = recordingManager.callAnalysisEngine
+        if engine.isSetUp {
+            Toggle("Assistant", isOn: Binding(get: { !engine.isPaused }, set: { engine.setPaused(!$0) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.appHeadline)
+                // Dimmed when off: behind the call app the switch itself greys out either way.
+                .foregroundStyle(engine.isPaused ? Theme.Colors.ink3 : Theme.Colors.ink)
+                .fixedSize()
+                .help(engine.isPaused
+                    ? "Turn the Assistant on"
+                    : "Turn the Assistant off. Recording and transcript keep going, and nothing more is spent.")
+                .padding(.trailing, Theme.Metrics.controlGap)
+        }
     }
 
     // MARK: - Mute me

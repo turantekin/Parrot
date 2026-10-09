@@ -92,6 +92,9 @@ enum Theme {
         static let sectionLabel = sans(11, .semibold)
         /// Lede / overview paragraph — same as body; emphasis comes from position.
         static let lede = sans(13)
+        /// A meeting's "About this call" under its title: one step up from
+        /// body, the first thing read when looking for a call.
+        static let about = sans(15)
         static let body = sans(13)
         static let secondary = sans(12)
         static let caption = sans(11)

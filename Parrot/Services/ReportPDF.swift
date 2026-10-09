@@ -21,10 +21,12 @@ enum ReportPDF {
 
     @MainActor
     static func html(for meeting: Meeting, fonts: String = fontFaces()) -> String {
-        let model = ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(meeting.sortedSegments),
-                                       nudges: meeting.nudges, timeline: meeting.moodTimeline, marks: meeting.bookmarks)
-        // About this call: Job 2 adds `meeting.about`; pass it here once it lands.
-        let about: String? = nil
+        // Same moments as the Report tab: timing nudges replayed with today's rules.
+        let spans = ToneTimeline.spans(meeting.sortedSegments)
+        let nudges = ToneTimeline.reportNudges(saved: meeting.nudges,
+                                               timing: ToneTimeline.timingNudges(spans, duration: meeting.duration))
+        let model = ToneTimeline.model(duration: meeting.duration, spans: spans,
+                                       nudges: nudges, timeline: meeting.moodTimeline, marks: meeting.bookmarks)
         let receipts = meeting.receiptIndex
         let template = meeting.reportTemplate
 
@@ -41,7 +43,7 @@ enum ReportPDF {
         <div class="facts people"><div><span>Attended</span>\(esc(people(meeting).joined(separator: ", ")))</div></div>
         </header>
         """
-        if let about, !about.isEmpty { body += "<p class=\"about\">\(esc(about))</p>" }
+        if !meeting.about.isEmpty { body += "<p class=\"about\">\(esc(meeting.about))</p>" }
         // A few moments read best under the chart; a long list waits until
         // after the report, so the report stays near the top.
         let early = (model?.moments.count ?? 0) <= 8

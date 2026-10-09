@@ -4,12 +4,19 @@ import SwiftUI
 /// numbered moments (nudges, turning points, marks) you can play.
 struct ToneTimelineCard: View, Equatable {
     let model: ToneTimeline.Model
-    var play: ((TimeInterval) -> Void)?
+    var play: ((ToneTimeline.Moment) -> Void)?
+    /// The number of the moment whose Play is running, nil when none is.
+    /// By number, not time: two moments can share a time.
+    var playing: Int? = nil
+    var stop: () -> Void = {}
+    @State private var showAll = false
+    /// Moments listed before "Show all".
+    static let collapsed = 5
 
     /// Playback redraws the report ten times a second; the card only needs to
-    /// when its data changes.
+    /// when its data changes or a moment starts or stops playing.
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.model == rhs.model && (lhs.play == nil) == (rhs.play == nil)
+        lhs.model == rhs.model && (lhs.play == nil) == (rhs.play == nil) && lhs.playing == rhs.playing
     }
 
     var body: some View {
@@ -34,7 +41,13 @@ struct ToneTimelineCard: View, Equatable {
             chart.frame(height: 150)
             if !model.moments.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(model.moments) { row($0) }
+                    ForEach(showAll ? model.moments : Array(model.moments.prefix(Self.collapsed))) { row($0) }
+                }
+                if model.moments.count > Self.collapsed {
+                    Button(showAll ? "Show less" : "Show all \(model.moments.count)") { showAll.toggle() }
+                        .buttonStyle(.plain)
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.accent)
                 }
             }
         }
@@ -153,7 +166,8 @@ struct ToneTimelineCard: View, Equatable {
     }
 
     private func row(_ m: ToneTimeline.Moment) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let isPlaying = play != nil && playing == m.number
+        return HStack(alignment: .top, spacing: 10) {
             Text("\(m.number)")
                 .font(Theme.Typography.caption)
                 .foregroundStyle(Self.color(m.kind))
@@ -175,19 +189,25 @@ struct ToneTimelineCard: View, Equatable {
             }
             Spacer(minLength: 0)
             if let play {
-                Button { play(m.time) } label: {
-                    Label("Play", systemImage: "play.fill")
+                Button { isPlaying ? stop() : play(m) } label: {
+                    Label(isPlaying ? "Stop" : "Play", systemImage: isPlaying ? "stop.fill" : "play.fill")
                         .font(Theme.Typography.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Theme.Colors.chip, in: RoundedRectangle(cornerRadius: Theme.Metrics.chipRadius))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.ink2)
-                .help("Play from here")
+                .foregroundStyle(isPlaying ? Theme.Colors.accent : Theme.Colors.ink2)
+                .help(isPlaying ? "Stop playing" : "Play from here")
             }
         }
         .padding(.vertical, 8)
+        // Bleeds into the card's margin so the rows stay lined up.
+        .background {
+            RoundedRectangle(cornerRadius: Theme.Metrics.radius)
+                .fill(isPlaying ? Theme.Colors.selection : .clear)
+                .padding(.horizontal, -Theme.Metrics.chipInsetH)
+        }
         .overlay(alignment: .top) { Divider() }
     }
 }
