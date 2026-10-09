@@ -220,12 +220,24 @@ final class CallAnalysisEngine {
     /// still behind the pace floor, so it can't burst.
     private(set) var isPaused = false
 
+    /// Started for this call with an AI it can reach: the live On/Off switch
+    /// (top bar, menu bar, panel header) shows only then.
+    var isSetUp: Bool { isActive && status != .needsAPIKey }
+
     func setPaused(_ paused: Bool) {
         guard isActive, paused != isPaused else { return }
         isPaused = paused
         if paused {
+            // Off means nothing more is billed: drop the pass and the Jev
+            // request already in flight too, not just the scheduled one.
+            // ponytail: a cancelled pass's lines are not re-queued; the next
+            // pass's time window still carries them.
             debounceTask?.cancel()
             debounceTask = nil
+            analysisTask?.cancel()
+            analysisTask = nil
+            fastTask?.cancel()
+            fastTask = nil
             oldestPendingSince = nil  // paused time must not count as staleness
             status = .paused
         } else {
@@ -664,6 +676,8 @@ final class CallAnalysisEngine {
             Self.log.notice("excerpt p=\(best.probability, format: .fixed(precision: 2), privacy: .public) from \(chunk.documentName, privacy: .public) for: \(question.prefix(80), privacy: .public)")
             onInsightInserted?(card)
         } catch {
+            // Cancelled (Assistant off, a newer question, call ended) is not a failure.
+            guard !Task.isCancelled else { return }
             // Silent by design: Haiku is still coming. The panel never shows a
             // fast-path error; three in a row pause it for a minute.
             consecutiveFastFailures += 1
