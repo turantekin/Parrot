@@ -262,6 +262,62 @@ extension ProfileTest {
         check("flags: wrap-up read, next step not", pass.wrappingUp && !pass.nextStepAgreed)
     }
 
+    /// Calls 163 and 167: asked for every gauge, the model wrote 0 when it
+    /// couldn't tell, so Fit read 0, 50, 0, 45, 0. Now it writes null, and
+    /// every reader skips the gap. A real 0 is still a reading.
+    @MainActor
+    static func testGaugeCantTell() {
+        typealias TT = ToneTimeline
+        let prompt = ClaudeAnalysisProvider.systemPrompt(persona: "P", kinds: [], gauges: [upset])
+        check("can't tell: prompt asks for null, never 0",
+              prompt.contains("or null while nothing has yet") && prompt.contains("Never write 0"))
+        let sentiment = (ClaudeAnalysisProvider.schema(kinds: [], gauges: [upset])["properties"] as? [String: Any])?["sentiment"] as? [String: Any]
+        let gauge = (sentiment?["properties"] as? [String: Any])?["f"] as? [String: Any]
+        check("can't tell: the schema takes a number or null for each gauge",
+              (gauge?["anyOf"] as? [[String: String]])?.compactMap { $0["type"] } == ["integer", "null"]
+                  && (sentiment?["required"] as? [String])?.contains("f") == true)
+        let named = SentimentGauge(id: UUID(), key: "score", label: "Score", lowLabel: "Low", highLabel: "High", colorHex: "E8943A")
+        let clash = (ClaudeAnalysisProvider.schema(kinds: [], gauges: [named])["properties"] as? [String: Any])?["sentiment"] as? [String: Any]
+        check("can't tell: a gauge keyed like a fixed field is required once", (clash?["required"] as? [String])?.filter { $0 == "score" }.count == 1)
+        let parse = { (gauge: String) in
+            try? ClaudeAnalysisProvider.parseAnalysisPayload(
+                #"{"insights":[],"sentiment":{"coach":"c","score":50,"read":"r","wrapping_up":false,"next_step_agreed":false"#
+                    + gauge + #"},"resolved":[]}"#)
+        }
+        check("can't tell: left out → no value", parse("") != nil && parse("")?.sentiment["f"] == nil)
+        check("can't tell: null → no value", parse(#","f":null"#) != nil && parse(#","f":null"#)?.sentiment["f"] == nil)
+        check("can't tell: a real 0 is kept", parse(#","f":0"#)?.sentiment["f"] == 0)
+        let pass = CallAnalysisEngine.nudgePass(time: 11, sentiment: parse("")?.sentiment ?? [:], insights: [],
+                                                gauges: [upset], pinnedKinds: [])
+        let session = LiveNudgeSession()
+        session.start(gauges: [upset], nudging: false)
+        session.add(pass: pass)
+        check("can't tell: no reading, no snapshot", pass.values.isEmpty && session.stop().timeline == nil)
+
+        // Live: a pass that left the gauge out neither fires nor hides a shift.
+        var d = NudgeDetector(gauges: [upset])
+        d.add(NudgeDetector.Pass(time: 150, values: ["f": 20]))
+        d.add(said(.them, 155, 160, "honestly the pricing is a problem for us"))
+        d.add(NudgeDetector.Pass(time: 165, values: [:]))
+        check("can't tell: a gap is no mood shift", d.tick(now: 166, lastHeard: [:]) == nil)
+        d.add(NudgeDetector.Pass(time: 180, values: ["f": 60]))
+        let shift = d.tick(now: 181, lastHeard: [:])
+        check("can't tell: a shift across the gap still fires, quoting the line since the last reading",
+              shift?.kind == .moodShift && shift?.quote == "honestly the pricing is a problem for us")
+
+        // Report: the line skips passes without the gauge and keeps a real 0.
+        let spans = [TT.Span(isMe: true, start: 130, end: 140, text: "so where are we on budget"),
+                     TT.Span(isMe: false, start: 150, end: 170, text: "we have none this year")]
+        let snaps = [MoodSnapshot(time: 11, values: ["my_dominance": 20]), MoodSnapshot(time: 140, values: ["f": 70]),
+                     MoodSnapshot(time: 160, values: ["my_dominance": 30]), MoodSnapshot(time: 200, values: ["f": 0])]
+        let model = TT.model(duration: 250, spans: spans, nudges: [],
+                             timeline: MoodTimeline(gauges: [upset], snapshots: snaps), marks: [])
+        check("can't tell: the mood line skips the gaps, keeps the 0", model?.mood.map(\.value) == [70, 0] && model?.endLevel == "Calm")
+        let turns = TT.turningPoints(snaps, gauge: upset, spans: spans)
+        check("can't tell: one turning point, across the gap", turns.map { [$0.from, $0.to] } == [[70, 0]]
+              && turns.first?.quote == "we have none this year")
+    }
+
     @MainActor
     static func testNudgeSession() {
         let session = LiveNudgeSession()
