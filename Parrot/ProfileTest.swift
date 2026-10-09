@@ -235,9 +235,9 @@ enum ProfileTest {
 
     static func testLaunchDay() {
         let start = LaunchDay.start, end = LaunchDay.end
-        check("launch day: starts 10 Oct 2026, 12:01am Pacific",
-              ISO8601DateFormatter().string(from: start) == "2026-10-10T07:01:00Z")
-        check("launch day: ends at midnight Pacific", ISO8601DateFormatter().string(from: end) == "2026-10-11T07:00:00Z")
+        check("launch day: starts 17 Oct 2026, 12:01am Pacific",
+              ISO8601DateFormatter().string(from: start) == "2026-10-17T07:01:00Z")
+        check("launch day: ends at midnight Pacific", ISO8601DateFormatter().string(from: end) == "2026-10-18T07:00:00Z")
         check("launch day: not before it goes live",
               !LaunchDay.shouldShowCard(now: start.addingTimeInterval(-60), closed: false, onboarded: true))
         check("launch day: shows from the first minute",

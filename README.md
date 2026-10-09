@@ -16,9 +16,9 @@
 </p>
 
 <p align="center">
-  <a href="https://www.producthunt.com/products/parrot-10?launch=parrot-5f95a2f0-bb9d-4992-bbb5-8c60031032dc"><img alt="Parrot on Product Hunt" src="https://img.shields.io/badge/Product%20Hunt-launching%2010%20October-da552f?logo=producthunt&logoColor=white"></a>
+  <a href="https://www.producthunt.com/products/parrot-10?launch=parrot-5f95a2f0-bb9d-4992-bbb5-8c60031032dc"><img alt="Parrot on Product Hunt" src="https://img.shields.io/badge/Product%20Hunt-launching%2017%20October-da552f?logo=producthunt&logoColor=white"></a>
   <br>
-  <b>Parrot launches on Product Hunt on Saturday, 10 October.</b> Come say hi, ask me anything, and tell me what you'd improve.
+  <b>Parrot launches on Product Hunt on Saturday, 17 October.</b> Come say hi, ask me anything, and tell me what you'd improve.
 </p>
 
 # 🦜 Parrot

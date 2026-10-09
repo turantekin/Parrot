@@ -7,9 +7,9 @@ enum LaunchDay {
     static let url = URL(string: "https://www.producthunt.com/products/parrot-10?launch=parrot-5f95a2f0-bb9d-4992-bbb5-8c60031032dc")!
 
     /// Product Hunt days run midnight to midnight Pacific, and launches go
-    /// live at 12:01am: 10 Oct 2026 07:01 UTC to 11 Oct 2026 07:00 UTC.
-    static let start = Date(timeIntervalSince1970: 1_791_615_660)
-    static let end = Date(timeIntervalSince1970: 1_791_702_000)
+    /// live at 12:01am: 17 Oct 2026 07:01 UTC to 18 Oct 2026 07:00 UTC.
+    static let start = Date(timeIntervalSince1970: 1_792_220_460)
+    static let end = Date(timeIntervalSince1970: 1_792_306_800)
 
     /// Never ask for upvotes: Product Hunt buries launches that do.
     static let headline = "Parrot is live on Product Hunt today"
