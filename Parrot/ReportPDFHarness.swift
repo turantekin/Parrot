@@ -130,9 +130,9 @@ enum ReportPDFHarness {
         var t: TimeInterval = 0
         while t < 1900 {
             if !cited.contains(where: { abs($0.0 - t) < 45 }) {
-                lines.append((t, "Me", "Filler line from me about the product."))
+                lines.append((t, "Me", "Filler line from me."))
                 lines.append((t + 22, t.truncatingRemainder(dividingBy: 180) == 0 ? "Speaker 2" : "Speaker 1",
-                              "Filler line from them with a question."))
+                              "Filler line from them."))
             }
             t += 45
         }
