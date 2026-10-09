@@ -51,41 +51,16 @@ enum NudgeReplay {
                 NudgeDetector.Line(source: $0.speakerLabel == "Me" ? .me : .them,
                                    start: $0.startTime, end: $0.endTime, text: $0.text)
             }
-            let nudges = replay(lines: lines, timeline: meeting.moodTimeline, duration: meeting.duration)
-            print("\(meeting.title) (\(meeting.id.uuidString.prefix(8))) · \(Receipts.stamp(meeting.duration)) · \(lines.count) lines · \(nudges.count) nudges")
+            let clock = ContinuousClock.now
+            let nudges = NudgeDetector.replay(lines: lines, timeline: meeting.moodTimeline, duration: meeting.duration)
+            let ms = (ContinuousClock.now - clock) / .milliseconds(1)
+            print("\(meeting.title) (\(meeting.id.uuidString.prefix(8))) · \(Receipts.stamp(meeting.duration)) · \(lines.count) lines · \(nudges.count) nudges · \(Int(ms)) ms")
             for n in nudges {
                 print("  [\(Receipts.stamp(n.time))] \(n.shown ? "shown" : "held ") \(n.kind.rawValue): \(n.text)")
             }
         }
         try? fm.removeItem(at: scratch)
         exit(0)
-    }
-
-    /// Lines arrive 1 s after they end (decode time); a track counts as heard
-    /// while one of its lines is in progress.
-    static func replay(lines: [NudgeDetector.Line], timeline: MoodTimeline?, duration: TimeInterval) -> [Nudge] {
-        var detector = NudgeDetector(gauges: timeline?.gauges ?? [])
-        var waiting = lines.sorted { $0.end < $1.end }
-        var passes = timeline?.snapshots ?? []
-        var heard: [AudioSource: TimeInterval] = [:]
-        let end = max(duration, lines.map(\.end).max() ?? 0) + 30
-        var t: TimeInterval = 0
-        while t <= end {
-            while let line = waiting.first, line.end + 1 <= t {
-                detector.add(line)
-                waiting.removeFirst()
-            }
-            while let pass = passes.first, pass.time <= t {
-                detector.add(NudgeDetector.Pass(time: pass.time, values: pass.values))
-                passes.removeFirst()
-            }
-            for line in lines where line.start <= t && line.end >= t - 1 {
-                heard[line.source] = max(heard[line.source] ?? 0, min(t, line.end))
-            }
-            _ = detector.tick(now: t, lastHeard: heard)
-            t += 1
-        }
-        return detector.all
     }
 }
 

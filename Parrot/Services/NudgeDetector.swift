@@ -284,6 +284,37 @@ struct NudgeDetector {
         return Nudge(kind: .wrapUp, time: pass.time, text: "Before you hang up: \(list)")
     }
 
+    // MARK: - Replay
+
+    /// A saved call through the rules second by second, as live: lines arrive
+    /// 1 s after they end (decode time), a track counts as heard while one of
+    /// its lines is in progress. No `timeline`: timing rules only. Runs every
+    /// rule once per call second, so cache the result.
+    static func replay(lines: [Line], timeline: MoodTimeline?, duration: TimeInterval) -> [Nudge] {
+        var detector = NudgeDetector(gauges: timeline?.gauges ?? [])
+        var waiting = lines.sorted { $0.end < $1.end }
+        var passes = timeline?.snapshots ?? []
+        var heard: [AudioSource: TimeInterval] = [:]
+        let end = max(duration, lines.map(\.end).max() ?? 0) + 30
+        var t: TimeInterval = 0
+        while t <= end {
+            while let line = waiting.first, line.end + 1 <= t {
+                detector.add(line)
+                waiting.removeFirst()
+            }
+            while let pass = passes.first, pass.time <= t {
+                detector.add(Pass(time: pass.time, values: pass.values))
+                passes.removeFirst()
+            }
+            for line in lines where line.start <= t && line.end >= t - 1 {
+                heard[line.source] = max(heard[line.source] ?? 0, min(t, line.end))
+            }
+            _ = detector.tick(now: t, lastHeard: heard)
+            t += 1
+        }
+        return detector.all
+    }
+
     // MARK: - Helpers
 
     static func median(_ values: [Double]) -> Double? {

@@ -191,10 +191,10 @@ extension ProfileTest {
         let start = TT.model(duration: 250, spans: late, nudges: [], timeline: MoodTimeline(gauges: [upset], snapshots: early), marks: [])
         check("timeline: a leading all-zero pass is no reading", start?.mood.map(\.value) == [35, 65, 30])
         check("timeline: no turning points in the warm-up", start?.moments.map(\.time) == [150])
-        let repeats = [Nudge(kind: .repeatedPoint, time: 60, text: "old", quote: "So we know from"),
-                       Nudge(kind: .repeatedPoint, time: 90, text: "real", quote: "the export still fails on big files")]
-        check("timeline: a saved one-word repeat is dropped",
-              TT.model(duration: 150, spans: spans, nudges: repeats, timeline: nil, marks: [])?.moments.map(\.detail) == ["real"])
+        let saved = [Nudge(kind: .repeatedPoint, time: 60, text: "old repeat"), Nudge(kind: .wrapUp, time: 140, text: "wrap"),
+                     Nudge(kind: .talkingOver, time: 90, text: "old talk over"), Nudge(kind: .moodShift, time: 100, text: "shift")]
+        check("timeline: saved timing nudges give way to the replay, Copilot ones stay",
+              TT.reportNudges(saved: saved, timing: [quiet]).map(\.text) == ["quiet", "wrap", "shift"])
         let noMood = TT.model(duration: 150, spans: spans, nudges: [], timeline: nil, marks: [])
         check("timeline: no Copilot → bars only", noMood?.gauge == nil && noMood?.mood.isEmpty == true && noMood?.minutes.count == 4)
     }
@@ -322,8 +322,10 @@ extension ProfileTest {
     @MainActor
     static func testNudgeReplay() {
         let lines = backAndForth() + [said(.me, 125, 130, "the price goes up in January")]
-        let nudges = NudgeReplay.replay(lines: lines, timeline: nil, duration: 200)
+        let nudges = NudgeDetector.replay(lines: lines, timeline: nil, duration: 200)
         check("replay: finds the silence after your line", nudges.contains { $0.kind == .goneQuiet && $0.time == 125 })
         check("replay: nothing else in a normal call", nudges.count == 1)
+        let spans = lines.map { ToneTimeline.Span(isMe: $0.source == .me, start: $0.start, end: $0.end, text: $0.text) }
+        check("replay: the report replays the same", ToneTimeline.timingNudges(spans, duration: 200).map(\.time) == [125])
     }
 }

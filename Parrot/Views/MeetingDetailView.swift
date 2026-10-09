@@ -64,6 +64,8 @@ struct MeetingDetailView: View {
     /// The transcript as a receipts index — cached, not rebuilt on every
     /// playback tick (the timer re-renders this view ten times a second).
     @State private var receiptIndex = ReceiptIndex.empty
+    /// The report's timing nudges, replayed from the transcript; nil until done.
+    @State private var toneTiming: [Nudge]?
     /// A transcript line to bring into view once the Transcript tab shows.
     @State private var scrollRequest: UUID?
     @State private var renamingBookmark: Bookmark?
@@ -133,6 +135,10 @@ struct MeetingDetailView: View {
         // the speaker the receipts quote — rebuild on either.
         .task(id: receiptIndexKey) {
             receiptIndex = meeting.receiptIndex
+            // A replay of the whole call: off the main thread, once per change of lines.
+            let spans = ToneTimeline.spans(sortedLines.of(meeting)), duration = meeting.duration
+            let timing = await Task.detached { ToneTimeline.timingNudges(spans, duration: duration) }.value
+            if !Task.isCancelled { toneTiming = timing }
         }
         .alert("Rename Bookmark", isPresented: Binding(
             get: { renamingBookmark != nil },
@@ -639,10 +645,13 @@ struct MeetingDetailView: View {
     /// Me's share of the speaking time, for the talk-balance bar.
     private var talkPercentMe: Int? { meeting.talkPercentMe }
 
-    /// The tone timeline, nil for imported audio (no "Me" track).
+    /// The tone timeline, nil for imported audio (no "Me" track) and until
+    /// the timing nudges are replayed.
     private var toneModel: ToneTimeline.Model? {
-        ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(sortedLines.of(meeting)),
-                           nudges: meeting.nudges, timeline: meeting.moodTimeline, marks: meeting.bookmarks)
+        guard let toneTiming else { return nil }
+        return ToneTimeline.model(duration: meeting.duration, spans: ToneTimeline.spans(sortedLines.of(meeting)),
+                                  nudges: ToneTimeline.reportNudges(saved: meeting.nudges, timing: toneTiming),
+                                  timeline: meeting.moodTimeline, marks: meeting.bookmarks)
     }
 
     @ViewBuilder

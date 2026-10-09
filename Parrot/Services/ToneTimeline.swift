@@ -124,6 +124,21 @@ enum ToneTimeline {
         return text + " after \u{201C}\(NudgeDetector.short(quote))\u{201D}"
     }
 
+    /// The timing nudges (talking over, gone quiet, …) replayed from the
+    /// transcript with today's rules, so calls saved under older, noisier
+    /// rules read like new ones. A full replay: cache it, never run it in `body`.
+    static func timingNudges(_ spans: [Span], duration: TimeInterval) -> [Nudge] {
+        let lines = spans.map { NudgeDetector.Line(source: $0.isMe ? .me : .them, start: $0.start, end: $0.end, text: $0.text) }
+        return NudgeDetector.replay(lines: lines, timeline: nil, duration: duration)
+    }
+
+    /// What the report lists: the replayed timing nudges plus the saved
+    /// Copilot ones, which can't be replayed (open questions and the wrap-up
+    /// flag aren't saved). Saved timing nudges are ignored.
+    static func reportNudges(saved: [Nudge], timing: [Nudge]) -> [Nudge] {
+        timing + saved.filter { [.moodShift, .unansweredQuestion, .wrapUp].contains($0.kind) }
+    }
+
     static func moments(nudges: [Nudge], turns: [TurningPoint], marks: [Bookmark]) -> [Moment] {
         var raw: [(time: TimeInterval, kind: Moment.Kind, title: String, detail: String)] = []
         for n in nudges { raw.append((n.time, .nudge(n.kind), n.kind.title, n.text)) }
@@ -147,11 +162,6 @@ enum ToneTimeline {
             snapshots.compactMap { s in s.values[g.key].map { MoodPoint(time: s.time, value: $0) } }
         } ?? []
         let turns = gauge.map { turningPoints(snapshots, gauge: $0, spans: spans) } ?? []
-        // Saved before the stricter repeat rule: a quote of one or two content words wasn't a repeat.
-        let nudges = nudges.filter {
-            $0.kind != .repeatedPoint
-                || CallAnalysisEngine.significantTokens($0.quote ?? "").count >= NudgeDetector.Tuning.repeatTokens
-        }
         return Model(duration: length, minutes: talkByMinute(spans, duration: length),
                      talkPercentMe: talkPercentMe(spans), gauge: mood.isEmpty ? nil : gauge, mood: mood,
                      endLevel: gauge.flatMap { g in mood.last.map { level($0.value, g) } },
