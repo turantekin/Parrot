@@ -3,16 +3,16 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.28.2</title>
-            <pubDate>Fri, 09 Oct 2026 11:15:58 +0100</pubDate>
+            <title>0.28.3</title>
+            <pubDate>Fri, 09 Oct 2026 11:47:08 +0100</pubDate>
             <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202610091115</sparkle:version>
-            <sparkle:shortVersionString>0.28.2</sparkle:shortVersionString>
+            <sparkle:version>202610091146</sparkle:version>
+            <sparkle:shortVersionString>0.28.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<h3>Fresh feathers! Parrot 0.28.2</h3><ul><li>Missed someone? Right-click a line, This line is, New speaker, and name them.</li><li>On speakers, the call screen tells you when headphones would give a cleaner transcript.</li><li>Each kind of call gets its own report, with a scorecard for interviews.</li><li>A parrot in your menu bar shows the call time, and Join &amp; Record starts your next call.</li></ul><p><a href="https://openparrot.app/changelog#v0.28.2">Read the full story</a></p>
+            <description><![CDATA[<h3>Fresh feathers! Parrot 0.28.3</h3><ul><li>Missed someone? Right-click a line, This line is, New speaker, and name them.</li><li>On speakers, the call screen tells you when headphones would give a cleaner transcript.</li><li>Each kind of call gets its own report, with a scorecard for interviews.</li><li>A parrot in your menu bar shows the call time, and Join &amp; Record starts your next call.</li></ul><p><a href="https://openparrot.app/changelog#v0.28.3">Read the full story</a></p>
 ]]></description>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.28.2/Parrot-0.28.2.dmg" length="26131959" type="application/octet-stream" sparkle:edSignature="ze8hsQ/5Ujuve5QpkkNUoQRONX7YDrgXK/ump/9LGySLcmhWrbEq+Q82aBdpOyvCPIqt7obl4BhfHrTQ31R0BQ=="/>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.28.3/Parrot-0.28.3.dmg" length="26140401" type="application/octet-stream" sparkle:edSignature="ESETlp2KA1g2YSWKTzSL5rRKiiLg7eyEQHBLJUA5KiRXfCahJ2xB1AMu97t9kfcJ7mCVLeQcoWPWLhvSLyjFAg=="/>
         </item>
     </channel>
 </rss>
