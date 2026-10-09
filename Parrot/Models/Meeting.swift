@@ -380,6 +380,19 @@ final class Meeting {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// Names for the "This line is" menu: a name two voices share (say
+    /// "Mac" and "mac") gets its label added, so the items can be told apart.
+    var speakerMenuNames: [String: String] {
+        let names = speakerNames
+        let labels = otherSpeakerLabels
+        let shown = labels.map { (label: $0, name: displayName(forSpeaker: $0, names: names)) }
+        let counts = Dictionary(grouping: shown, by: { $0.name.lowercased() }).mapValues(\.count)
+        return Dictionary(uniqueKeysWithValues: shown.map {
+            ($0.label, counts[$0.name.lowercased(), default: 0] > 1 && $0.name != $0.label
+                ? "\($0.name) (\($0.label))" : $0.name)
+        })
+    }
+
     /// Label for a voice the user adds by hand (#117): one past the highest
     /// "Speaker N" in the lines or the names, so it never picks up a name
     /// left behind by an earlier label.
