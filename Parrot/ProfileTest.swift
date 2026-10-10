@@ -122,6 +122,7 @@ enum ProfileTest {
         testNudgeCopilotRules()
         testNudgeLimiter()
         testCopilotFlags()
+        testGaugeCantTell()
         testNudgeSession()
         testNudgeReplay()
         testLanguageRouter()

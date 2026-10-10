@@ -87,6 +87,9 @@ struct NudgeDetector {
     private(set) var lines: [Line] = []
     private(set) var all: [Nudge] = []
     private var lastPass: Pass?
+    /// Each gauge's latest reading. A pass that left a gauge out (can't tell
+    /// yet) keeps it, like the report's turning points.
+    private var readings: [String: ToneTimeline.MoodPoint] = [:]
     /// Pass-driven nudges wait here for the next tick's rate limiter.
     private var pending: [Nudge] = []
     private var lastShownAt: TimeInterval?
@@ -112,8 +115,11 @@ struct NudgeDetector {
     }
 
     mutating func add(_ pass: Pass) {
-        defer { lastPass = pass }
-        if let previous = lastPass, let shift = moodShift(from: previous, to: pass) { pending.append(shift) }
+        defer {
+            lastPass = pass
+            for (key, value) in pass.values { readings[key] = .init(time: pass.time, value: value) }
+        }
+        if let shift = moodShift(to: pass) { pending.append(shift) }
         if pass.wrappingUp, !wrapUpDone, let wrap = wrapUp(pass) { pending.append(wrap) }
     }
 
@@ -270,15 +276,15 @@ struct NudgeDetector {
                      text: "Asked \(minutes) min ago and still open: \(Self.short(q.title))", quote: q.title)
     }
 
-    private func moodShift(from old: Pass, to new: Pass) -> Nudge? {
-        let moves = gauges.filter { $0.key != "my_dominance" }.compactMap { g -> (gauge: SentimentGauge, delta: Int)? in
-            guard let a = old.values[g.key], let b = new.values[g.key],
-                  abs(b - a) >= ToneTimeline.turnThreshold else { return nil }
-            return (g, b - a)
+    private func moodShift(to new: Pass) -> Nudge? {
+        let moves = gauges.filter { $0.key != "my_dominance" }.compactMap { g -> (gauge: SentimentGauge, since: TimeInterval, delta: Int)? in
+            guard let a = readings[g.key], let b = new.values[g.key],
+                  abs(b - a.value) >= ToneTimeline.turnThreshold else { return nil }
+            return (g, a.time, b - a.value)
         }
         guard let move = moves.max(by: { abs($0.delta) < abs($1.delta) }) else { return nil }
         let spans = lines.map { ToneTimeline.Span(isMe: $0.source == .me, start: $0.start, end: $0.end, text: $0.text) }
-        let line = ToneTimeline.cause(spans, after: old.time, upTo: new.time)
+        let line = ToneTimeline.cause(spans, after: move.since, upTo: new.time)
         return Nudge(kind: .moodShift, time: line?.start ?? new.time,
                      text: ToneTimeline.shiftText(move.gauge, rising: move.delta > 0, quote: line?.text),
                      quote: line?.text)

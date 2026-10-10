@@ -233,8 +233,12 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
             let list = gauges.map { "- \($0.key): 0 = \($0.lowLabel), 100 = \($0.highLabel) (\($0.label))" }.joined(separator: "\n")
             p += """
 
-            Plus an integer 0–100 for each gauge:
+            Plus a reading for each gauge:
             \(list)
+            Each is an integer 0–100, your best estimate as soon as anything said bears on \
+            it, or null while nothing has yet (the call just started, or the talk hasn't \
+            touched it). Never write 0 for "can't tell": 0 is a real reading, the low end, \
+            and a guessed 0 shows the user a mood swing that never happened.
             """
         }
         return p
@@ -271,10 +275,16 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
         // Claude structured outputs reject numeric constraints (minimum/maximum) on
         // integer types — sending them 400s the whole request. The 0–100 range is
         // enforced via the prompt instead, and clamped on parse.
-        for g in gauges { sentProps[g.key] = ["type": "integer"] }
+        // Gauges are required but nullable: null says "can't tell yet". Asked for
+        // a number, Haiku wrote 0 instead (call 163: Fit 0, 50, 0, 45, 0, read as
+        // mood swings); left optional, it dropped them at random, even mid-call.
+        for g in gauges {
+            sentProps[g.key] = ["anyOf": [["type": "integer"], ["type": "null"]],
+                                "description": "0-100, or null while nothing said bears on it. 0 is the low end, not unknown."]
+        }
         properties["sentiment"] = [
-            "type": "object", "properties": sentProps,
-            "required": ["coach", "score", "read", "wrapping_up", "next_step_agreed"], "additionalProperties": false,
+            // Every field, once each: a gauge keyed "score" mustn't list it twice.
+            "type": "object", "properties": sentProps, "required": sentProps.keys.sorted(), "additionalProperties": false,
         ]
         // Titles from the shown list that the conversation has since addressed —
         // lets the engine auto-mark stale pinned alerts as handled.
@@ -693,6 +703,7 @@ final class ClaudeAnalysisProvider: AnalysisProvider {
                                 reply: (item["reply"] as? String)?.nilIfEmpty,
                                 supersedes: (item["supersedes"] as? String)?.nilIfEmpty)
         }
+        // A gauge left out or null ("can't tell yet") stays out; a real 0 stays in.
         var sentiment: [String: Int] = [:]
         var read: String? = nil
         var coach: String? = nil
