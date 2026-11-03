@@ -3,16 +3,14 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.29.7</title>
-            <pubDate>Fri, 16 Oct 2026 12:46:12 +0100</pubDate>
+            <title>0.29.8</title>
+            <pubDate>Tue, 03 Nov 2026 19:20:21 +0000</pubDate>
             <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202610161245</sparkle:version>
-            <sparkle:shortVersionString>0.29.7</sparkle:shortVersionString>
+            <sparkle:version>202611031919</sparkle:version>
+            <sparkle:shortVersionString>0.29.8</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<h3>Parrot learned everyone's name</h3><ul><li>Naming a voice lists everyone on the invite, with full names.</li><li>Pick a name another voice already has to join the two into one person.</li><li>Names you gave voices on earlier calls are offered again.</li><li>Two people with the same name stay two people.</li></ul><p><a href="https://openparrot.app/changelog#v0.29.7">Read the full story</a></p>
-]]></description>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.7/Parrot-0.29.7.dmg" length="26607969" type="application/octet-stream" sparkle:edSignature="iaGc1QHGGNalGSsfiwyg8MJkvOn360rJjeS82QHFOqZjTHi5lEbxwyXSeRtMpgbQWIWjQCdiDh2k6lbBNXMTCg=="/>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.8/Parrot-0.29.8.dmg" length="26620475" type="application/octet-stream" sparkle:edSignature="n6KiSvMBeXr3hEv7JjfKOBIXu0Uvzqf335+l8uzKV/VF9qO3sbwKMuu1SsRq+scoic1bWUHefU7aGvEkCis6Cg=="/>
         </item>
     </channel>
 </rss>
