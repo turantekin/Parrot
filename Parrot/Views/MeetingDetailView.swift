@@ -272,6 +272,7 @@ struct MeetingDetailView: View {
                 TextField("Meeting title", text: $titleText, onCommit: {
                     meeting.title = titleText
                     editingTitle = false
+                    ExportFolder.refreshIfSaved(meeting)
                 })
                 .font(Theme.Typography.title(20))
                 .textFieldStyle(.plain)

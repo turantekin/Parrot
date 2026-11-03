@@ -77,6 +77,7 @@ enum ProfileTest {
         testAskParsing()
         testLastCallBrief()
         testMarkdownExport()
+        testFolderRename()
         testReportPDF()
         testFollowUpEmail()
         testWebhook()
@@ -3911,6 +3912,34 @@ enum ProfileTest {
         let name = ExportService.markdownFilename(for: m)
         check("md: filename sorts by date and is path-safe",
               name.hasSuffix(" Acme- renewal-Q3.md") && !name.contains("/") && name.hasPrefix("2026-"))
+    }
+
+    /// #145: a note already in the folder follows a rename; one never saved stays out.
+    @MainActor
+    static func testFolderRename() {
+        let d = UserDefaults.standard
+        let saved = (d.data(forKey: ExportFolder.bookmarkKey), d.dictionary(forKey: ExportFolder.namesKey))
+        defer {
+            d.set(saved.0, forKey: ExportFolder.bookmarkKey)
+            d.set(saved.1, forKey: ExportFolder.namesKey)
+        }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("parrot-rename-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        d.removeObject(forKey: ExportFolder.namesKey)
+        guard (try? ExportFolder.set(dir)) != nil else { check("folder rename: bookmark", false); return }
+
+        let m = Meeting()
+        let other = Meeting()
+        guard let first = try? ExportFolder.write(m) else { check("folder rename: first save", false); return }
+        m.title = "Acme kickoff"
+        ExportFolder.refreshIfSaved(m)
+        other.title = "Never saved"
+        ExportFolder.refreshIfSaved(other)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        check("folder rename: note moves to the new name",
+              files == [ExportService.markdownFilename(for: m)] && !files.contains(first.lastPathComponent))
+        check("folder rename: unsaved meeting not written", !files.contains { $0.contains("Never saved") })
     }
 
     static func testFollowUpEmail() {

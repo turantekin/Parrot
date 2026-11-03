@@ -326,6 +326,7 @@ struct CallFinishedSheet: View {
         }
         meeting.notes = note
         try? modelContext.save()
+        ExportFolder.refreshIfSaved(meeting)
         close()
     }
 }

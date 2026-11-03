@@ -111,6 +111,17 @@ enum ExportFolder {
         UserDefaults.standard.set(names, forKey: namesKey)
         return url
     }
+
+    /// After a rename: rewrites the note of a meeting already in the folder, so
+    /// it moves to the new name (#145). Meetings never saved there are left alone.
+    @MainActor
+    static func refreshIfSaved(_ meeting: Meeting) {
+        let names = UserDefaults.standard.dictionary(forKey: namesKey) as? [String: String] ?? [:]
+        guard names[meeting.id.uuidString] != nil, resolve() != nil else { return }
+        do { try write(meeting) } catch {
+            NSLog("Parrot: folder re-save after rename failed, \(error.localizedDescription)")
+        }
+    }
 }
 
 // MARK: - Webhook (Zapier, Make, n8n…)
