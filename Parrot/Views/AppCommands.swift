@@ -321,7 +321,10 @@ struct MeetingContextMenu: ViewModifier {
                 TextField("Title", text: $renameText)
                 Button("Rename") {
                     let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !title.isEmpty { meeting.title = title }
+                    if !title.isEmpty {
+                        meeting.title = title
+                        ExportFolder.refreshIfSaved(meeting)
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             }

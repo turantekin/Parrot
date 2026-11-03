@@ -1106,6 +1106,7 @@ final class RecordingManager {
             if !result.about.isEmpty { meeting.about = result.about }
             if !result.title.isEmpty, meeting.hasDefaultTitle { meeting.title = result.title }
             try? modelContext?.save()
+            ExportFolder.refreshIfSaved(meeting)
             return result
         } catch {
             NSLog("Parrot: about skipped, \(error.localizedDescription)")

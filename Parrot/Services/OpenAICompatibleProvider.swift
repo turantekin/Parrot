@@ -275,8 +275,22 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         }
     }
 
+    /// Thinking models (OpenRouter's reasoning models, qwen3 on Ollama) spend
+    /// part of max_tokens on hidden reasoning and can stop before the answer.
+    /// One retry with a much bigger budget instead of failing the report (#146).
     private func plainChat(system: String, user: String, maxTokens: Int,
                            config: Config) async throws -> String {
+        do {
+            return try await plainChatOnce(system: system, user: user,
+                                           maxTokens: maxTokens, config: config)
+        } catch let AnalysisError.badResponse(message) where message.contains("truncated") {
+            return try await plainChatOnce(system: system, user: user,
+                                           maxTokens: maxTokens * 4, config: config)
+        }
+    }
+
+    private func plainChatOnce(system: String, user: String, maxTokens: Int,
+                               config: Config) async throws -> String {
         if kindSource() == .ollama {
             return try await sendOllamaNative(system: system, user: user, schema: nil,
                                               maxTokens: maxTokens, config: config)
