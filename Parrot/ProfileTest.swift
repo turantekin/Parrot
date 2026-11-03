@@ -876,6 +876,13 @@ enum ProfileTest {
         check("polish dedupe: whole echo drops, echo inside my line is cut, other lines stay",
               polished.map(\.text) == ["Yes, I can hear you now, loud and clear. Thanks for hanging in there with me.",
                                        "Hi, can you hear me now?", "I'm from Turkey, by the way."])
+
+        // #144: a polish pass that lost most of the words keeps the live transcript.
+        check("polish guard: half the words or more replaces the live transcript",
+              !RecordingManager.polishLostWords(live: 200, polished: 100)
+              && !RecordingManager.polishLostWords(live: 200, polished: 320))
+        check("polish guard: under half keeps the live transcript",
+              RecordingManager.polishLostWords(live: 200, polished: 99))
     }
 
     static func testWAVEncoder() {

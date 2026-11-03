@@ -358,32 +358,20 @@ enum TranscriptPolisher {
         let speaker: String
     }
 
-    /// Both tracks (system = "Them", mic = "Me"), file-relative timestamps.
-    /// Throws on any API failure — caller keeps the live transcript.
-    /// `timeline` gives a track's speech probabilities (256 ms windows);
-    /// lines over stretches with no voice are dropped, since the upload
-    /// includes every idle minute and Whisper fills silence with invented
-    /// text. nil timeline = keep everything.
-    /// Me lines the live echo gate would skip are dropped too (#98: the
-    /// re-decode brought back the echo the live call had removed);
-    /// `micHearsSpeakers` says whether any was.
+    /// "Polish on this Mac" (#144): re-transcribe with the on-device engine
+    /// instead of Groq. Off = Groq, the original polish.
+    static let onDeviceKey = "polishOnDevice"
+
+    /// One track's lines, file-relative seconds.
+    typealias Line = (text: String, start: Double, end: Double)
+
+    /// Groq: 10-minute parts, timestamps shifted back onto the track.
     static func polish(systemPath: String?, micPath: String?,
                        language: String?, apiKey: String,
                        timeline: ([Float]) async -> [Float]? = { _ in nil })
     async throws -> (segments: [PolishedSegment], micHearsSpeakers: Bool) {
-        var out: [PolishedSegment] = []
-        var themLevels: [Float]?
-        var micHearsSpeakers = false
-        for (path, speaker) in [(systemPath, "Them"), (micPath, "Me")] {
-            guard let path, FileManager.default.fileExists(atPath: path) else { continue }
-            guard let samples = try? AudioFileLoader.load16kMono(url: URL(fileURLWithPath: path)) else {
-                NSLog("Parrot: polish skipped \(speaker) track — unsupported format")
-                continue
-            }
-            // The system track comes first; keep only its loudness for the Me pass.
-            let levels = EchoGate.envelope(samples[...])
-            if speaker == "Them" { themLevels = levels }
-            let voice = await timeline(samples)
+        try await polish(systemPath: systemPath, micPath: micPath, timeline: timeline) { samples, _ in
+            var lines: [Line] = []
             let partLength = 16000 * partSeconds
             var offset = 0
             while offset < samples.count {
@@ -393,21 +381,53 @@ enum TranscriptPolisher {
                 let segments = try await GroqTranscriber.transcribeFile(
                     WAVEncoder.encode(samples: part, sampleRate: 16000),
                     fileName: "part.wav", language: language, apiKey: apiKey)
-                for s in segments {
-                    let text = TranscriptionEngine.cleaned(s.text)
-                    guard !text.isEmpty else { continue }
-                    if let voice, !TranscriptionEngine.hasVoice(voice, from: s.start + shift, to: s.end + shift) {
-                        continue
-                    }
-                    let line = PolishedSegment(text: text, start: s.start + shift, end: s.end + shift, speaker: speaker)
-                    if speaker == "Me", let themLevels,
-                       isEcho(line, mic: samples, micLevels: levels, themLevels: themLevels) {
-                        micHearsSpeakers = true
-                        continue
-                    }
-                    out.append(line)
-                }
+                lines += segments.map { (TranscriptionEngine.cleaned($0.text), $0.start + shift, $0.end + shift) }
                 offset += partLength
+            }
+            return lines
+        }
+    }
+
+    /// Both tracks (system = "Them", mic = "Me"), file-relative timestamps.
+    /// `transcribe` turns one track (its samples and file) into lines.
+    /// Throws on any failure — caller keeps the live transcript.
+    /// `timeline` gives a track's speech probabilities (256 ms windows);
+    /// lines over stretches with no voice are dropped, since the upload
+    /// includes every idle minute and Whisper fills silence with invented
+    /// text. nil timeline = keep everything.
+    /// Me lines the live echo gate would skip are dropped too (#98: the
+    /// re-decode brought back the echo the live call had removed);
+    /// `micHearsSpeakers` says whether any was.
+    static func polish(systemPath: String?, micPath: String?,
+                       timeline: ([Float]) async -> [Float]? = { _ in nil },
+                       transcribe: ([Float], URL) async throws -> [Line])
+    async throws -> (segments: [PolishedSegment], micHearsSpeakers: Bool) {
+        var out: [PolishedSegment] = []
+        var themLevels: [Float]?
+        var micHearsSpeakers = false
+        for (path, speaker) in [(systemPath, "Them"), (micPath, "Me")] {
+            guard let path, FileManager.default.fileExists(atPath: path) else { continue }
+            let url = URL(fileURLWithPath: path)
+            guard let samples = try? AudioFileLoader.load16kMono(url: url) else {
+                NSLog("Parrot: polish skipped \(speaker) track — unsupported format")
+                continue
+            }
+            // The system track comes first; keep only its loudness for the Me pass.
+            let levels = EchoGate.envelope(samples[...])
+            if speaker == "Them" { themLevels = levels }
+            let voice = await timeline(samples)
+            for s in try await transcribe(samples, url) {
+                guard !s.text.isEmpty else { continue }
+                if let voice, !TranscriptionEngine.hasVoice(voice, from: s.start, to: s.end) {
+                    continue
+                }
+                let line = PolishedSegment(text: s.text, start: s.start, end: s.end, speaker: speaker)
+                if speaker == "Me", let themLevels,
+                   isEcho(line, mic: samples, micLevels: levels, themLevels: themLevels) {
+                    micHearsSpeakers = true
+                    continue
+                }
+                out.append(line)
             }
         }
         return (out.sorted { $0.start < $1.start }, micHearsSpeakers)

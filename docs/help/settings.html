@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="keywords" content="settings, preferences, general, dock, dock icon, hide dock, menu bar only, update, updates, restart now, what's new, changelog, appearance, storage, recording, echo cancellation, playback echo, transcription, model, language, vocabulary, backend, polish, api keys, saved, set up assistant, set up copilot, ollama install, check key">
+<meta name="keywords" content="settings, preferences, polish, polish on this mac, polish with, general, dock, dock icon, hide dock, menu bar only, update, updates, restart now, what's new, changelog, appearance, storage, recording, echo cancellation, playback echo, transcription, model, language, vocabulary, backend, polish, api keys, saved, set up assistant, set up copilot, ollama install, check key">
 <title>Settings, page by page</title>
 <link rel="canonical" href="https://openparrot.app/help/settings.html">
 <!-- The guide's home is openparrot.app/help. GitHub Pages sends visitors there; the in-app copy stays put. -->
@@ -91,9 +91,13 @@ Mac</a>.</p>
   <li><strong>Engine</strong>: on-device is the default and the private
   choice. Groq and Deepgram are opt-in cloud engines that need your own keys
   and do send audio out; Parrot falls back to on-device if they fail.</li>
-  <li><strong>Polish transcript after each call</strong>: optionally re-transcribe the saved
-  audio through Groq after you hit Stop, replacing the live transcript with a
-  slightly cleaner one before the report runs.</li>
+  <li><strong>Polish transcript after each call</strong>: optionally transcribe the saved
+  audio again after you hit Stop, all at once, replacing the live transcript with
+  a cleaner one before the report runs. Under <strong>Polish with</strong>, pick
+  <strong>Groq cloud</strong> (a large model, needs a Groq key) or
+  <strong>This Mac</strong> (free, nothing leaves your Mac, takes a few minutes
+  with your on-device model). If a pass loses most of the words, Parrot keeps
+  the live transcript.</li>
   <li><strong>Speaker Detection</strong>: the small on-device models that
   tell voices apart, <strong>Live speaker labels</strong> (experimental:
   names the other side during the call, not just after) and

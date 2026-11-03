@@ -78,6 +78,7 @@ struct SettingsView: View {
     @AppStorage("echoCancellationEnabled") private var echoCancellation = true
     @AppStorage(TranscriptionBackend.defaultsKey) private var transcriptionBackend = TranscriptionBackend.local.rawValue
     @AppStorage("polishAfterCall") private var polishAfterCall = false
+    @AppStorage(TranscriptPolisher.onDeviceKey) private var polishOnDevice = false
     @AppStorage("livePreview") private var livePreview = true
     @State private var section: SettingsSection = .general
     @State private var diarizerDownloading = false
@@ -125,7 +126,7 @@ struct SettingsView: View {
     /// a single onChange instead of one per field.
     private var settingsFingerprint: String {
         "\(selectedModel)|\(appearance)|\(copilotEnabled)|\(transcriptionLanguage)|"
-            + "\(customVocabulary)|\(echoCancellation)|\(transcriptionBackend)|\(polishAfterCall)|"
+            + "\(customVocabulary)|\(echoCancellation)|\(transcriptionBackend)|\(polishAfterCall)|\(polishOnDevice)|"
             + "\(copilotPace)|\(copilotWindow)|\(livePreview)"
     }
 
@@ -350,9 +351,22 @@ struct SettingsView: View {
                 }
                 SettingsToggleRow(
                     title: "Polish transcript after each call",
-                    detail: "Re-transcribes the saved audio with a large Groq model (~$0.08/hr) and regenerates the report.",
+                    detail: "Transcribes the saved audio again, all at once, for cleaner lines, then writes the report.",
                     isOn: $polishAfterCall
                 )
+                if polishAfterCall {
+                    SettingsBlockRow(title: "Polish with") {
+                        Picker("", selection: $polishOnDevice) {
+                            Text("Groq cloud — large model, ~$0.08/hr").tag(false)
+                            Text("This Mac — private, free, takes a few minutes").tag(true)
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+                        Hint(polishOnDevice
+                             ? "Uses your on-device model below. Nothing leaves this Mac."
+                             : "Needs a Groq key. Calls set to on-device only skip it.")
+                    }
+                }
                 SettingsToggleRow(
                     title: "Show words as they're spoken",
                     detail: "Gray preview text while someone is mid-sentence, replaced by the final line. On-device engine only; turn off if calls make your Mac run hot. Applies to the next recording.",
