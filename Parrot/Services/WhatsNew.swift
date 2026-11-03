@@ -13,12 +13,7 @@ struct WhatsNew: Equatable {
 
     /// The entry for the version being released. Empty highlights until the
     /// next release writes its own: no card, no notes.
-    static let current = WhatsNew(version: "0.29.7", headline: "Parrot learned everyone's name", highlights: [
-        "Naming a voice lists everyone on the invite, with full names.",
-        "Pick a name another voice already has to join the two into one person.",
-        "Names you gave voices on earlier calls are offered again.",
-        "Two people with the same name stay two people.",
-    ])
+    static let current = WhatsNew(version: "0.29.8", headline: "Parrot 0.29.8", highlights: [])
 
     /// For the help shot and the harness.
     static let sample = WhatsNew(
