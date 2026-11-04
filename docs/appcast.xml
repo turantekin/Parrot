@@ -3,14 +3,16 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.29.8</title>
-            <pubDate>Tue, 03 Nov 2026 19:20:21 +0000</pubDate>
+            <title>0.29.9</title>
+            <pubDate>Wed, 04 Nov 2026 10:16:33 +0000</pubDate>
             <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202611031919</sparkle:version>
-            <sparkle:shortVersionString>0.29.8</sparkle:shortVersionString>
+            <sparkle:version>202611041015</sparkle:version>
+            <sparkle:shortVersionString>0.29.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.8/Parrot-0.29.8.dmg" length="26620475" type="application/octet-stream" sparkle:edSignature="n6KiSvMBeXr3hEv7JjfKOBIXu0Uvzqf335+l8uzKV/VF9qO3sbwKMuu1SsRq+scoic1bWUHefU7aGvEkCis6Cg=="/>
+            <description><![CDATA[<h3>Parrot polished its feathers</h3><ul><li>Polish your transcript on this Mac: free, and nothing leaves your Mac.</li><li>Pick it in Settings, Transcription, under Polish with.</li></ul><p><a href="https://openparrot.app/changelog#v0.29.9">Read the full story</a></p>
+]]></description>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.9/Parrot-0.29.9.dmg" length="26646254" type="application/octet-stream" sparkle:edSignature="U6/HpKN0LE73tQcIdSlGAa1suK2WaIXB9cGm6kFudpWiY+OGZv0yQifuIMZvuN3CEVgxSnMwTtSvTQXZj7bnBg=="/>
         </item>
     </channel>
 </rss>
