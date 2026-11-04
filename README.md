@@ -137,7 +137,7 @@ Live cards and post-call reports can use different brains (say, Ollama live and 
 | **Groq** `whisper-large-v3-turbo` | Big-model accuracy, same latency as local. | ~$0.08 |
 | **Deepgram** Nova-3 | True streaming, words appear ~300 ms after they're spoken. | ~$0.70 ($0.58 with one language pinned) |
 
-Cloud engines fall back to on-device automatically if anything fails mid-call. An optional **polish pass** re-transcribes the saved audio with Groq's large model after you hit Stop and rewrites the report from the cleaner text.
+Cloud engines fall back to on-device automatically if anything fails mid-call. An optional **polish pass** re-transcribes the saved audio after you hit Stop, with Groq's large model or free on this Mac, and writes the report from the cleaner text.
 
 ### 🌍 Your language, too
 
@@ -174,7 +174,7 @@ This is a microphone-and-system-audio app, so you shouldn't have to take my word
 | Update check | The app's version | GitHub Pages (Sparkle feed) | Once a day; can switch off auto-install |
 | The Assistant on Claude or a custom server | Transcript text, matched document passages, profile instructions | Anthropic, or the server you picked | Only if you turn the Assistant on |
 | TypeSafe doc answers | The question, a couple of lines of context, candidate document snippets | TypeSafe AI | Only with a TypeSafe key, Claude mode |
-| Groq or Deepgram transcription, polish pass | Call audio | Groq or Deepgram | Only if you pick that engine |
+| Groq or Deepgram transcription, Groq polish pass | Call audio | Groq or Deepgram | Only if you pick that engine |
 | Calendar | Nothing (read locally through macOS's calendar store) | No one | Only if you connect it |
 | Calendar invite for the Assistant | Event title, guest names, notes (dial-in details removed) | Anthropic, or the server you picked | Only if you turn on "Brief the Assistant from the invite" |
 | Call detection | Nothing (asks macOS which apps use the mic) | No one | Unless you turn it off |
