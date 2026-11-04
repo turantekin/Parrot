@@ -803,6 +803,28 @@ enum LiveLoopTest {
                 exit(0)
             }
 
+            // LIVELOOP_POLISH=<mic track>: "Polish on this Mac" on a saved call
+            // (this audio = the Them track), with the echo filter. Prints the
+            // lines and how long the pass took.
+            if let mic = ProcessInfo.processInfo.environment["LIVELOOP_POLISH"] {
+                let started = Date()
+                do {
+                    let polished = try await TranscriptPolisher.polish(
+                        systemPath: audioPath, micPath: mic.isEmpty ? nil : mic,
+                        timeline: { await engine.speechTimeline(samples: $0) }
+                    ) { _, url in
+                        try await engine.transcribeFile(url: url).map { ($0.text, $0.startTime, $0.endTime) }
+                    }
+                    print(String(format: "=== polish-test — %d line(s), echo heard: %@, %.0f s ===",
+                                 polished.segments.count, polished.micHearsSpeakers ? "yes" : "no",
+                                 Date().timeIntervalSince(started)))
+                    for l in polished.segments { print(String(format: "[%6.2f – %6.2f] %@: %@", l.start, l.end, l.speaker, l.text)) }
+                    exit(0)
+                } catch {
+                    print("polish-test failed: \(error)"); exit(1)
+                }
+            }
+
             var emitted: [(text: String, start: TimeInterval, end: TimeInterval, who: String)] = []
             engine.onSegment = { r in emitted.append((r.text, r.startTime, r.endTime, r.source.label)) }
             // A Parakeet rewind replaces lines, as RecordingManager does in the app.

@@ -1141,26 +1141,52 @@ final class RecordingManager {
     /// text dedupe. Only when the mic hears the speakers (`micHeardSpeakers`
     /// is the live call's echo gate): today's isBleed also matches real
     /// lines on headphone calls, and polish has been lossless there.
+    /// Under half the live transcript's words: keep the live one.
+    nonisolated static func polishLostWords(live: Int, polished: Int) -> Bool {
+        polished * 2 < live
+    }
+
     @discardableResult
     private func polishTranscript(meeting: Meeting, micHeardSpeakers: Bool) async -> Double {
-        guard UserDefaults.standard.bool(forKey: "polishAfterCall"),
-              !meeting.onDeviceOnly, !CloudGate.forcesLocal,
-              let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
-              !key.isEmpty,
-              let modelContext else { return 0 }
-
-        let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
-        let language = (setting == nil || setting == "auto") ? nil : setting
+        guard UserDefaults.standard.bool(forKey: "polishAfterCall"), let modelContext else { return 0 }
+        let onDevice = UserDefaults.standard.bool(forKey: TranscriptPolisher.onDeviceKey)
+        let timeline: ([Float]) async -> [Float]? = { [transcriptionEngine] in
+            await transcriptionEngine.speechTimeline(samples: $0)
+        }
 
         do {
-            let polished = try await TranscriptPolisher.polish(
-                systemPath: meeting.systemAudioPath.nilIfEmpty,
-                micPath: meeting.micAudioPath?.nilIfEmpty,
-                language: language,
-                apiKey: key,
-                timeline: { [transcriptionEngine] in await transcriptionEngine.speechTimeline(samples: $0) }
-            )
+            let polished: (segments: [TranscriptPolisher.PolishedSegment], micHearsSpeakers: Bool)
+            if onDevice {
+                // The import path: whole track, Whisper's own timestamps, nothing leaves the Mac.
+                polished = try await TranscriptPolisher.polish(
+                    systemPath: meeting.systemAudioPath.nilIfEmpty,
+                    micPath: meeting.micAudioPath?.nilIfEmpty,
+                    timeline: timeline
+                ) { [transcriptionEngine] _, url in
+                    try await transcriptionEngine.transcribeFile(url: url).map { ($0.text, $0.startTime, $0.endTime) }
+                }
+            } else {
+                guard !meeting.onDeviceOnly, !CloudGate.forcesLocal,
+                      let key = APIKeyStore.load(account: TranscriptionBackend.groq.keychainAccount!),
+                      !key.isEmpty else { return 0 }
+                let setting = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+                polished = try await TranscriptPolisher.polish(
+                    systemPath: meeting.systemAudioPath.nilIfEmpty,
+                    micPath: meeting.micAudioPath?.nilIfEmpty,
+                    language: (setting == nil || setting == "auto") ? nil : setting,
+                    apiKey: key,
+                    timeline: timeline
+                )
+            }
             guard !polished.segments.isEmpty else { return 0 }
+            // A pass that lost most of the words (a tiny model, the wrong
+            // language) must not replace a good live transcript.
+            let words = { (texts: [String]) in texts.reduce(0) { $0 + $1.split(separator: " ").count } }
+            let liveWords = words(meeting.segments.map(\.text))
+            guard !Self.polishLostWords(live: liveWords, polished: words(polished.segments.map(\.text))) else {
+                NSLog("Parrot: polish kept the live transcript, the new pass lost most of the words")
+                return 0
+            }
             let lines = micHeardSpeakers || polished.micHearsSpeakers
                 ? Self.dedupedEcho(polished.segments) : polished.segments
 
@@ -1176,7 +1202,8 @@ final class RecordingManager {
             }
             try? modelContext.save()
             NSLog("Parrot: transcript polished — \(lines.count) segments, \(polished.segments.count - lines.count) echo lines dropped by text")
-            // Billed audio ≈ call duration per re-transcribed track.
+            // Billed audio ≈ call duration per re-transcribed track; on this Mac it's free.
+            guard !onDevice else { return 0 }
             let tracks = [meeting.systemAudioPath.nilIfEmpty, meeting.micAudioPath?.nilIfEmpty]
                 .compactMap { $0 }.count
             return meeting.duration * Double(tracks)
