@@ -58,7 +58,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/KnowledgeBaseService.swift` | 660 | Ingests/chunks KB docs (heading-aware), on-device multilingual embeddings (re-embeds stale vectors), hybrid BM25 + embedding retrieval; folders and Use for, `isInPlay` (the one rule for what the Assistant may quote), index v2 upgrade + backup |
 | `Services/ProfileStore.swift` | 300 | Persists and mutates `CallProfile`s; the one-time Profiles 2.0 migration (backup, sharing ids, restore point, report choice); import / apply / restore a `.parrotprofile` (privacy only tightens) |
 | `Services/ProfilePresets.swift` | 300 | Built-in starter profiles (eight, incl. the buyer-side "Vendor call" and "Investor pitch") and their report templates |
-| `Services/ExportService.swift` | 265 | Export: TXT, SRT, Markdown (front matter, next-step checklist instead of repeated sections); `Parts` limits what an AI app gets |
+| `Services/ExportService.swift` | 273 | Export: TXT, SRT, Markdown (front matter, next-step checklist instead of repeated sections); `Parts` limits what an AI app gets |
 | `Services/ReportPDF.swift` | 470 | Export PDF for a team: header (date, length, who attended, call type), how the call went (tiles + SVG chart from ToneTimeline), report cards; pure HTML, paginated offscreen by WebKit's print engine (cards never split), footer and page numbers stamped after |
 | `Services/PermissionFlow.swift` | 150 | System Audio (15+) / Screen Recording (14) + microphone grant flows |
 | `Services/AppUpdater.swift` | 148 | Sparkle updater: daily signed appcast check, installs on quit; started at launch; as Sparkle's delegate posts "update waiting" (held during a call) with Restart now; `UpdateNotice` copy + rule |
@@ -79,7 +79,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 | `Services/AskEngine.swift` | 260 | Ask Parrot prompt/context, `[M2 12:34]` citation parsing + checks; LastCallBrief (previous meeting, open items) |
 | `Services/RecordingManager+Memory.swift` | 110 | meetingFinished hook, memory sync, previous meeting, `ask()` |
 | `Services/FollowUpEmail.swift` | 90 | Follow-up email prompt, subject/body split, open in Mail |
-| `Services/Integrations.swift` | 230 | Apple Reminders, export folder (security-scoped bookmark), webhook (payload, HMAC, send) |
+| `Services/Integrations.swift` | 271 | Apple Reminders, export folder (security-scoped bookmark; `refreshIfSaved` updates a saved note unless it was edited since, by fingerprint), webhook (payload, HMAC, send) |
 | `Services/RecordingManager+Integrations.swift` | 90 | After-call actions, follow-up drafting, next steps → Reminders |
 | `Services/RecordingManager+Rewrite.swift` | 90 | Rewrite a meeting's report with another profile (all or nothing, privacy only tightens) and its one-step undo |
 | `Services/MCPServer.swift` | 330 | `--mcp`: read-only stdio MCP server (async loop; list/get/search meetings with meaning search and date/person filters, transcript pages, commitments, prompts, read-only annotations, export to Downloads/Parrot Exports, talk-time stats, read profiles, suggest_profile leaves a suggestion in the ProfileInbox; share settings via MCPAccess), opt-in, private meetings hidden |

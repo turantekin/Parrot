@@ -1383,6 +1383,7 @@ struct SpeakerNamePopover: View {
         // meetings only: before that, speaker detection relabels the lines
         // and merges by name itself.
         if meeting.status == .done, meeting.mergeSameNamedSpeakers() { try? modelContext.save() }
+        ExportFolder.refreshIfSaved(meeting)
         dismiss()
     }
 

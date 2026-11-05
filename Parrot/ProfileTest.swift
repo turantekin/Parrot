@@ -78,6 +78,7 @@ enum ProfileTest {
         testLastCallBrief()
         testMarkdownExport()
         testFolderRename()
+        testFolderEdits()
         testReportPDF()
         testFollowUpEmail()
         testWebhook()
@@ -3947,6 +3948,73 @@ enum ProfileTest {
         check("folder rename: note moves to the new name",
               files == [ExportService.markdownFilename(for: m)] && !files.contains(first.lastPathComponent))
         check("folder rename: unsaved meeting not written", !files.contains { $0.contains("Never saved") })
+    }
+
+    /// #151: Parrot refreshes a note it wrote, and never overwrites one edited
+    /// since, nor brings back one that was deleted or moved.
+    @MainActor
+    static func testFolderEdits() {
+        let d = UserDefaults.standard
+        let saved = (d.data(forKey: ExportFolder.bookmarkKey), d.dictionary(forKey: ExportFolder.namesKey),
+                     d.dictionary(forKey: ExportFolder.hashesKey))
+        defer {
+            d.set(saved.0, forKey: ExportFolder.bookmarkKey)
+            d.set(saved.1, forKey: ExportFolder.namesKey)
+            d.set(saved.2, forKey: ExportFolder.hashesKey)
+        }
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("parrot-edits-\(UUID().uuidString)")
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        d.removeObject(forKey: ExportFolder.namesKey)
+        d.removeObject(forKey: ExportFolder.hashesKey)
+        guard (try? ExportFolder.set(dir)) != nil else { check("folder edits: bookmark", false); return }
+        func text(_ url: URL) -> String { (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
+        func noteURL(_ m: Meeting) -> URL { dir.appendingPathComponent(ExportService.markdownFilename(for: m)) }
+
+        // Untouched note: follows the meeting.
+        let m = Meeting()
+        m.title = "Acme kickoff"
+        guard let note = try? ExportFolder.write(m) else { check("folder edits: first save", false); return }
+        m.speakerNames = ["Speaker 1": "Jeremy"]
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: untouched note gets the new speaker", text(note).contains("Jeremy"))
+
+        // Edited note: words stay, name still follows a rename.
+        try? (text(note) + "\nMy own line\n").write(to: note, atomically: true, encoding: .utf8)
+        m.speakerNames = ["Speaker 1": "Priya"]
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: edited note keeps its text", text(note).contains("My own line") && !text(note).contains("Priya"))
+        m.title = "Acme renewal"
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: edited note moves on rename", text(noteURL(m)).contains("My own line") && !fm.fileExists(atPath: note.path))
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: edited note still left alone after the move", text(noteURL(m)).contains("My own line"))
+
+        // Save to My Folder: on purpose, so it replaces the note and updates resume.
+        guard let forced = try? ExportFolder.write(m) else { check("folder edits: manual save", false); return }
+        check("folder edits: manual save replaces edits", !text(forced).contains("My own line") && text(forced).contains("Priya"))
+        m.speakerNames = ["Speaker 1": "Sam"]
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: updates resume after a manual save", text(forced).contains("Sam"))
+
+        // Deleted note: stays gone, and a later rename doesn't bring it back.
+        try? fm.removeItem(at: forced)
+        ExportFolder.refreshIfSaved(m)
+        m.title = "Acme final"
+        ExportFolder.refreshIfSaved(m)
+        check("folder edits: deleted note not recreated", (try? fm.contentsOfDirectory(atPath: dir.path))?.isEmpty == true)
+
+        // A note saved by an older version has no fingerprint: treat it as edited.
+        let old = Meeting()
+        old.title = "Old call"
+        guard let oldNote = try? ExportFolder.write(old) else { check("folder edits: old save", false); return }
+        var hashes = d.dictionary(forKey: ExportFolder.hashesKey) ?? [:]
+        hashes[old.id.uuidString] = nil
+        d.set(hashes, forKey: ExportFolder.hashesKey)
+        old.speakerNames = ["Speaker 1": "Lee"]
+        ExportFolder.refreshIfSaved(old)
+        check("folder edits: older note not overwritten", !text(oldNote).contains("Lee"))
     }
 
     static func testFollowUpEmail() {

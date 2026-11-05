@@ -1025,6 +1025,7 @@ final class RecordingManager {
             await generateSummary(meeting: meeting, includeCoaching: meeting.importedAt == nil)
         }
         if meeting.summary == nil, meeting.coaching == nil, let error { throw error }
+        ExportFolder.refreshIfSaved(meeting)
     }
 
     /// `includeCoaching` is false for imported files: a single mixed track has no
@@ -1333,6 +1334,7 @@ final class RecordingManager {
     func redetectSpeakers(meeting: Meeting) async throws {
         guard !(isRecording && meeting.id == currentMeeting?.id), await postProcess(meeting: meeting)
         else { throw RecordingError.speakersNotDetected }
+        ExportFolder.refreshIfSaved(meeting)
     }
 
     /// `anchors`: the live sweeps' identities for this meeting (empty for

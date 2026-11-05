@@ -64,6 +64,9 @@ enum ExportFolder {
     /// Meeting id → the note's filename at its last save, so a renamed
     /// meeting moves its note instead of leaving the old one behind.
     static let namesKey = "exportFolderNames"
+    /// Meeting id → a fingerprint of the note as Parrot last wrote it. A note
+    /// that no longer matches was edited, so automatic updates leave it alone.
+    static let hashesKey = "exportFolderHashes"
 
     static func set(_ url: URL) throws {
         let data = try url.bookmarkData(options: .withSecurityScope,
@@ -74,6 +77,7 @@ enum ExportFolder {
     static func clear() {
         UserDefaults.standard.removeObject(forKey: bookmarkKey)
         UserDefaults.standard.removeObject(forKey: namesKey)
+        UserDefaults.standard.removeObject(forKey: hashesKey)
         UserDefaults.standard.set(false, forKey: autoKey)
     }
 
@@ -86,7 +90,9 @@ enum ExportFolder {
         return url
     }
 
-    /// Writes (or rewrites) the meeting's note in the folder.
+    /// Writes (or rewrites) the meeting's note in the folder, whatever is in
+    /// it now: Save to My Folder and the first save after a call. Anything
+    /// automatic on a saved meeting goes through `refreshIfSaved`.
     @MainActor
     @discardableResult
     static func write(_ meeting: Meeting) throws -> URL {
@@ -106,21 +112,46 @@ enum ExportFolder {
                 try? fm.moveItem(at: oldURL, to: url)
             }
         }
-        try ExportService.exportToMarkdown(meeting: meeting).write(to: url, atomically: true, encoding: .utf8)
+        let text = ExportService.exportToMarkdown(meeting: meeting)
+        try text.write(to: url, atomically: true, encoding: .utf8)
         names[key] = name
         UserDefaults.standard.set(names, forKey: namesKey)
+        var hashes = UserDefaults.standard.dictionary(forKey: hashesKey) as? [String: String] ?? [:]
+        hashes[key] = fingerprint(Data(text.utf8))
+        UserDefaults.standard.set(hashes, forKey: hashesKey)
         return url
     }
 
-    /// After a rename: rewrites the note of a meeting already in the folder, so
-    /// it moves to the new name (#145). Meetings never saved there are left alone.
+    private static func fingerprint(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// After a meeting changes: updates its note if it's already in the folder
+    /// (#145, #151). A note edited since Parrot wrote it keeps its text and only
+    /// follows a rename; older notes have no fingerprint and count as edited. A
+    /// deleted or moved note stays gone. Meetings never saved there are left alone.
     @MainActor
     static func refreshIfSaved(_ meeting: Meeting) {
-        let names = UserDefaults.standard.dictionary(forKey: namesKey) as? [String: String] ?? [:]
-        guard names[meeting.id.uuidString] != nil, resolve() != nil else { return }
-        do { try write(meeting) } catch {
-            NSLog("Parrot: folder re-save after rename failed, \(error.localizedDescription)")
+        let key = meeting.id.uuidString
+        var names = UserDefaults.standard.dictionary(forKey: namesKey) as? [String: String] ?? [:]
+        guard let old = names[key], let folder = resolve() else { return }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let oldURL = folder.appendingPathComponent(old)
+        guard let current = try? Data(contentsOf: oldURL) else { return }
+        let hashes = UserDefaults.standard.dictionary(forKey: hashesKey) as? [String: String] ?? [:]
+        if hashes[key] == fingerprint(current) {
+            do { try write(meeting) } catch {
+                NSLog("Parrot: folder re-save failed, \(error.localizedDescription)")
+            }
+            return
         }
+        let name = ExportService.markdownFilename(for: meeting)
+        let url = folder.appendingPathComponent(name)
+        guard name != old, !FileManager.default.fileExists(atPath: url.path),
+              (try? FileManager.default.moveItem(at: oldURL, to: url)) != nil else { return }
+        names[key] = name
+        UserDefaults.standard.set(names, forKey: namesKey)
     }
 }
 
