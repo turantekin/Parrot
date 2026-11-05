@@ -48,6 +48,7 @@ extension RecordingManager {
         }
         meeting.followUpEmail = draft
         try? modelContext?.save()
+        ExportFolder.refreshIfSaved(meeting)
     }
 
     /// Next steps and commitments → Apple Reminders.

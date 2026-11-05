@@ -87,6 +87,7 @@ extension RecordingManager {
         meeting.summary = summary
         meeting.coaching = coaching
         try? modelContext?.save()
+        ExportFolder.refreshIfSaved(meeting)
         await memory.index(meeting)
     }
 
@@ -133,6 +134,7 @@ extension RecordingManager {
         }
         meeting.previousReportData = nil
         try? modelContext?.save()
+        ExportFolder.refreshIfSaved(meeting)
         await memory.index(meeting)
     }
 }

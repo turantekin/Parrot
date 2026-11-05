@@ -99,8 +99,9 @@ enum ExportService {
 
         guard parts.contains(.transcript) else { return output }
         output += "\n=== Transcript ===\n\n"
+        let names = meeting.speakerNames  // decoded once, not once per line
         for segment in meeting.sortedSegments {
-            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
+            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel, names: names)
             output += "[\(segment.formattedTimestamp)] \(speaker): \(segment.text)\n"
         }
 
@@ -164,8 +165,9 @@ enum ExportService {
         }
         guard parts.contains(.transcript) else { return out }
         out += "## Transcript\n\n"
+        let names = meeting.speakerNames  // decoded once, not once per line
         for segment in meeting.sortedSegments {
-            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel)
+            let speaker = meeting.displayName(forSpeaker: segment.speakerLabel, names: names)
             out += "`\(segment.formattedTimestamp)` **\(speaker):** \(segment.text)  \n"
         }
         return out
@@ -217,9 +219,10 @@ enum ExportService {
         var output = ""
         guard parts.contains(.transcript) else { return output }
         let segments = meeting.sortedSegments
+        let names = meeting.speakerNames  // decoded once, not once per line
 
         for (index, segment) in segments.enumerated() {
-            let speaker = segment.speakerLabel != nil ? "[\(meeting.displayName(forSpeaker: segment.speakerLabel))] " : ""
+            let speaker = segment.speakerLabel != nil ? "[\(meeting.displayName(forSpeaker: segment.speakerLabel, names: names))] " : ""
             output += """
             \(index + 1)
             \(srtTimestamp(segment.startTime)) --> \(srtTimestamp(segment.endTime))
