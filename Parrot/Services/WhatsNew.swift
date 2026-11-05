@@ -13,9 +13,9 @@ struct WhatsNew: Equatable {
 
     /// The entry for the version being released. Empty highlights until the
     /// next release writes its own: no card, no notes.
-    static let current = WhatsNew(version: "0.29.9", headline: "Parrot polished its feathers", highlights: [
-        "Polish your transcript on this Mac: free, and nothing leaves your Mac.",
-        "Pick it in Settings, Transcription, under Polish with.",
+    static let current = WhatsNew(version: "0.29.10", headline: "Parrot keeps better notes", highlights: [
+        "Notes in your folder now update when you name speakers or write the report.",
+        "If you edit a note yourself, Parrot leaves your words alone.",
     ])
 
     /// For the help shot and the harness.
