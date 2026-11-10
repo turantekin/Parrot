@@ -7,7 +7,7 @@ tree. Line counts are rough — they flag which files are worth reading whole.
 
 | File | L | Purpose |
 |---|---|---|
-| `Parrot/ParrotApp.swift` | 290 | `@main`; parses CLI harness flags before the SwiftUI `App` starts |
+| `Parrot/ParrotApp.swift` | 378 | `@main`; parses CLI harness flags before the SwiftUI `App` starts; app delegate (links, Dock, quit mid-call, login launch closes the window: menu bar only) |
 | `Parrot/ProfileTest.swift` | 5750 | `--profile-test`: headless logic harness, ~1850 checks |
 | `Parrot/ProfileTest+Parakeet.swift` | 190 | `--profile-test` checks for Parakeet: language router, per-side probe, recommendation, rewind, imports |
 | `Parrot/SnapshotTool.swift` | 1827 | Offscreen PNG renderers + transcribe/analyze/capture harnesses; `--language-test <audio> [model] [seconds]` runs the live language check on a saved track; `--echo-replay` scores a recorded call's Me lines with the echo gate; `--aec-replay <aec-mic> <aec-ref>` reruns the echo canceller on a `PARROT_AEC_DUMP=1` recording with shifted pairings and other filter tails; `--liveloop-test` takes `LIVELOOP_POLISH=<mic track>` (Polish on this Mac on a saved call) and `LIVELOOP_MIC` to feed both tracks (Deepgram: signed dist binary + `-transcriptionBackend deepgram`); `ANALYZE_REPORT=all --analyze-test ollama <model>` writes every built-in report on a model and checks the sections came back; `--store-upgrade-test <file>` upgrades an older store copy (read-only like MCP, then with the Profiles 2.0 migration); `--ask-chat-test, --ask-real` runs a real multi-turn Ask Parrot chat against Claude or Ollama; `--about-test <store> <id> [provider] [model]` merges a meeting's same-named speakers and writes its title + About on a scratch copy |
