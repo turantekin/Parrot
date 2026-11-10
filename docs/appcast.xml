@@ -3,16 +3,16 @@
     <channel>
         <title>Parrot</title>
         <item>
-            <title>0.29.10</title>
-            <pubDate>Thu, 05 Nov 2026 11:45:41 +0000</pubDate>
+            <title>0.29.11</title>
+            <pubDate>Tue, 10 Nov 2026 14:07:09 +0000</pubDate>
             <sparkle:fullReleaseNotesLink>https://openparrot.app/changelog</sparkle:fullReleaseNotesLink>
-            <sparkle:version>202611051144</sparkle:version>
-            <sparkle:shortVersionString>0.29.10</sparkle:shortVersionString>
+            <sparkle:version>202611101406</sparkle:version>
+            <sparkle:shortVersionString>0.29.11</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<h3>Parrot keeps better notes</h3><ul><li>Notes in your folder now update when you name speakers or write the report.</li><li>If you edit a note yourself, Parrot leaves your words alone.</li></ul><p><a href="https://openparrot.app/changelog#v0.29.10">Read the full story</a></p>
+            <description><![CDATA[<h3>Parrot waits quietly in the menu bar</h3><ul><li>Opened at login, Parrot now starts in the menu bar with no window in your way.</li><li>Click the parrot in the menu bar and choose Open Parrot to see the window.</li></ul><p><a href="https://openparrot.app/changelog#v0.29.11">Read the full story</a></p>
 ]]></description>
-            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.10/Parrot-0.29.10.dmg" length="26652556" type="application/octet-stream" sparkle:edSignature="u0D3hcMSVJcFAYp/1O+vP/eszkxbynxKtU2sueYLCZL1P9WnwTJhS4NT+pgf9AHWBQmjvFFOcEFfEoywj6/UDw=="/>
+            <enclosure url="https://github.com/turantekin/Parrot/releases/download/v0.29.11/Parrot-0.29.11.dmg" length="26658099" type="application/octet-stream" sparkle:edSignature="9n/EwaFgs1o9pUs28IKArqgbtvrbiUm5TGK4xbiH1zpwiE7OouxU6ARN1DZby50Gqg+dpAzM8GuUawHsAk4RAA=="/>
         </item>
     </channel>
 </rss>
