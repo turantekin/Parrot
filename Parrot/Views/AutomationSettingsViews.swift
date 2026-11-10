@@ -13,7 +13,7 @@ struct LoginItemRow: View {
     var body: some View {
         SettingsToggleRow(
             title: "Open Parrot at login",
-            detail: "Starts quietly when you log in, so it can offer to record your first call of the day. Listed in System Settings → General → Login Items.",
+            detail: "Starts quietly in the menu bar when you log in, with no window, so it can offer to record your first call of the day. Listed in System Settings → General → Login Items.",
             first: first,
             isOn: Binding(
                 get: { state == .on || state == .needsApproval },

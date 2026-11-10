@@ -191,6 +191,25 @@ final class ParrotAppDelegate: NSObject, NSApplicationDelegate {
     /// Settings → General: leave the Dock while the window is closed (#118).
     static let hideDockKey = "hideDockWhenClosed"
 
+    /// macOS started Parrot as a login item: start in the menu bar with no
+    /// window (#153), like the Settings row promises. Opened by hand, the
+    /// window shows as always. `-debugLoginLaunch YES` fakes it for testing.
+    private(set) static var launchedAtLogin = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        Self.launchedAtLogin = UserDefaults.standard.bool(forKey: "debugLoginLaunch")
+            || (event?.eventID == kAEOpenApplication
+                && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem)
+    }
+
+    /// Once, for the window that opens at launch: true when it should close
+    /// straight away. Never before the Welcome Tour is done.
+    func takeLoginLaunch() -> Bool {
+        defer { Self.launchedAtLogin = false }
+        return Self.launchedAtLogin && UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // After the close has finished: until then the window still counts.
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { _ in
@@ -287,6 +306,12 @@ struct ParrotApp: App {
                     applyAppearance()
                     appDelegate.recordingManager = recordingManager
                     appDelegate.appSession = appSession
+                    // Login launch: close after the delegate has what it needs
+                    // to reopen (Dock click, links), so Parrot waits in the
+                    // menu bar. Closing also drops the Dock icon if that's on.
+                    if appDelegate.takeLoginLaunch() {
+                        DispatchQueue.main.async { ParrotApp.mainWindow?.close() }
+                    }
                 }
                 .background {
                     WindowOpener { appDelegate.openMainWindow = $0 }
