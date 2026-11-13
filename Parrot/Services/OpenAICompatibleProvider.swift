@@ -244,6 +244,19 @@ final class OpenAICompatibleProvider: AnalysisProvider {
     /// the schema inlined in the prompt.
     private func structuredChat(system: String, user: String, schema: [String: Any],
                                 maxTokens: Int, config: Config) async throws -> String {
+        // Same one retry as plainChat: a thinking model can spend the whole
+        // budget on hidden reasoning and get cut off before the JSON (#155).
+        do {
+            return try await structuredChatOnce(system: system, user: user, schema: schema,
+                                                maxTokens: maxTokens, config: config)
+        } catch let AnalysisError.badResponse(message) where message.contains("truncated") {
+            return try await structuredChatOnce(system: system, user: user, schema: schema,
+                                                maxTokens: maxTokens * 4, config: config)
+        }
+    }
+
+    private func structuredChatOnce(system: String, user: String, schema: [String: Any],
+                                    maxTokens: Int, config: Config) async throws -> String {
         let strictBody: [String: Any] = [
             "model": config.model,
             "max_tokens": maxTokens,
@@ -418,7 +431,42 @@ final class OpenAICompatibleProvider: AnalysisProvider {
         let usage: Usage?
     }
 
+    // MARK: - max_tokens vs max_completion_tokens (#155)
+
+    /// Newer OpenAI models (and Azure) reject `max_tokens` and want
+    /// `max_completion_tokens`; most other OpenAI-style servers only know
+    /// `max_tokens`. So keep sending `max_tokens`, and on that one rejection
+    /// rename it and retry. The server+model is remembered so the rest of the
+    /// call doesn't pay a failed request every live pass.
+    private let tokenFieldLock = NSLock()
+    private var completionTokenServers = Set<String>()
+
+    static func wantsCompletionTokens(_ errorMessage: String) -> Bool {
+        errorMessage.contains("max_completion_tokens")
+    }
+
+    static func renamingTokenLimit(_ body: [String: Any]) -> [String: Any] {
+        guard let limit = body["max_tokens"] else { return body }
+        var renamed = body
+        renamed["max_tokens"] = nil
+        renamed["max_completion_tokens"] = limit
+        return renamed
+    }
+
     private func send(body: [String: Any], config: Config) async throws -> String {
+        let server = config.baseURL.absoluteString + "|" + config.model
+        let known = tokenFieldLock.withLock { completionTokenServers.contains(server) }
+        let body = known ? Self.renamingTokenLimit(body) : body
+        do {
+            return try await sendOnce(body: body, config: config)
+        } catch let AnalysisError.badResponse(message)
+            where body["max_tokens"] != nil && Self.wantsCompletionTokens(message) {
+            tokenFieldLock.withLock { _ = completionTokenServers.insert(server) }
+            return try await sendOnce(body: Self.renamingTokenLimit(body), config: config)
+        }
+    }
+
+    private func sendOnce(body: [String: Any], config: Config) async throws -> String {
         var request = URLRequest(url: config.baseURL.appendingPathComponent("chat/completions"))
         request.httpMethod = "POST"
         // Local models can take a while on first token (model load); generous cap.
