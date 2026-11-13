@@ -146,8 +146,82 @@ enum ProfileTest {
         testTranscriptClick()
         testWhatsNew()
         testUpdateNotice()
+        testCompletionTokensField()
         print(failures == 0 ? "ALL PASS" : "FAILURES: \(failures)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Fake chat server: models named "new-*" reject max_tokens the way
+    /// OpenAI's newer models do; every other model only knows max_tokens.
+    final class FakeChatServer: URLProtocol {
+        static var bodies: [[String: Any]] = []
+        override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "fake-llm.test" }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            var data = request.httpBody ?? Data()
+            if data.isEmpty, let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buf = [UInt8](repeating: 0, count: 65536)
+                while stream.hasBytesAvailable { let n = stream.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }
+            }
+            let body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            Self.bodies.append(body)
+            let newModel = (body["model"] as? String)?.hasPrefix("new-") == true
+            let (status, json): (Int, String) =
+                newModel && body["max_tokens"] != nil
+                ? (400, #"{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}"#)
+                : (!newModel && body["max_completion_tokens"] != nil)
+                ? (400, #"{"error":{"message":"Unknown field max_completion_tokens"}}"#)
+                : (200, #"{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(json.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    @MainActor
+    static func testCompletionTokensField() {
+        let renamed = OpenAICompatibleProvider.renamingTokenLimit(["model": "m", "max_tokens": 9])
+        check("tokens field: rename moves the limit",
+              renamed["max_tokens"] == nil && renamed["max_completion_tokens"] as? Int == 9)
+
+        URLProtocol.registerClass(FakeChatServer.self)
+        let saved = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        func use(model: String) {
+            UserDefaults.standard.setVolatileDomain(
+                saved.merging(["copilotCustomBaseURL": "https://fake-llm.test/v1", "copilotCustomModel": model]) { $1 },
+                forName: UserDefaults.argumentDomain)
+        }
+        let sem = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            let ai = OpenAICompatibleProvider(kindSource: { .custom })
+            use(model: "new-model")
+            FakeChatServer.bodies = []
+            let first = try? await ai.complete(system: "s", user: "u", maxTokens: 100)
+            check("tokens field: new OpenAI model answers after one retry", first == "ok")
+            check("tokens field: retry sends max_completion_tokens",
+                  FakeChatServer.bodies.count == 2
+                  && FakeChatServer.bodies[1]["max_completion_tokens"] as? Int == 100
+                  && FakeChatServer.bodies[1]["max_tokens"] == nil)
+            FakeChatServer.bodies = []
+            let second = try? await ai.complete(system: "s", user: "u", maxTokens: 100)
+            check("tokens field: remembered, no failed request next time",
+                  second == "ok" && FakeChatServer.bodies.count == 1
+                  && FakeChatServer.bodies[0]["max_completion_tokens"] != nil)
+
+            use(model: "old-model")
+            FakeChatServer.bodies = []
+            let old = try? await ai.complete(system: "s", user: "u", maxTokens: 100)
+            check("tokens field: other servers keep max_tokens",
+                  old == "ok" && FakeChatServer.bodies.count == 1
+                  && FakeChatServer.bodies[0]["max_tokens"] as? Int == 100)
+            sem.signal()
+        }
+        while sem.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: .now + 0.01) }
+        UserDefaults.standard.setVolatileDomain(saved, forName: UserDefaults.argumentDomain)
+        URLProtocol.unregisterClass(FakeChatServer.self)
     }
 
     @MainActor
