@@ -3413,6 +3413,11 @@ enum ProfileTest {
                                                         "com.apple.assistantd"], ignored: []).isEmpty)
         check("dictation apps are not calls",
               D.relevantApps(["com.FluidApp.app", "com.electron.wispr-flow.accessibility-mac-app"], ignored: []).isEmpty)
+        check("Claude dictation is not a call (#158)",
+              D.relevantApps(["com.anthropic.claudefordesktop", "com.anthropic.claudefordesktop.helper"], ignored: []).isEmpty)
+        check("picked app reads its bundle id",
+              CallWatcher.appID(at: URL(fileURLWithPath: "/System/Applications/Calculator.app")) == "com.apple.calculator")
+        check("picked non-app is refused", CallWatcher.appID(at: URL(fileURLWithPath: "/tmp")) == nil)
         check("Parrot's own side processes ignored",
               D.relevantApps(["com.apple.CoreSpeech", "com.apple.replayd"], ignored: []).isEmpty)
         let N = NotificationAccess.self

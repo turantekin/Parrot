@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // Settings → General "Startup", Settings → Recording "Call detection" and
 // "Calendar". Shared with onboarding's "Make it automatic" step.
@@ -75,22 +76,23 @@ struct CallDetectionCard: View {
                     }
                 }
             }
-            if !ignored.isEmpty {
-                SettingsBlockRow(title: "Never asked for") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(ignored, id: \.self) { app in
-                            HStack {
-                                Text(CallDetector.displayName(for: app))
-                                    .font(Theme.Typography.body)
-                                Spacer()
-                                Button("Ask Again") {
-                                    CallWatcher.ignoredApps.remove(app)
-                                    ignored = CallWatcher.ignoredApps.sorted()
-                                }
-                                .controlSize(.small)
+            SettingsBlockRow(title: "Apps to ignore",
+                             detail: "Parrot never treats these as calls. Add dictation or voice apps that use the mic.") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(ignored, id: \.self) { app in
+                        HStack {
+                            Text(CallDetector.displayName(for: app))
+                                .font(Theme.Typography.body)
+                            Spacer()
+                            Button("Remove") {
+                                CallWatcher.ignoredApps.remove(app)
+                                ignored = CallWatcher.ignoredApps.sorted()
                             }
+                            .controlSize(.small)
                         }
                     }
+                    Button("Add App…") { pickAppToIgnore() }
+                        .controlSize(.small)
                 }
             }
         }
@@ -100,6 +102,19 @@ struct CallDetectionCard: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { notifications = await NotificationAccess.state() }
         }
+    }
+
+    /// Any .app works, so a dictation tool we don't know yet can be ignored
+    /// before it ever triggers a recording (#158).
+    private func pickAppToIgnore() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.prompt = "Ignore"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let app = CallWatcher.appID(at: url) else { return }
+        CallWatcher.ignoredApps.insert(app)
+        ignored = CallWatcher.ignoredApps.sorted()
     }
 
     private var detail: String {

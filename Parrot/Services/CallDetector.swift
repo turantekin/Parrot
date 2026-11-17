@@ -166,6 +166,9 @@ struct CallDetector {
         "com.superduper.superwhisper",
         "com.goodsnooze.MacWhisper",
         "com.prakashjoshipax.VoiceInk",
+        // Claude desktop's voice dictation held the mic and auto mode
+        // recorded it (#158). Claude has no calls, so this costs nothing.
+        "com.anthropic.claudefordesktop",
         "com.apple.Siri",
         "com.apple.accessibility.heard",
         "com.apple.accessibility.AccessibilityUIServer",

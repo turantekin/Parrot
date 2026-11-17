@@ -60,6 +60,9 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
     /// stop it too. A recording the user started is only ever offered a stop.
     @ObservationIgnored private var autoStarted = false
     @ObservationIgnored private var autoStartInFlight = false
+    /// The app auto mode started the current recording for, so its
+    /// "Parrot is recording" notification can ignore that app (#158).
+    @ObservationIgnored private var autoAppID: String?
 
     static let ignoredAppsKey = "callDetectIgnoredApps"
     static let pollInterval: TimeInterval = 2
@@ -67,10 +70,12 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
     // Notification identifiers + actions.
     static let startCategory = "PARROT_CALL_START"
     static let stopCategory = "PARROT_CALL_END"
+    static let autoCategory = "PARROT_AUTO_STARTED"
     static let meetingCategory = "PARROT_MEETING_SOON"
     static let recordAction = "PARROT_RECORD"
     static let ignoreAppAction = "PARROT_IGNORE_APP"
     static let stopAction = "PARROT_STOP"
+    static let stopIgnoreAction = "PARROT_STOP_IGNORE"
     static let keepAction = "PARROT_KEEP"
     static let promptID = "parrot-call-prompt"
 
@@ -88,6 +93,12 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
                 UNNotificationAction(identifier: Self.stopAction, title: "Stop Recording", options: []),
                 UNNotificationAction(identifier: Self.keepAction, title: "Keep Recording", options: []),
             ], intentIdentifiers: [], options: [.customDismissAction]),
+            // Auto mode's "Parrot is recording": the only place to say "not
+            // this app" when nothing asked first (#158).
+            UNNotificationCategory(identifier: Self.autoCategory, actions: [
+                UNNotificationAction(identifier: Self.stopAction, title: "Stop Recording", options: []),
+                UNNotificationAction(identifier: Self.stopIgnoreAction, title: "Stop, Never for This App", options: []),
+            ], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.meetingCategory, actions: [
                 UNNotificationAction(identifier: Self.recordAction, title: "Record Now", options: []),
             ], intentIdentifiers: [], options: []),
@@ -167,9 +178,10 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
                     let started = await manager.startDetectedCall(appID: appID)
                     autoStartInFlight = false
                     if started {
+                        autoAppID = appID
                         post(id: Self.promptID, title: "Parrot is recording",
                              body: "Your \(eventTitle.map { "“\($0)” " } ?? "")\(name) call is being recorded.",
-                             category: Self.stopCategory)
+                             category: Self.autoCategory)
                     } else {
                         autoStarted = false
                     }
@@ -211,6 +223,13 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
 
     func dismissPrompt() {
         clearPrompt()
+    }
+
+    /// The bundle ID to ignore for an app the user picked in Settings.
+    /// Nil for anything that isn't an app bundle.
+    static func appID(at url: URL) -> String? {
+        guard let id = Bundle(url: url)?.bundleIdentifier, !id.isEmpty else { return nil }
+        return CallDetector.normalizedAppID(id)
     }
 
     /// "Never for This App": stop offering for this app (Settings lists and
@@ -317,6 +336,16 @@ final class CallWatcher: NSObject, UNUserNotificationCenterDelegate {
         case Self.ignoreAppAction:
             ignorePromptApp()
         case Self.stopAction:
+            if let manager = recordingManager, manager.isRecording {
+                clearPrompt()
+                autoStarted = false
+                Task { await manager.stopRecording() }
+            }
+        case Self.stopIgnoreAction:
+            // Stops, never deletes: the recording stays in the list in case
+            // it was a real call after all.
+            if let app = autoAppID, app != CallDetector.unknownApp { Self.ignoredApps.insert(app) }
+            autoAppID = nil
             if let manager = recordingManager, manager.isRecording {
                 clearPrompt()
                 autoStarted = false
