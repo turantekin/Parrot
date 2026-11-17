@@ -13,9 +13,10 @@ struct WhatsNew: Equatable {
 
     /// The entry for the version being released. Empty highlights until the
     /// next release writes its own: no card, no notes.
-    static let current = WhatsNew(version: "0.29.12", headline: "Parrot speaks newer OpenAI", highlights: [
-        "Newer OpenAI models now work as your Assistant under Other AI service.",
-        "Live cards from models that think first no longer get cut off.",
+    static let current = WhatsNew(version: "0.29.13", headline: "Parrot learned which apps to ignore", highlights: [
+        "Dictating into the Claude app no longer starts a recording.",
+        "In automatic mode, the recording notice can now stop and skip that app next time.",
+        "Add any app to Apps to ignore in Settings, under Recording.",
     ])
 
     /// For the help shot and the harness.

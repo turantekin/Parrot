@@ -145,7 +145,7 @@ Whisper auto-detects the language of the call, or you can pin one of 14 (English
 
 ### 🧰 And all the everyday stuff
 
-- **Notices your calls.** When Zoom, Meet, Teams or FaceTime starts using the mic, Parrot asks *"Record it?"* (or records on its own, if you choose) and offers to stop when the call ends. It only sees that the mic is in use, never another app's audio. Dictation apps like Wispr Flow don't count as calls.
+- **Notices your calls.** When Zoom, Meet, Teams or FaceTime starts using the mic, Parrot asks *"Record it?"* (or records on its own, if you choose) and offers to stop when the call ends. It only sees that the mic is in use, never another app's audio. Dictation apps like Wispr Flow don't count as calls, and you can tell it to ignore any other app.
 - **Knows your calendar** (opt-in, read-only, local): meetings take their event's name and guest list, guests become one-click speaker names, and an event title like "Interview: Jane" picks the matching profile. Only your own events count (not invites you haven't answered), and you can untick calendars you don't want read.
 - **Opens at login**, if you like, quietly in the menu bar with no window, so it's there for the first call of the day.
 - **Records system audio and your mic** as two tracks. On macOS 15+ it uses the audio-only System Audio permission (Core Audio taps); on macOS 14, ScreenCaptureKit. No virtual audio drivers.
