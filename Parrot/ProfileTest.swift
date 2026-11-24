@@ -2498,14 +2498,16 @@ enum ProfileTest {
               m("en", .deepgram, "tr", 0.99) == "tr")
         check("lang: same language → quiet", m("tr", .deepgram, "tr", 0.99) == nil)
         check("lang: unsure guess → quiet", m("en", .local, "tr", 0.3) == nil)
-        check("lang: Deepgram auto can't do Turkish → offer Turkish", m(nil, .deepgram, "tr", 0.99) == "tr")
+        check("lang: Deepgram auto covers Turkish now → quiet", m(nil, .deepgram, "tr", 0.99) == nil)
         check("lang: Deepgram auto covers Spanish → quiet", m(nil, .deepgram, "es", 0.99) == nil)
         check("lang: Whisper auto handles Turkish → quiet", m(nil, .local, "tr", 0.99) == nil)
         check("lang: never offer a language the picker lacks", m("en", .local, "sw", 0.99) == nil)
-        // #162: Tamil is pickable, so the check can offer it, and Deepgram's
-        // auto-detect can't do it, so a Tamil call there gets the offer too.
+        // #162: Tamil is pickable, so the check can offer it. Deepgram's
+        // 55-language auto-detect covers it, so no offer there.
         check("lang: Tamil call pinned to English → offer Tamil", m("en", .local, "ta", 0.95) == "ta")
-        check("lang: Deepgram auto can't do Tamil → offer Tamil", m(nil, .deepgram, "ta", 0.95) == "ta")
+        check("lang: Deepgram auto covers Tamil → quiet", m(nil, .deepgram, "ta", 0.95) == nil)
+        check("lang: Deepgram auto covers every picker language",
+              TranscriptionLanguage.options.allSatisfy { TranscriptionLanguage.deepgramMulti.contains($0.code) })
         check("lang: Tamil is in the picker", TranscriptionLanguage.name("ta") == "Tamil")
     }
 

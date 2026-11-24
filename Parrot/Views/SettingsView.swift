@@ -470,14 +470,6 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     .fixedSize()
                 }
-                if transcriptionBackend == TranscriptionBackend.deepgram.rawValue, transcriptionLanguage == "auto" {
-                    SettingsRow {
-                        Label("Deepgram's auto-detect doesn't cover Turkish, Arabic, Chinese or Korean. Pick the language for those calls.",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(Theme.Typography.secondary)
-                            .foregroundStyle(Theme.Colors.warn)
-                    }
-                }
             }
 
             SettingsCard(title: "Custom Vocabulary") {
