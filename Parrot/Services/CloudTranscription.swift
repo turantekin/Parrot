@@ -47,7 +47,7 @@ enum TranscriptionLanguage {
         ("en", "English"), ("tr", "Turkish"), ("es", "Spanish"), ("de", "German"),
         ("fr", "French"), ("it", "Italian"), ("pt", "Portuguese"), ("nl", "Dutch"),
         ("ru", "Russian"), ("ar", "Arabic"), ("zh", "Chinese"), ("ja", "Japanese"),
-        ("ko", "Korean"), ("hi", "Hindi"),
+        ("ko", "Korean"), ("hi", "Hindi"), ("ta", "Tamil"),
     ]
 
     /// Nova-3 `language=multi` code-switches across these ten only. Anything

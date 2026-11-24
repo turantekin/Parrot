@@ -8,6 +8,8 @@ extension ProfileTest {
         check("router: auto holds both sides", auto.isHolding && auto.route(.me) == .undecided && auto.route(.them) == .undecided)
         check("router: English, sure → Parakeet", auto.heard(.me, language: "en", confidence: 0.95) == .decided(.me, .parakeet(language: "en")))
         check("router: Turkish → Whisper", auto.heard(.them, language: "tr", confidence: 0.99) == .decided(.them, .whisper))
+        let tamil = R(parakeet: true, pinned: "ta")
+        check("router: Tamil picked by hand → Whisper, no hold", !tamil.isHolding && tamil.route(.me) == .whisper && tamil.route(.them) == .whisper)
         check("router: both decided → no hold", !auto.isHolding)
 
         var unsure = R(parakeet: true, pinned: nil)
