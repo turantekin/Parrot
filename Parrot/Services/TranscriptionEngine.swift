@@ -1475,7 +1475,7 @@ final class TranscriptionEngine {
         guard confidence >= 0.8, heard != setting,
               TranscriptionLanguage.options.contains(where: { $0.code == heard }) else { return nil }
         if setting != nil { return heard }
-        // Auto: Whisper and Groq detect anything; Deepgram only its ten.
+        // Auto: Whisper and Groq detect anything; Deepgram only `deepgramMulti`.
         return backend == .deepgram && !TranscriptionLanguage.deepgramMulti.contains(heard) ? heard : nil
     }
 

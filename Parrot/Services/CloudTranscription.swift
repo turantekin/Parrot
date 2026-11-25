@@ -50,10 +50,17 @@ enum TranscriptionLanguage {
         ("ko", "Korean"), ("hi", "Hindi"), ("ta", "Tamil"),
     ]
 
-    /// Nova-3 `language=multi` code-switches across these ten only. Anything
-    /// else on Auto-detect comes back as English-shaped nonsense (the Turkish
-    /// call of 2026-09-30), so it must be picked by name.
-    static let deepgramMulti: Set<String> = ["en", "es", "fr", "de", "hi", "ru", "pt", "ja", "it", "nl"]
+    /// Nova-3 `language=multi` code-switches across these 55 (Deepgram's
+    /// 2026-10-23 model; before it, only ten, and a Turkish call on Auto-detect
+    /// came back as English-shaped nonsense on 2026-09-30). Anything outside
+    /// the set must still be picked by name.
+    static let deepgramMulti: Set<String> = [
+        "af", "ar", "be", "bg", "bn", "bs", "ca", "cs", "da", "de", "el", "en",
+        "es", "et", "fa", "fi", "fr", "gl", "gu", "he", "hi", "hr", "hu", "id",
+        "it", "ja", "kn", "ko", "lt", "lv", "mk", "mr", "ms", "nl", "no", "pl",
+        "pt", "ro", "ru", "sk", "sl", "sr", "sv", "ta", "te", "th", "tl", "tr",
+        "uk", "vi", "xh", "zh", "zu",
+    ]
 
     /// nil = auto-detect.
     static var selected: String? {
